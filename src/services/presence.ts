@@ -55,7 +55,21 @@ export function setEditingObject(
   objectId: string | null
 ) {
   const editRef = ref(db, `presence/${boardId}/${userId}/editingObjectId`);
-  return set(editRef, objectId);
+  set(editRef, objectId);
+  // Clear draft text when done editing
+  if (objectId === null) {
+    const draftRef = ref(db, `presence/${boardId}/${userId}/draftText`);
+    set(draftRef, null);
+  }
+}
+
+export function setDraftText(
+  boardId: string,
+  userId: string,
+  text: string
+) {
+  const draftRef = ref(db, `presence/${boardId}/${userId}/draftText`);
+  return set(draftRef, text);
 }
 
 export function updateLastSeen(boardId: string, userId: string) {

@@ -10,4 +10,5 @@ export interface UserPresence {
   online: boolean;
   lastSeen: number;
   editingObjectId: string | null;
+  draftText?: string;
 }

@@ -39,7 +39,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
     restoreConnector,
     loading,
   } = useBoard(boardId);
-  const { users, updateCursor, setEditingObject, isObjectLocked, myColor } =
+  const { users, updateCursor, setEditingObject, setDraftText, isObjectLocked, getDraftTextForObject, myColor } =
     usePresence(boardId, userId, displayName);
   const canvas = useCanvas();
   const selection = useSelection();
@@ -340,6 +340,8 @@ export function BoardPage({ boardId }: BoardPageProps) {
         onDeleteConnector={deleteConnector}
         onCursorMove={handleCursorMove}
         onSetEditingObject={setEditingObject}
+        onDraftTextChange={setDraftText}
+        getDraftTextForObject={getDraftTextForObject}
         isObjectLocked={isObjectLocked}
         onPushUndo={undoRedo.pushAction}
         onResetTool={(selectId) => {

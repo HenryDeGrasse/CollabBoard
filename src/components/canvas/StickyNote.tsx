@@ -11,6 +11,7 @@ interface StickyNoteProps {
   isLockedByOther: boolean;
   lockedByName?: string;
   lockedByColor?: string;
+  draftText?: string;
   onSelect: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -25,6 +26,7 @@ export function StickyNote({
   isEditing,
   isLockedByOther,
   lockedByColor,
+  draftText,
   onSelect,
   onDragStart,
   onDragMove,
@@ -79,6 +81,16 @@ export function StickyNote({
       onDragEnd={(e) => {
         onDragEnd(object.id, e.target.x(), e.target.y());
       }}
+      onMouseEnter={(e) => {
+        if (isLockedByOther) {
+          const container = e.target.getStage()?.container();
+          if (container) container.style.cursor = "not-allowed";
+        }
+      }}
+      onMouseLeave={(e) => {
+        const container = e.target.getStage()?.container();
+        if (container) container.style.cursor = "default";
+      }}
     >
       {/* Shadow */}
       <Rect
@@ -107,21 +119,23 @@ export function StickyNote({
         fill="rgba(0,0,0,0.05)"
         cornerRadius={[4, 4, 0, 0]}
       />
-      {/* Text - hidden while editing */}
+      {/* Text - hidden while editing locally */}
       {!isEditing && (
         <Text
           x={PADDING}
           y={PADDING}
           width={object.width - PADDING * 2}
           height={object.height - PADDING * 2}
-          text={object.text || ""}
+          text={draftText ?? object.text ?? ""}
           fontSize={fontSize}
           fontFamily="Inter, system-ui, sans-serif"
-          fill={textColor}
+          fill={draftText ? (lockedByColor || "#6366F1") : textColor}
+          fontStyle={draftText ? "italic" : "normal"}
           wrap="word"
           ellipsis
           verticalAlign="middle"
           align="center"
+          opacity={draftText ? 0.7 : 1}
         />
       )}
       {/* Resize handles (only when selected, not editing) */}

@@ -10,6 +10,7 @@ interface ShapeProps {
   isEditing: boolean;
   isLockedByOther: boolean;
   lockedByColor?: string;
+  draftText?: string;
   onSelect: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -24,6 +25,7 @@ export function Shape({
   isEditing,
   isLockedByOther,
   lockedByColor,
+  draftText,
   onSelect,
   onDragStart,
   onDragMove,
@@ -79,16 +81,18 @@ export function Shape({
               strokeWidth={borderWidth}
               cornerRadius={4}
             />
-            {!isEditing && object.text && (
+            {!isEditing && (object.text || draftText) && (
               <Text
                 x={PADDING}
                 y={PADDING}
                 width={object.width - PADDING * 2}
                 height={object.height - PADDING * 2}
-                text={object.text}
+                text={draftText ?? object.text ?? ""}
                 fontSize={fontSize}
                 fontFamily="Inter, system-ui, sans-serif"
-                fill={textColor}
+                fill={draftText ? (lockedByColor || "#6366F1") : textColor}
+                fontStyle={draftText ? "italic" : "normal"}
+                opacity={draftText ? 0.7 : 1}
                 wrap="word"
                 ellipsis
                 verticalAlign="middle"
@@ -110,16 +114,18 @@ export function Shape({
               stroke={borderColor || object.color}
               strokeWidth={borderWidth || 1}
             />
-            {!isEditing && object.text && (
+            {!isEditing && (object.text || draftText) && (
               <Text
                 x={(object.width - inscribedSide) / 2}
                 y={(object.height - inscribedSide) / 2}
                 width={inscribedSide}
                 height={inscribedSide}
-                text={object.text}
+                text={draftText ?? object.text ?? ""}
                 fontSize={fontSize}
                 fontFamily="Inter, system-ui, sans-serif"
-                fill={textColor}
+                fill={draftText ? (lockedByColor || "#6366F1") : textColor}
+                fontStyle={draftText ? "italic" : "normal"}
+                opacity={draftText ? 0.7 : 1}
                 wrap="word"
                 ellipsis
                 verticalAlign="middle"
@@ -168,6 +174,16 @@ export function Shape({
       }}
       onDragEnd={(e) => {
         onDragEnd(object.id, e.target.x(), e.target.y());
+      }}
+      onMouseEnter={(e) => {
+        if (isLockedByOther) {
+          const container = e.target.getStage()?.container();
+          if (container) container.style.cursor = "not-allowed";
+        }
+      }}
+      onMouseLeave={(e) => {
+        const container = e.target.getStage()?.container();
+        if (container) container.style.cursor = "default";
       }}
     >
       {renderShape()}

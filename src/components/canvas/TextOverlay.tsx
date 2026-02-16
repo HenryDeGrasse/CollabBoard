@@ -9,6 +9,7 @@ interface TextOverlayProps {
   scale: number;
   onCommit: (id: string, text: string) => void;
   onCancel: () => void;
+  onDraftChange?: (text: string) => void;
 }
 
 export function TextOverlay({
@@ -18,6 +19,7 @@ export function TextOverlay({
   scale,
   onCommit,
   onCancel,
+  onDraftChange,
 }: TextOverlayProps) {
   const [text, setText] = useState(object.text || "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -114,7 +116,10 @@ export function TextOverlay({
     <textarea
       ref={textareaRef}
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        setText(e.target.value);
+        onDraftChange?.(e.target.value);
+      }}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       style={{

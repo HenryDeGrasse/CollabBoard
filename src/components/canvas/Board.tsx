@@ -35,6 +35,8 @@ interface BoardProps {
   onDeleteConnector: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
   onSetEditingObject: (objectId: string | null) => void;
+  onDraftTextChange: (text: string) => void;
+  getDraftTextForObject: (objectId: string) => { text: string; userName: string } | null;
   isObjectLocked: (objectId: string) => { locked: boolean; lockedBy?: string; lockedByColor?: string };
   onResetTool: (selectId?: string) => void;
   onPushUndo: (action: UndoAction) => void;
@@ -58,6 +60,8 @@ export function Board({
   onDeleteConnector,
   onCursorMove,
   onSetEditingObject,
+  onDraftTextChange,
+  getDraftTextForObject,
   isObjectLocked,
   onResetTool,
   onPushUndo,
@@ -882,6 +886,7 @@ export function Board({
                   isEditing={editingObjectId === obj.id}
                   isLockedByOther={lock.locked}
                   lockedByColor={lock.lockedByColor}
+                  draftText={getDraftTextForObject(obj.id)?.text}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
@@ -906,6 +911,7 @@ export function Board({
                   isLockedByOther={lock.locked}
                   lockedByName={lock.lockedBy}
                   lockedByColor={lock.lockedByColor}
+                  draftText={getDraftTextForObject(obj.id)?.text}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
@@ -943,6 +949,7 @@ export function Board({
           scale={viewport.scale}
           onCommit={handleTextCommit}
           onCancel={handleTextCancel}
+          onDraftChange={onDraftTextChange}
         />
       )}
     </div>

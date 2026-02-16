@@ -13,7 +13,14 @@
     "test:coverage": "vitest run --coverage",
     "preflight": "npm run test && npm run build",
     "deploy:prod": "npm run preflight && vercel --prod",
-    "prepare": "husky"
+    "prepare": "husky",
+    "emulators": "firebase emulators:start",
+    "dev:emulator": "concurrently \"firebase emulators:start\" \"sleep 3 && vite --mode emulator\"",
+    "test:e2e": "playwright test",
+    "test:e2e:emulator": "USE_EMULATORS=true playwright test",
+    "test:e2e:prod": "USE_EMULATORS=false TEST_BASE_URL=https://collabboard-eta.vercel.app playwright test",
+    "test:stress": "USE_EMULATORS=true playwright test --project=stress",
+    "test:stress:prod": "USE_EMULATORS=false TEST_BASE_URL=https://collabboard-eta.vercel.app playwright test --project=stress"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -29,6 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -38,6 +46,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.24",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
