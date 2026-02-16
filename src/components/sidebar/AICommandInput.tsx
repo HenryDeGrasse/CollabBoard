@@ -10,12 +10,16 @@ export function AICommandInput({ aiAgent }: AICommandInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { sendCommand, isProcessing, lastResponse, error } = aiAgent;
 
+  const [comingSoonMsg, setComingSoonMsg] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!command.trim() || isProcessing) return;
 
-    await sendCommand(command.trim());
+    // AI agent not yet deployed — show placeholder
+    setComingSoonMsg(true);
     setCommand("");
+    setTimeout(() => setComingSoonMsg(false), 5000);
   };
 
   if (!isOpen) {
@@ -48,21 +52,20 @@ export function AICommandInput({ aiAgent }: AICommandInputProps) {
 
       {/* Response area */}
       <div className="px-4 py-3 max-h-40 overflow-y-auto">
-        {isProcessing && (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <div className="animate-spin w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full" />
-            Processing command...
+        {comingSoonMsg && (
+          <div className="flex items-start gap-2 text-sm text-indigo-600 bg-indigo-50 rounded-lg p-2.5">
+            <span>✨</span>
+            <div>
+              <p className="font-medium">AI Assistant coming soon!</p>
+              <p className="text-xs text-indigo-400 mt-0.5">
+                This feature will use GPT-4o to create templates, rearrange objects, and build layouts from natural language commands.
+              </p>
+            </div>
           </div>
         )}
-        {!isProcessing && error && (
-          <p className="text-sm text-red-500">{error}</p>
-        )}
-        {!isProcessing && lastResponse?.success && (
-          <p className="text-sm text-green-600">{lastResponse.message}</p>
-        )}
-        {!isProcessing && !lastResponse && !error && (
+        {!comingSoonMsg && (
           <p className="text-xs text-gray-400">
-            Try: "Create a SWOT analysis", "Add 4 sticky notes", "Arrange in a grid"
+            AI-powered board commands are coming soon. Try: "Create a SWOT analysis", "Add sticky notes", "Arrange in a grid"
           </p>
         )}
       </div>

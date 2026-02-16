@@ -291,8 +291,18 @@ export function Board({
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
       throttledDragUpdate(id, x, y);
+      // Also broadcast cursor position during drag
+      const stage = stageRef.current;
+      if (stage) {
+        const pointer = stage.getPointerPosition();
+        if (pointer) {
+          const cx = (pointer.x - stage.x()) / stage.scaleX();
+          const cy = (pointer.y - stage.y()) / stage.scaleY();
+          onCursorMove(cx, cy);
+        }
+      }
     },
-    [throttledDragUpdate]
+    [throttledDragUpdate, stageRef, onCursorMove]
   );
 
   const handleDragEnd = useCallback(
