@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { Group, Rect, Text } from "react-konva";
 import type { BoardObject } from "../../types/board";
-import { ResizeHandles, applyResize, type ResizeHandle } from "./ResizeHandles";
+import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
 
 interface FrameProps {
   object: BoardObject;
@@ -25,34 +25,8 @@ export function Frame({
   onUpdateObject,
 }: FrameProps) {
   const groupRef = useRef<any>(null);
-  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const TITLE_HEIGHT = 32;
-
-  const handleResizeStart = (_id: string, _handle: ResizeHandle) => {
-    resizeStartRef.current = {
-      x: object.x,
-      y: object.y,
-      width: object.width,
-      height: object.height,
-    };
-  };
-
-  const handleResize = (_id: string, handle: ResizeHandle, dx: number, dy: number) => {
-    if (!resizeStartRef.current) return;
-    const result = applyResize(
-      { ...object, ...resizeStartRef.current },
-      handle,
-      dx,
-      dy,
-      120,
-      80
-    );
-    onUpdateObject(object.id, result);
-  };
-
-  const handleResizeEnd = (_id: string) => {
-    resizeStartRef.current = null;
-  };
 
   return (
     <Group
@@ -104,9 +78,17 @@ export function Frame({
       {isSelected && (
         <ResizeHandles
           object={object}
-          onResizeStart={handleResizeStart}
-          onResize={handleResize}
-          onResizeEnd={handleResizeEnd}
+          onResizeStart={() => {
+            originalRef.current = { x: object.x, y: object.y, width: object.width, height: object.height };
+          }}
+          onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
+            if (!originalRef.current) return;
+            const result = computeResize(originalRef.current, handle, px, py, 120, 80);
+            onUpdateObject(object.id, result);
+          }}
+          onResizeEnd={() => {
+            originalRef.current = null;
+          }}
         />
       )}
     </Group>
