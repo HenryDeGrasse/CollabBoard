@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { BoardObject, Connector } from "../types/board";
 import { Board, type ToolType } from "../components/canvas/Board";
 import { Toolbar } from "../components/toolbar/Toolbar";
 import { PresencePanel } from "../components/sidebar/PresencePanel";
@@ -8,6 +9,7 @@ import { usePresence } from "../hooks/usePresence";
 import { useCanvas } from "../hooks/useCanvas";
 import { useSelection } from "../hooks/useSelection";
 import { useAIAgent } from "../hooks/useAIAgent";
+import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useAuth } from "../components/auth/AuthProvider";
 import { createBoard, getBoardMetadata } from "../services/board";
 import { DEFAULT_STICKY_COLOR } from "../utils/colors";
@@ -33,6 +35,8 @@ export function BoardPage({ boardId }: BoardPageProps) {
     deleteObject,
     createConnector,
     deleteConnector,
+    restoreObject,
+    restoreConnector,
     loading,
   } = useBoard(boardId);
   const { users, updateCursor, setEditingObject, isObjectLocked, myColor } =
@@ -40,6 +44,21 @@ export function BoardPage({ boardId }: BoardPageProps) {
   const canvas = useCanvas();
   const selection = useSelection();
   const aiAgent = useAIAgent(boardId, userId);
+  const undoRedo = useUndoRedo(
+    createObject,
+    updateObject,
+    deleteObject,
+    createConnector,
+    deleteConnector,
+    restoreObject,
+    restoreConnector,
+  );
+
+  // Clipboard for copy/paste
+  const clipboardRef = useRef<{ objects: BoardObject[]; connectors: Connector[] }>({
+    objects: [],
+    connectors: [],
+  });
 
   // Initialize board metadata if it doesn't exist
   useEffect(() => {
@@ -53,7 +72,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
     });
   }, [boardId, userId, initialized]);
 
-  // Keyboard shortcuts for tools
+  // Keyboard shortcuts for tools + undo/redo + copy/paste/duplicate
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -63,28 +82,166 @@ export function BoardPage({ boardId }: BoardPageProps) {
         return;
       }
 
-      switch (e.key.toLowerCase()) {
-        case "v":
-          setActiveTool("select");
-          break;
-        case "s":
-          setActiveTool("sticky");
-          break;
-        case "r":
-          setActiveTool("rectangle");
-          break;
-        case "c":
-          setActiveTool("circle");
-          break;
-        case "a":
-          setActiveTool("arrow");
-          break;
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      // Undo: Ctrl+Z
+      if (ctrl && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undoRedo.undo();
+        return;
+      }
+
+      // Redo: Ctrl+Shift+Z or Ctrl+Y
+      if (ctrl && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
+        e.preventDefault();
+        undoRedo.redo();
+        return;
+      }
+
+      // Copy: Ctrl+C
+      if (ctrl && e.key === "c") {
+        e.preventDefault();
+        const selectedObjs = Array.from(selection.selectedIds)
+          .map((id) => objects[id])
+          .filter(Boolean);
+        // Copy connectors where both ends are selected
+        const selectedSet = selection.selectedIds;
+        const selectedConns = Object.values(connectors).filter(
+          (c) => selectedSet.has(c.fromId) && selectedSet.has(c.toId)
+        );
+        clipboardRef.current = {
+          objects: selectedObjs.map((o) => ({ ...o })),
+          connectors: selectedConns.map((c) => ({ ...c })),
+        };
+        return;
+      }
+
+      // Paste: Ctrl+V
+      if (ctrl && e.key === "v") {
+        e.preventDefault();
+        const { objects: clipObjs, connectors: clipConns } = clipboardRef.current;
+        if (clipObjs.length === 0) return;
+
+        const OFFSET = 20;
+        const idMap: Record<string, string> = {};
+        const batchActions: import("../hooks/useUndoRedo").UndoAction[] = [];
+
+        // Create pasted objects
+        for (const obj of clipObjs) {
+          const newId = createObject({
+            type: obj.type,
+            x: obj.x + OFFSET,
+            y: obj.y + OFFSET,
+            width: obj.width,
+            height: obj.height,
+            color: obj.color,
+            text: obj.text,
+            rotation: obj.rotation,
+            zIndex: obj.zIndex,
+            createdBy: userId,
+            points: obj.points,
+            strokeWidth: obj.strokeWidth,
+          });
+          idMap[obj.id] = newId;
+        }
+
+        // Create pasted connectors with remapped IDs
+        for (const conn of clipConns) {
+          const newFromId = idMap[conn.fromId];
+          const newToId = idMap[conn.toId];
+          if (newFromId && newToId) {
+            createConnector({
+              fromId: newFromId,
+              toId: newToId,
+              style: conn.style,
+            });
+          }
+        }
+
+        // Select pasted objects
+        selection.selectMultiple(Object.values(idMap));
+
+        // Update clipboard positions for subsequent pastes
+        clipboardRef.current = {
+          objects: clipObjs.map((o) => ({ ...o, x: o.x + OFFSET, y: o.y + OFFSET })),
+          connectors: clipConns,
+        };
+        return;
+      }
+
+      // Duplicate: Ctrl+D
+      if (ctrl && e.key === "d") {
+        e.preventDefault();
+        const selectedObjs = Array.from(selection.selectedIds)
+          .map((id) => objects[id])
+          .filter(Boolean);
+        if (selectedObjs.length === 0) return;
+
+        const OFFSET = 20;
+        const idMap: Record<string, string> = {};
+
+        for (const obj of selectedObjs) {
+          const newId = createObject({
+            type: obj.type,
+            x: obj.x + OFFSET,
+            y: obj.y + OFFSET,
+            width: obj.width,
+            height: obj.height,
+            color: obj.color,
+            text: obj.text,
+            rotation: obj.rotation,
+            zIndex: obj.zIndex,
+            createdBy: userId,
+            points: obj.points,
+            strokeWidth: obj.strokeWidth,
+          });
+          idMap[obj.id] = newId;
+        }
+
+        // Duplicate connectors where both ends are selected
+        const selectedSet = selection.selectedIds;
+        for (const conn of Object.values(connectors)) {
+          if (selectedSet.has(conn.fromId) && selectedSet.has(conn.toId)) {
+            const newFromId = idMap[conn.fromId];
+            const newToId = idMap[conn.toId];
+            if (newFromId && newToId) {
+              createConnector({ fromId: newFromId, toId: newToId, style: conn.style });
+            }
+          }
+        }
+
+        selection.selectMultiple(Object.values(idMap));
+        return;
+      }
+
+      // Tool shortcuts (only without ctrl)
+      if (!ctrl) {
+        switch (e.key.toLowerCase()) {
+          case "v":
+            setActiveTool("select");
+            break;
+          case "s":
+            setActiveTool("sticky");
+            break;
+          case "r":
+            setActiveTool("rectangle");
+            break;
+          case "c":
+            setActiveTool("circle");
+            break;
+          case "a":
+            setActiveTool("arrow");
+            break;
+          case "l":
+            setActiveTool("line");
+            break;
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [undoRedo, selection, objects, connectors, createObject, createConnector, userId]);
 
   const handleCursorMove = useCallback(
     (x: number, y: number) => {
@@ -182,6 +339,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
         onCursorMove={handleCursorMove}
         onSetEditingObject={setEditingObject}
         isObjectLocked={isObjectLocked}
+        onPushUndo={undoRedo.pushAction}
         onResetTool={(selectId) => {
           setActiveTool("select");
           if (selectId) {

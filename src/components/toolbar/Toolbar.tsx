@@ -5,6 +5,7 @@ import {
   Square,
   Circle,
   ArrowUpRight,
+  Minus,
   ChevronDown,
 } from "lucide-react";
 import type { ToolType } from "../canvas/Board";
@@ -26,6 +27,7 @@ const tools: { id: ToolType; label: string; icon: React.ReactNode; shortcut: str
   { id: "rectangle", label: "Rectangle", icon: <Square size={18} />, shortcut: "R" },
   { id: "circle", label: "Circle", icon: <Circle size={18} />, shortcut: "C" },
   { id: "arrow", label: "Arrow", icon: <ArrowUpRight size={18} />, shortcut: "A" },
+  { id: "line", label: "Line", icon: <Minus size={18} />, shortcut: "L" },
 ];
 
 function ColorDropdown({
@@ -103,7 +105,7 @@ export function Toolbar({
   onChangeSelectedColor,
 }: ToolbarProps) {
   const showCreationColor =
-    activeTool === "sticky" || activeTool === "rectangle" || activeTool === "circle";
+    activeTool === "sticky" || activeTool === "rectangle" || activeTool === "circle" || activeTool === "line";
 
   const creationColors = activeTool === "sticky" ? getStickyColorArray() : getShapeColorArray();
   const allColors = [...new Set([...getStickyColorArray(), ...getShapeColorArray()])];

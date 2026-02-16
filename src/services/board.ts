@@ -58,6 +58,12 @@ export function deleteObject(boardId: string, objectId: string) {
   return remove(ref(db, `boards/${boardId}/objects/${objectId}`));
 }
 
+// Restore a previously deleted object (preserves original ID)
+export function restoreObject(boardId: string, obj: BoardObject) {
+  const objectRef = ref(db, `boards/${boardId}/objects/${obj.id}`);
+  return set(objectRef, { ...obj, updatedAt: Date.now() });
+}
+
 // ─── Connectors ───────────────────────────────────────────────
 
 export function createConnector(boardId: string, conn: Omit<Connector, "id">): string {
@@ -66,6 +72,12 @@ export function createConnector(boardId: string, conn: Omit<Connector, "id">): s
   const id = newRef.key!;
   set(newRef, { ...conn, id });
   return id;
+}
+
+// Restore a previously deleted connector (preserves original ID)
+export function restoreConnector(boardId: string, conn: Connector) {
+  const connectorRef = ref(db, `boards/${boardId}/connectors/${conn.id}`);
+  return set(connectorRef, conn);
 }
 
 export function deleteConnector(boardId: string, connectorId: string) {

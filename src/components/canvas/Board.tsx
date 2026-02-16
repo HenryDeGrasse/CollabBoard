@@ -1,18 +1,20 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Stage, Layer, Arrow } from "react-konva";
+import { Stage, Layer, Arrow, Line } from "react-konva";
 import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
+import { LineObject } from "./LineTool";
 import { ConnectorLine } from "./Connector";
 import { RemoteCursor } from "./RemoteCursor";
 import { SelectionRect } from "./SelectionRect";
 import { TextOverlay } from "./TextOverlay";
 import type { BoardObject, Connector } from "../../types/board";
+import type { UndoAction } from "../../hooks/useUndoRedo";
 import type { UserPresence } from "../../types/presence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
 import { throttle } from "../../utils/throttle";
 
-export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow";
+export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line";
 
 interface BoardProps {
   objects: Record<string, BoardObject>;
@@ -34,6 +36,7 @@ interface BoardProps {
   onSetEditingObject: (objectId: string | null) => void;
   isObjectLocked: (objectId: string) => { locked: boolean; lockedBy?: string; lockedByColor?: string };
   onResetTool: (selectId?: string) => void;
+  onPushUndo: (action: UndoAction) => void;
 }
 
 export function Board({
@@ -56,6 +59,7 @@ export function Board({
   onSetEditingObject,
   isObjectLocked,
   onResetTool,
+  onPushUndo,
 }: BoardProps) {
   const { viewport, setViewport, onWheel, stageRef } = canvas;
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
@@ -83,6 +87,14 @@ export function Board({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Line drawing state
+  const [lineDraw, setLineDraw] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
 
   // Arrow drawing state
   const [arrowDraw, setArrowDraw] = useState<{
@@ -227,6 +239,13 @@ export function Board({
         );
       }
 
+      // Line drawing preview
+      if (lineDraw && activeTool === "line") {
+        setLineDraw((prev) =>
+          prev ? { ...prev, endX: canvasPoint.x, endY: canvasPoint.y } : null
+        );
+      }
+
       // Selection rect drag (skip during right-click pan)
       if (selectionStartRef.current && activeTool === "select" && !spaceHeldRef.current && !rightClickPanRef.current) {
         const start = selectionStartRef.current;
@@ -271,16 +290,71 @@ export function Board({
       }
 
       if (activeTool === "arrow") {
-        // Cancel arrow on empty click
         if (arrowDraw) setArrowDraw(null);
+        return;
+      }
+
+      // Line tool: first click sets start, second click creates line
+      if (activeTool === "line") {
+        if (!lineDraw) {
+          setLineDraw({
+            startX: canvasPoint.x,
+            startY: canvasPoint.y,
+            endX: canvasPoint.x,
+            endY: canvasPoint.y,
+          });
+        } else {
+          const maxZ = Math.max(0, ...Object.values(objects).map((o) => o.zIndex || 0));
+          const x = Math.min(lineDraw.startX, canvasPoint.x);
+          const y = Math.min(lineDraw.startY, canvasPoint.y);
+          const newId = onCreateObject({
+            type: "line",
+            x,
+            y,
+            width: Math.abs(canvasPoint.x - lineDraw.startX) || 1,
+            height: Math.abs(canvasPoint.y - lineDraw.startY) || 1,
+            color: activeColor,
+            rotation: 0,
+            zIndex: maxZ + 1,
+            createdBy: currentUserId,
+            points: [
+              lineDraw.startX - x,
+              lineDraw.startY - y,
+              canvasPoint.x - x,
+              canvasPoint.y - y,
+            ],
+            strokeWidth: 3,
+          });
+          setLineDraw(null);
+          // Push undo after Firebase assigns the object
+          setTimeout(() => {
+            const created = objects[newId];
+            if (created) {
+              onPushUndo({ type: "create_object", objectId: newId, object: created });
+            }
+          }, 100);
+          onResetTool(newId);
+        }
         return;
       }
 
       // Create object at click position
       const maxZIndex = Math.max(0, ...Object.values(objects).map((o) => o.zIndex || 0));
 
+      const createAndTrack = (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => {
+        const newId = onCreateObject(obj);
+        // Track for undo after Firebase sync
+        setTimeout(() => {
+          const created = objects[newId];
+          if (created) {
+            onPushUndo({ type: "create_object", objectId: newId, object: created });
+          }
+        }, 100);
+        return newId;
+      };
+
       if (activeTool === "sticky") {
-        const newId = onCreateObject({
+        const newId = createAndTrack({
           type: "sticky",
           x: canvasPoint.x - 75,
           y: canvasPoint.y - 75,
@@ -294,7 +368,7 @@ export function Board({
         });
         onResetTool(newId);
       } else if (activeTool === "rectangle") {
-        const newId = onCreateObject({
+        const newId = createAndTrack({
           type: "rectangle",
           x: canvasPoint.x - 75,
           y: canvasPoint.y - 50,
@@ -308,7 +382,7 @@ export function Board({
         });
         onResetTool(newId);
       } else if (activeTool === "circle") {
-        const newId = onCreateObject({
+        const newId = createAndTrack({
           type: "circle",
           x: canvasPoint.x - 50,
           y: canvasPoint.y - 50,
@@ -331,16 +405,24 @@ export function Board({
       currentUserId,
       editingObjectId,
       arrowDraw,
+      lineDraw,
       onCreateObject,
       onClearSelection,
       onSetEditingObject,
       onResetTool,
+      onPushUndo,
     ]
   );
 
+  const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
+
   const handleDragStart = useCallback((id: string) => {
     draggingRef.current.add(id);
-  }, []);
+    const obj = objects[id];
+    if (obj) {
+      dragStartPosRef.current[id] = { x: obj.x, y: obj.y };
+    }
+  }, [objects]);
 
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
@@ -362,9 +444,19 @@ export function Board({
   const handleDragEnd = useCallback(
     (id: string, x: number, y: number) => {
       draggingRef.current.delete(id);
+      const startPos = dragStartPosRef.current[id];
       onUpdateObject(id, { x, y });
+      if (startPos && (startPos.x !== x || startPos.y !== y)) {
+        onPushUndo({
+          type: "update_object",
+          objectId: id,
+          before: { x: startPos.x, y: startPos.y },
+          after: { x, y },
+        });
+      }
+      delete dragStartPosRef.current[id];
     },
-    [onUpdateObject]
+    [onUpdateObject, onPushUndo]
   );
 
   const handleConnectorSelect = useCallback(
@@ -518,13 +610,26 @@ export function Board({
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         if (editingObjectId) return;
-        selectedIds.forEach((id) => onDeleteObject(id));
-        selectedConnectorIds.forEach((id) => onDeleteConnector(id));
+        const batchActions: UndoAction[] = [];
+        selectedIds.forEach((id) => {
+          const obj = objects[id];
+          if (obj) batchActions.push({ type: "delete_object", objectId: id, object: { ...obj } });
+          onDeleteObject(id);
+        });
+        selectedConnectorIds.forEach((id) => {
+          const conn = connectors[id];
+          if (conn) batchActions.push({ type: "delete_connector", connectorId: id, connector: { ...conn } });
+          onDeleteConnector(id);
+        });
+        if (batchActions.length > 0) {
+          onPushUndo(batchActions.length === 1 ? batchActions[0] : { type: "batch", actions: batchActions });
+        }
         onClearSelection();
         setSelectedConnectorIds(new Set());
       }
       if (e.key === "Escape") {
         setArrowDraw(null);
+        setLineDraw(null);
         if (editingObjectId) {
           setEditingObjectId(null);
           onSetEditingObject(null);
@@ -536,7 +641,7 @@ export function Board({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds, selectedConnectorIds, editingObjectId, onDeleteObject, onDeleteConnector, onClearSelection, onSetEditingObject]);
+  }, [selectedIds, selectedConnectorIds, editingObjectId, objects, connectors, onDeleteObject, onDeleteConnector, onClearSelection, onSetEditingObject, onPushUndo]);
 
   const handleStageDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -555,7 +660,7 @@ export function Board({
   // Cursor style
   const cursorStyle = isPanning
     ? "grab"
-    : activeTool === "arrow"
+    : activeTool === "arrow" || activeTool === "line"
     ? "crosshair"
     : activeTool === "select"
     ? "default"
@@ -576,6 +681,15 @@ export function Board({
           opacity: 0.5,
         }}
       />
+
+      {/* Line tool hint */}
+      {activeTool === "line" && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg pointer-events-none">
+          {lineDraw
+            ? "Click to place the line's end point — Esc to cancel"
+            : "Click to place the line's start point"}
+        </div>
+      )}
 
       {/* Arrow tool hint */}
       {activeTool === "arrow" && (
@@ -637,9 +751,36 @@ export function Board({
             />
           )}
 
-          {/* Render shapes (rectangles, circles, lines) */}
+          {/* Line drawing preview */}
+          {lineDraw && (
+            <Line
+              points={[lineDraw.startX, lineDraw.startY, lineDraw.endX, lineDraw.endY]}
+              stroke={activeColor}
+              strokeWidth={3}
+              dash={[6, 4]}
+              lineCap="round"
+              listening={false}
+            />
+          )}
+
+          {/* Render line objects */}
           {sortedObjects
-            .filter((obj) => ["rectangle", "circle", "line"].includes(obj.type))
+            .filter((obj) => obj.type === "line")
+            .map((obj) => (
+              <LineObject
+                key={obj.id}
+                object={objects[obj.id] || obj}
+                isSelected={selectedIds.has(obj.id)}
+                onSelect={handleObjectClick}
+                onDragStart={handleDragStart}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
+              />
+            ))}
+
+          {/* Render shapes (rectangles, circles) */}
+          {sortedObjects
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type))
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (

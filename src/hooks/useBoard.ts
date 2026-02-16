@@ -8,6 +8,8 @@ import {
   deleteObject as deleteObj,
   createConnector as createConn,
   deleteConnector as deleteConn,
+  restoreObject as restoreObj,
+  restoreConnector as restoreConn,
 } from "../services/board";
 
 export interface UseBoardReturn {
@@ -18,6 +20,8 @@ export interface UseBoardReturn {
   deleteObject: (id: string) => void;
   createConnector: (conn: Omit<Connector, "id">) => string;
   deleteConnector: (id: string) => void;
+  restoreObject: (obj: BoardObject) => void;
+  restoreConnector: (conn: Connector) => void;
   loading: boolean;
 }
 
@@ -120,6 +124,20 @@ export function useBoard(boardId: string): UseBoardReturn {
     [boardId]
   );
 
+  const restoreObject = useCallback(
+    (obj: BoardObject) => {
+      restoreObj(boardId, obj);
+    },
+    [boardId]
+  );
+
+  const restoreConnector = useCallback(
+    (conn: Connector) => {
+      restoreConn(boardId, conn);
+    },
+    [boardId]
+  );
+
   return {
     objects,
     connectors,
@@ -128,6 +146,8 @@ export function useBoard(boardId: string): UseBoardReturn {
     deleteObject,
     createConnector,
     deleteConnector,
+    restoreObject,
+    restoreConnector,
     loading,
   };
 }

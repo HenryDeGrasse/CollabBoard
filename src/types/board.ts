@@ -14,6 +14,9 @@ export interface BoardObject {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
+  // Line-specific fields
+  points?: number[]; // [x1, y1, x2, y2, ...] relative to object x,y
+  strokeWidth?: number;
 }
 
 export interface Connector {
