@@ -13,6 +13,7 @@ import type { UndoAction } from "../../hooks/useUndoRedo";
 import type { UserPresence } from "../../types/presence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
 import { throttle } from "../../utils/throttle";
+import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
 
 export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line";
 
@@ -418,6 +419,8 @@ export function Board({
 
   // Track start positions for all selected objects during group drag
   const groupDragOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
+  // Live position overrides during drag — triggers re-render so connectors update
+  const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
 
   const handleDragStart = useCallback((id: string) => {
     draggingRef.current.add(id);
@@ -448,14 +451,18 @@ export function Board({
     (id: string, x: number, y: number) => {
       throttledDragUpdate(id, x, y);
 
-      // Move other selected objects in the group — update both Firebase and Konva nodes
+      // Build live positions for all dragged items (for connector re-render)
+      const positions: Record<string, { x: number; y: number }> = { [id]: { x, y } };
+
+      // Move other selected objects in the group
       const offsets = groupDragOffsetsRef.current;
       const stage = stageRef.current;
       for (const [sid, offset] of Object.entries(offsets)) {
         const newX = x + offset.dx;
         const newY = y + offset.dy;
+        positions[sid] = { x: newX, y: newY };
         throttledDragUpdate(sid, newX, newY);
-        // Also move the Konva node directly for instant visual feedback
+        // Move Konva node directly for instant visual feedback
         if (stage) {
           const node = stage.findOne(`#node-${sid}`);
           if (node) {
@@ -464,6 +471,9 @@ export function Board({
           }
         }
       }
+
+      // Update live drag positions so connectors re-render
+      setDragPositions(positions);
 
       // Broadcast cursor position during drag
       if (stage) {
@@ -515,6 +525,7 @@ export function Board({
         delete dragStartPosRef.current[sid];
       }
       groupDragOffsetsRef.current = {};
+      setDragPositions({});
 
       if (batchUndoActions.length > 0) {
         onPushUndo(
@@ -655,41 +666,27 @@ export function Board({
 
       // Only process if drag was meaningful (> 5px)
       if (rect.width > 5 && rect.height > 5) {
-        // Use intersection (any overlap) instead of full containment
-        const selectedObjIds = Object.values(objects)
-          .filter(
-            (obj) =>
-              obj.x < rect.x + rect.width &&
-              obj.x + obj.width > rect.x &&
-              obj.y < rect.y + rect.height &&
-              obj.y + obj.height > rect.y
-          )
-          .map((obj) => obj.id);
+        // Select objects that overlap the selection rectangle
+        const selectedObjIds = getObjectIdsInRect(objects, rect);
 
-        if (selectedObjIds.length > 0) {
-          // Clear first, then add all
+        // Select connectors whose line segment intersects the selection rectangle
+        // This allows selecting arrows by dragging over just the arrow, not its endpoints
+        const selectedConnIds = getConnectorIdsInRect(connectors, objects, rect);
+
+        if (selectedObjIds.length > 0 || selectedConnIds.length > 0) {
           onClearSelection();
           selectedObjIds.forEach((id) => onSelect(id, true));
-
-          // Also select connectors where both connected objects are in the selection
-          const selectedSet = new Set(selectedObjIds);
-          const connIds = Object.values(connectors)
-            .filter((c) => selectedSet.has(c.fromId) && selectedSet.has(c.toId))
-            .map((c) => c.id);
-          if (connIds.length > 0) {
-            setSelectedConnectorIds(new Set(connIds));
-          }
-
+          setSelectedConnectorIds(new Set(selectedConnIds));
           justFinishedSelectionRef.current = true;
         } else {
-          justFinishedSelectionRef.current = true; // Still prevent click clearing after drag
+          justFinishedSelectionRef.current = true;
         }
       }
     }
 
     selectionStartRef.current = null;
     setSelectionRect((prev) => ({ ...prev, visible: false }));
-  }, [selectionRect, objects, onSelect, onClearSelection]);
+  }, [selectionRect, objects, connectors, onSelect, onClearSelection]);
 
   // Handle keyboard delete + escape
   useEffect(() => {
@@ -826,6 +823,7 @@ export function Board({
               objects={objects}
               isSelected={selectedConnectorIds.has(conn.id)}
               onSelect={handleConnectorSelect}
+              positionOverrides={dragPositions}
             />
           ))}
 
