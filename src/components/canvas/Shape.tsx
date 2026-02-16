@@ -153,6 +153,7 @@ export function Shape({
 
   return (
     <Group
+      id={`node-${object.id}`}
       ref={groupRef}
       x={object.x}
       y={object.y}

@@ -416,19 +416,56 @@ export function Board({
 
   const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
 
+  // Track start positions for all selected objects during group drag
+  const groupDragOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
+
   const handleDragStart = useCallback((id: string) => {
     draggingRef.current.add(id);
     const obj = objects[id];
     if (obj) {
       dragStartPosRef.current[id] = { x: obj.x, y: obj.y };
     }
-  }, [objects]);
+
+    // If this object is part of a multi-selection, record offsets for group drag
+    if (selectedIds.has(id) && selectedIds.size > 1) {
+      const offsets: Record<string, { dx: number; dy: number }> = {};
+      selectedIds.forEach((sid) => {
+        if (sid !== id) {
+          const sobj = objects[sid];
+          if (sobj && obj) {
+            offsets[sid] = { dx: sobj.x - obj.x, dy: sobj.y - obj.y };
+            dragStartPosRef.current[sid] = { x: sobj.x, y: sobj.y };
+          }
+        }
+      });
+      groupDragOffsetsRef.current = offsets;
+    } else {
+      groupDragOffsetsRef.current = {};
+    }
+  }, [objects, selectedIds]);
 
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
       throttledDragUpdate(id, x, y);
-      // Also broadcast cursor position during drag
+
+      // Move other selected objects in the group — update both Firebase and Konva nodes
+      const offsets = groupDragOffsetsRef.current;
       const stage = stageRef.current;
+      for (const [sid, offset] of Object.entries(offsets)) {
+        const newX = x + offset.dx;
+        const newY = y + offset.dy;
+        throttledDragUpdate(sid, newX, newY);
+        // Also move the Konva node directly for instant visual feedback
+        if (stage) {
+          const node = stage.findOne(`#node-${sid}`);
+          if (node) {
+            node.x(newX);
+            node.y(newY);
+          }
+        }
+      }
+
+      // Broadcast cursor position during drag
       if (stage) {
         const pointer = stage.getPointerPosition();
         if (pointer) {
@@ -444,10 +481,14 @@ export function Board({
   const handleDragEnd = useCallback(
     (id: string, x: number, y: number) => {
       draggingRef.current.delete(id);
+
+      // Commit primary dragged object
       const startPos = dragStartPosRef.current[id];
       onUpdateObject(id, { x, y });
+
+      const batchUndoActions: UndoAction[] = [];
       if (startPos && (startPos.x !== x || startPos.y !== y)) {
-        onPushUndo({
+        batchUndoActions.push({
           type: "update_object",
           objectId: id,
           before: { x: startPos.x, y: startPos.y },
@@ -455,6 +496,33 @@ export function Board({
         });
       }
       delete dragStartPosRef.current[id];
+
+      // Commit all other group-dragged objects
+      const offsets = groupDragOffsetsRef.current;
+      for (const [sid, offset] of Object.entries(offsets)) {
+        const newX = x + offset.dx;
+        const newY = y + offset.dy;
+        const sStart = dragStartPosRef.current[sid];
+        onUpdateObject(sid, { x: newX, y: newY });
+        if (sStart && (sStart.x !== newX || sStart.y !== newY)) {
+          batchUndoActions.push({
+            type: "update_object",
+            objectId: sid,
+            before: { x: sStart.x, y: sStart.y },
+            after: { x: newX, y: newY },
+          });
+        }
+        delete dragStartPosRef.current[sid];
+      }
+      groupDragOffsetsRef.current = {};
+
+      if (batchUndoActions.length > 0) {
+        onPushUndo(
+          batchUndoActions.length === 1
+            ? batchUndoActions[0]
+            : { type: "batch", actions: batchUndoActions }
+        );
+      }
     },
     [onUpdateObject, onPushUndo]
   );
@@ -515,14 +583,28 @@ export function Board({
 
   const handleObjectClick = useCallback(
     (id: string, multi?: boolean) => {
-      setSelectedConnectorIds(new Set()); // Clear connector selection
       if (activeTool === "arrow") {
         handleObjectClickForArrow(id);
       } else {
         onSelect(id, multi);
+        // After selection changes, update connector selection:
+        // Select connectors where both ends are in the (new) selection
+        // We need to compute what the new selectedIds will be
+        const newSelected = new Set(selectedIds);
+        if (multi) {
+          if (newSelected.has(id)) newSelected.delete(id);
+          else newSelected.add(id);
+        } else {
+          newSelected.clear();
+          newSelected.add(id);
+        }
+        const connIds = Object.values(connectors)
+          .filter((c) => newSelected.has(c.fromId) && newSelected.has(c.toId))
+          .map((c) => c.id);
+        setSelectedConnectorIds(new Set(connIds));
       }
     },
-    [activeTool, handleObjectClickForArrow, onSelect]
+    [activeTool, handleObjectClickForArrow, onSelect, selectedIds, connectors]
   );
 
   const handleTextCommit = useCallback(
@@ -588,6 +670,16 @@ export function Board({
           // Clear first, then add all
           onClearSelection();
           selectedObjIds.forEach((id) => onSelect(id, true));
+
+          // Also select connectors where both connected objects are in the selection
+          const selectedSet = new Set(selectedObjIds);
+          const connIds = Object.values(connectors)
+            .filter((c) => selectedSet.has(c.fromId) && selectedSet.has(c.toId))
+            .map((c) => c.id);
+          if (connIds.length > 0) {
+            setSelectedConnectorIds(new Set(connIds));
+          }
+
           justFinishedSelectionRef.current = true;
         } else {
           justFinishedSelectionRef.current = true; // Still prevent click clearing after drag

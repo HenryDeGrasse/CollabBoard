@@ -97,6 +97,7 @@ export function LineObject({
 
   return (
     <Group
+      id={`node-${object.id}`}
       x={object.x}
       y={object.y}
       draggable={!endpointDraggingRef.current}
