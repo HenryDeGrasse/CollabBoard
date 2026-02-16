@@ -8,7 +8,7 @@ interface AICommandInputProps {
 export function AICommandInput({ aiAgent }: AICommandInputProps) {
   const [command, setCommand] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const { sendCommand, isProcessing, lastResponse, error } = aiAgent;
+  const { isProcessing } = aiAgent;
 
   const [comingSoonMsg, setComingSoonMsg] = useState(false);
 
