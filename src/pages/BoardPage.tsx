@@ -60,6 +60,14 @@ export function BoardPage({ boardId }: BoardPageProps) {
     connectors: [],
   });
 
+  // Refs for stable keyboard handler access to current state
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
+  const connectorsRef = useRef(connectors);
+  connectorsRef.current = connectors;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+
   // Initialize board metadata if it doesn't exist
   useEffect(() => {
     if (!boardId || !userId || initialized) return;
@@ -101,13 +109,14 @@ export function BoardPage({ boardId }: BoardPageProps) {
       // Copy: Ctrl+C
       if (ctrl && e.key === "c") {
         e.preventDefault();
-        const selectedObjs = Array.from(selection.selectedIds)
-          .map((id) => objects[id])
+        const sel = selectionRef.current;
+        const objs = objectsRef.current;
+        const conns = connectorsRef.current;
+        const selectedObjs = Array.from(sel.selectedIds)
+          .map((id) => objs[id])
           .filter(Boolean);
-        // Copy connectors where both ends are selected
-        const selectedSet = selection.selectedIds;
-        const selectedConns = Object.values(connectors).filter(
-          (c) => selectedSet.has(c.fromId) && selectedSet.has(c.toId)
+        const selectedConns = Object.values(conns).filter(
+          (c) => sel.selectedIds.has(c.fromId) && sel.selectedIds.has(c.toId)
         );
         clipboardRef.current = {
           objects: selectedObjs.map((o) => ({ ...o })),
@@ -119,14 +128,13 @@ export function BoardPage({ boardId }: BoardPageProps) {
       // Paste: Ctrl+V
       if (ctrl && e.key === "v") {
         e.preventDefault();
+        const sel = selectionRef.current;
         const { objects: clipObjs, connectors: clipConns } = clipboardRef.current;
         if (clipObjs.length === 0) return;
 
         const OFFSET = 20;
         const idMap: Record<string, string> = {};
-        const batchActions: import("../hooks/useUndoRedo").UndoAction[] = [];
 
-        // Create pasted objects
         for (const obj of clipObjs) {
           const newId = createObject({
             type: obj.type,
@@ -145,23 +153,16 @@ export function BoardPage({ boardId }: BoardPageProps) {
           idMap[obj.id] = newId;
         }
 
-        // Create pasted connectors with remapped IDs
         for (const conn of clipConns) {
           const newFromId = idMap[conn.fromId];
           const newToId = idMap[conn.toId];
           if (newFromId && newToId) {
-            createConnector({
-              fromId: newFromId,
-              toId: newToId,
-              style: conn.style,
-            });
+            createConnector({ fromId: newFromId, toId: newToId, style: conn.style });
           }
         }
 
-        // Select pasted objects
-        selection.selectMultiple(Object.values(idMap));
+        sel.selectMultiple(Object.values(idMap));
 
-        // Update clipboard positions for subsequent pastes
         clipboardRef.current = {
           objects: clipObjs.map((o) => ({ ...o, x: o.x + OFFSET, y: o.y + OFFSET })),
           connectors: clipConns,
@@ -172,8 +173,11 @@ export function BoardPage({ boardId }: BoardPageProps) {
       // Duplicate: Ctrl+D
       if (ctrl && e.key === "d") {
         e.preventDefault();
-        const selectedObjs = Array.from(selection.selectedIds)
-          .map((id) => objects[id])
+        const sel = selectionRef.current;
+        const objs = objectsRef.current;
+        const conns = connectorsRef.current;
+        const selectedObjs = Array.from(sel.selectedIds)
+          .map((id) => objs[id])
           .filter(Boolean);
         if (selectedObjs.length === 0) return;
 
@@ -198,10 +202,8 @@ export function BoardPage({ boardId }: BoardPageProps) {
           idMap[obj.id] = newId;
         }
 
-        // Duplicate connectors where both ends are selected
-        const selectedSet = selection.selectedIds;
-        for (const conn of Object.values(connectors)) {
-          if (selectedSet.has(conn.fromId) && selectedSet.has(conn.toId)) {
+        for (const conn of Object.values(conns)) {
+          if (sel.selectedIds.has(conn.fromId) && sel.selectedIds.has(conn.toId)) {
             const newFromId = idMap[conn.fromId];
             const newToId = idMap[conn.toId];
             if (newFromId && newToId) {
@@ -210,7 +212,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
           }
         }
 
-        selection.selectMultiple(Object.values(idMap));
+        sel.selectMultiple(Object.values(idMap));
         return;
       }
 
@@ -241,7 +243,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [undoRedo, selection, objects, connectors, createObject, createConnector, userId]);
+  }, [undoRedo, createObject, createConnector, userId]);
 
   const handleCursorMove = useCallback(
     (x: number, y: number) => {

@@ -775,6 +775,7 @@ export function Board({
                 onDragStart={handleDragStart}
                 onDragMove={handleDragMove}
                 onDragEnd={handleDragEnd}
+                onUpdateObject={onUpdateObject}
               />
             ))}
 
