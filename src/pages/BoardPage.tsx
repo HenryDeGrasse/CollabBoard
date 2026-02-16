@@ -120,6 +120,11 @@ export function BoardPage({ boardId }: BoardPageProps) {
         activeTool={activeTool}
         activeColor={activeColor}
         selectedCount={selection.selectedIds.size}
+        selectedColor={
+          selection.selectedIds.size > 0
+            ? (objects[Array.from(selection.selectedIds)[0]]?.color || "")
+            : ""
+        }
         onToolChange={setActiveTool}
         onColorChange={setActiveColor}
         onChangeSelectedColor={handleChangeSelectedColor}
@@ -175,7 +180,13 @@ export function BoardPage({ boardId }: BoardPageProps) {
         onCursorMove={handleCursorMove}
         onSetEditingObject={setEditingObject}
         isObjectLocked={isObjectLocked}
-        onResetTool={() => setActiveTool("select")}
+        onResetTool={(selectId) => {
+          setActiveTool("select");
+          if (selectId) {
+            selection.clearSelection();
+            selection.select(selectId);
+          }
+        }}
       />
 
       {/* AI Command Input */}

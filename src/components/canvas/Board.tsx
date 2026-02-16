@@ -32,7 +32,7 @@ interface BoardProps {
   onCursorMove: (x: number, y: number) => void;
   onSetEditingObject: (objectId: string | null) => void;
   isObjectLocked: (objectId: string) => { locked: boolean; lockedBy?: string; lockedByColor?: string };
-  onResetTool: () => void;
+  onResetTool: (selectId?: string) => void;
 }
 
 export function Board({
@@ -226,7 +226,7 @@ export function Board({
       const maxZIndex = Math.max(0, ...Object.values(objects).map((o) => o.zIndex || 0));
 
       if (activeTool === "sticky") {
-        onCreateObject({
+        const newId = onCreateObject({
           type: "sticky",
           x: canvasPoint.x - 75,
           y: canvasPoint.y - 75,
@@ -238,9 +238,9 @@ export function Board({
           zIndex: maxZIndex + 1,
           createdBy: currentUserId,
         });
-        onResetTool();
+        onResetTool(newId);
       } else if (activeTool === "rectangle") {
-        onCreateObject({
+        const newId = onCreateObject({
           type: "rectangle",
           x: canvasPoint.x - 75,
           y: canvasPoint.y - 50,
@@ -252,9 +252,9 @@ export function Board({
           zIndex: maxZIndex + 1,
           createdBy: currentUserId,
         });
-        onResetTool();
+        onResetTool(newId);
       } else if (activeTool === "circle") {
-        onCreateObject({
+        const newId = onCreateObject({
           type: "circle",
           x: canvasPoint.x - 50,
           y: canvasPoint.y - 50,
@@ -266,7 +266,7 @@ export function Board({
           zIndex: maxZIndex + 1,
           createdBy: currentUserId,
         });
-        onResetTool();
+        onResetTool(newId);
       }
     },
     [

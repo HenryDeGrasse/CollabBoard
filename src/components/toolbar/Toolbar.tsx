@@ -14,6 +14,7 @@ interface ToolbarProps {
   activeTool: ToolType;
   activeColor: string;
   selectedCount: number;
+  selectedColor: string;
   onToolChange: (tool: ToolType) => void;
   onColorChange: (color: string) => void;
   onChangeSelectedColor: (color: string) => void;
@@ -96,6 +97,7 @@ export function Toolbar({
   activeTool,
   activeColor,
   selectedCount,
+  selectedColor,
   onToolChange,
   onColorChange,
   onChangeSelectedColor,
@@ -142,7 +144,7 @@ export function Toolbar({
         <>
           <div className="w-px h-6 bg-gray-200 mx-1" />
           <ColorDropdown
-            activeColor=""
+            activeColor={selectedColor}
             onColorChange={onChangeSelectedColor}
             colors={allColors}
             label="Change color"
