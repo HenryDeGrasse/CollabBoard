@@ -20,10 +20,10 @@ export interface UseUndoRedoReturn {
 }
 
 export function useUndoRedo(
-  createObject: (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => string,
+  _createObject: (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => string,
   updateObject: (id: string, updates: Partial<BoardObject>) => void,
   deleteObject: (id: string) => void,
-  createConnector: (conn: Omit<Connector, "id">) => string,
+  _createConnector: (conn: Omit<Connector, "id">) => string,
   deleteConnector: (id: string) => void,
   // For re-creating deleted objects with their original ID
   restoreObject: (obj: BoardObject) => void,
