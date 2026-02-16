@@ -69,6 +69,7 @@ export function Board({
   const justFinishedSelectionRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const spaceHeldRef = useRef(false);
+  const rightClickPanRef = useRef<{ startX: number; startY: number; viewX: number; viewY: number } | null>(null);
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   // Handle window resize
@@ -114,6 +115,54 @@ export function Board({
       window.removeEventListener("keyup", onKeyUp);
     };
   }, []);
+
+  // Right-click drag panning
+  useEffect(() => {
+    const container = stageRef.current?.container();
+    if (!container) return;
+
+    const onContextMenu = (e: Event) => {
+      e.preventDefault(); // Prevent browser context menu
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 2) { // Right click
+        e.preventDefault();
+        rightClickPanRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          viewX: stageRef.current?.x() ?? 0,
+          viewY: stageRef.current?.y() ?? 0,
+        };
+      }
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!rightClickPanRef.current) return;
+      const dx = e.clientX - rightClickPanRef.current.startX;
+      const dy = e.clientY - rightClickPanRef.current.startY;
+      const newX = rightClickPanRef.current.viewX + dx;
+      const newY = rightClickPanRef.current.viewY + dy;
+      setViewport((prev) => ({ ...prev, x: newX, y: newY }));
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 2 && rightClickPanRef.current) {
+        rightClickPanRef.current = null;
+      }
+    };
+
+    container.addEventListener("contextmenu", onContextMenu);
+    container.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      container.removeEventListener("contextmenu", onContextMenu);
+      container.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [stageRef, setViewport]);
 
   // Stage is draggable (pan) only when space is held
   const isPanning = spaceHeld;
