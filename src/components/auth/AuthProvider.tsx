@@ -2,8 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import {
   onAuthStateChanged,
   signInAnonymously,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   GoogleAuthProvider,
   updateProfile,
   type User,
@@ -28,11 +27,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
-    // Finalize redirect sign-in if present (no-op otherwise)
-    getRedirectResult(auth).catch(() => {
-      // Ignore here; UI handles auth state separately
-    });
-
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
 
@@ -69,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithRedirect(auth, provider);
+    await signInWithPopup(auth, provider);
   };
 
   const handleSignOut = async () => {
