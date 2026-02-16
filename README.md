@@ -21,10 +21,9 @@ A real-time collaborative whiteboard that enables multiple users to brainstorm, 
 - **Disconnect Handling** — Graceful cleanup via Firebase `onDisconnect()`
 
 ### AI Agent
-- **Natural Language Commands** — "Create a SWOT analysis", "Arrange in a grid"
-- **11 Command Types** — Creation, manipulation, layout, and complex templates
-- **9 Tool Functions** — createStickyNote, createShape, createFrame, moveObject, etc.
-- **Real-time Results** — AI changes appear instantly via existing Firebase listeners
+- **Natural Language Commands UI** — prompt box and assistant panel
+- **Coming Soon** — currently returns a friendly placeholder message while backend AI integration is finalized
+- **Planned** — create templates, arrange layouts, and manipulate objects from natural language
 
 ### Authentication
 - **Anonymous Guest** — Enter a display name to start immediately
@@ -100,29 +99,31 @@ npm run dev
 | `S` | Sticky note tool |
 | `R` | Rectangle tool |
 | `C` | Circle tool |
-| `F` | Frame tool |
-| `Delete/Backspace` | Delete selected objects |
-| `Double-click` | Edit text on sticky notes/frames |
+| `Delete/Backspace` | Delete selected objects/connectors |
+| `Double-click` | Edit text on sticky notes/shapes |
 | `Scroll` | Zoom in/out |
-| `Drag (on canvas)` | Pan the canvas |
+| `Space + Drag` | Pan the canvas |
+| `Right-click + Drag` | Pan the canvas |
 
 ## 📁 Project Structure
 
 ```
 src/
 ├── components/
-│   ├── canvas/       # Board, StickyNote, Shape, Frame, Connector, RemoteCursor
-│   ├── toolbar/      # Toolbar, ColorPicker
+│   ├── canvas/       # Board, StickyNote, Shape, Connector, RemoteCursor, ResizeHandles
+│   ├── toolbar/      # Toolbar
 │   ├── sidebar/      # PresencePanel, AICommandInput
-│   ├── auth/         # AuthProvider, LoginPage
-│   └── ui/           # Button, shared UI components
+│   └── auth/         # AuthProvider, LoginPage
 ├── hooks/            # useBoard, usePresence, useCanvas, useSelection, useAIAgent
 ├── services/         # Firebase init, board/presence/AI service layers
 ├── types/            # TypeScript interfaces (BoardObject, Presence, AI)
-├── utils/            # Colors, geometry, throttle, IDs
+├── utils/            # Colors, geometry, throttle, IDs, text-fit
+├── test/             # Vitest unit + integration tests
 └── pages/            # HomePage, BoardPage
 functions/
 └── src/              # Cloud Function: AI agent with OpenAI + tool execution
+docs/
+└── *.md, *.pdf       # Product docs and planning artifacts
 ```
 
 ## 🏗️ Architecture
@@ -138,12 +139,29 @@ Client (React + Konva) ←→ Firebase Realtime DB (objects, presence, cursors)
 - **Throttled drag sync** at 80ms intervals with final write on drag end
 - **Last-write-wins** conflict resolution (Firebase default)
 
+## ✅ Testing
+
+```bash
+npm test            # run full test suite once
+npm run test:watch  # watch mode
+npm run test:coverage
+```
+
+## 🚦 Push / Deploy Guardrails
+
+This repo now enforces checks before pushing/deploying:
+
+- **Pre-commit hook**: runs `npm test`
+- **Pre-push hook**: runs `npm run preflight` (`test` + `build`)
+- **Production deploy script**: `npm run deploy:prod` (also runs preflight)
+
+So any failing test/build blocks pushes and production deploys.
+
 ## 📦 Deployment
 
 ### Vercel (Frontend)
 ```bash
-npm run build
-# Deploy dist/ to Vercel via GitHub auto-deploy or CLI
+npm run deploy:prod
 ```
 
 ### Firebase (Backend)
