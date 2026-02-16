@@ -71,6 +71,8 @@ export function AICommandInput({ aiAgent }: AICommandInputProps) {
       <form onSubmit={handleSubmit} className="px-4 pb-3">
         <div className="flex gap-2">
           <input
+            id="ai-command-input"
+            name="aiCommand"
             type="text"
             value={command}
             onChange={(e) => setCommand(e.target.value)}

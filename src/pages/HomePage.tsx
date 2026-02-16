@@ -53,6 +53,8 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
           {/* Join board */}
           <div className="flex gap-2">
             <input
+              id="join-board-id"
+              name="boardId"
               type="text"
               value={joinBoardId}
               onChange={(e) => setJoinBoardId(e.target.value)}

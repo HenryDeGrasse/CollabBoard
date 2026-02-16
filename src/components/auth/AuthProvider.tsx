@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import {
   onAuthStateChanged,
   signInAnonymously,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   updateProfile,
   type User,
@@ -27,13 +28,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+    // Finalize redirect sign-in if present (no-op otherwise)
+    getRedirectResult(auth).catch(() => {
+      // Ignore here; UI handles auth state separately
+    });
+
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+
       if (firebaseUser) {
-        setDisplayName(firebaseUser.displayName || "Anonymous");
+        const name = firebaseUser.displayName || "Anonymous";
+        setDisplayName(name);
+
+        // Keep user profile mirrored in RTDB
+        await set(ref(db, `users/${firebaseUser.uid}`), {
+          displayName: name,
+          email: firebaseUser.email,
+          photoURL: firebaseUser.photoURL,
+          authMethod: firebaseUser.isAnonymous ? "anonymous" : "google",
+        });
       }
+
       setLoading(false);
     });
+
     return unsub;
   }, []);
 
@@ -51,15 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    const name = result.user.displayName || "Google User";
-    await set(ref(db, `users/${result.user.uid}`), {
-      displayName: name,
-      email: result.user.email,
-      photoURL: result.user.photoURL,
-      authMethod: "google",
-    });
-    setDisplayName(name);
+    await signInWithRedirect(auth, provider);
   };
 
   const handleSignOut = async () => {

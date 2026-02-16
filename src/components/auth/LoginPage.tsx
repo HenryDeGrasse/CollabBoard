@@ -60,6 +60,7 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
             </label>
             <input
               id="name"
+              name="displayName"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
