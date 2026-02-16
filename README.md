@@ -1,5 +1,7 @@
 # 🎨 CollabBoard — Real-time Collaborative Whiteboard
 
+**🌐 Live Demo: [collabboard-eta.vercel.app](https://collabboard-eta.vercel.app)**
+
 A real-time collaborative whiteboard that enables multiple users to brainstorm, map ideas, and run workshops simultaneously on an infinite canvas. An AI agent extends the board with natural language commands.
 
 ## ✨ Features
