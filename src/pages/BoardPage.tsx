@@ -32,6 +32,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
     updateObject,
     deleteObject,
     createConnector,
+    deleteConnector,
     loading,
   } = useBoard(boardId);
   const { users, updateCursor, setEditingObject, isObjectLocked, myColor } =
@@ -177,6 +178,7 @@ export function BoardPage({ boardId }: BoardPageProps) {
         onUpdateObject={updateObject}
         onDeleteObject={deleteObject}
         onCreateConnector={createConnector}
+        onDeleteConnector={deleteConnector}
         onCursorMove={handleCursorMove}
         onSetEditingObject={setEditingObject}
         isObjectLocked={isObjectLocked}

@@ -1,10 +1,12 @@
-import { Arrow, Line } from "react-konva";
+import { Group, Arrow, Line, Rect } from "react-konva";
 import type { Connector as ConnectorType } from "../../types/board";
 import type { BoardObject } from "../../types/board";
 
 interface ConnectorProps {
   connector: ConnectorType;
   objects: Record<string, BoardObject>;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
 }
 
 // Calculate the intersection point of a line from center to target with the object's edge
@@ -38,10 +40,8 @@ function getEdgePoint(
 
   let scale: number;
   if (absDx * hh > absDy * hw) {
-    // Hits left or right edge
     scale = hw / absDx;
   } else {
-    // Hits top or bottom edge
     scale = hh / absDy;
   }
 
@@ -51,7 +51,7 @@ function getEdgePoint(
   };
 }
 
-export function ConnectorLine({ connector, objects }: ConnectorProps) {
+export function ConnectorLine({ connector, objects, isSelected, onSelect }: ConnectorProps) {
   const fromObj = objects[connector.fromId];
   const toObj = objects[connector.toId];
 
@@ -66,35 +66,77 @@ export function ConnectorLine({ connector, objects }: ConnectorProps) {
     y: toObj.y + toObj.height / 2,
   };
 
-  // Calculate edge points so arrow starts/ends at object boundaries
   const fromEdge = getEdgePoint(fromObj, toCenter.x, toCenter.y);
   const toEdge = getEdgePoint(toObj, fromCenter.x, fromCenter.y);
 
   const points = [fromEdge.x, fromEdge.y, toEdge.x, toEdge.y];
 
+  // Midpoint for selection indicator
+  const midX = (fromEdge.x + toEdge.x) / 2;
+  const midY = (fromEdge.y + toEdge.y) / 2;
+
+  const handleClick = (e: any) => {
+    e.cancelBubble = true; // Stop propagation to stage
+    onSelect(connector.id);
+  };
+
+  const strokeColor = isSelected ? "#4F46E5" : "#4B5563";
+  const strokeWidth = isSelected ? 3 : 2.5;
+
   if (connector.style === "arrow") {
     return (
-      <Arrow
-        points={points}
-        stroke="#4B5563"
-        strokeWidth={2.5}
-        fill="#4B5563"
-        pointerLength={14}
-        pointerWidth={10}
-        hitStrokeWidth={20}
-        lineCap="round"
-        lineJoin="round"
-      />
+      <Group>
+        <Arrow
+          points={points}
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          fill={strokeColor}
+          pointerLength={14}
+          pointerWidth={10}
+          hitStrokeWidth={24}
+          lineCap="round"
+          lineJoin="round"
+          onClick={handleClick}
+          onTap={handleClick}
+        />
+        {/* Selection midpoint indicator */}
+        {isSelected && (
+          <Rect
+            x={midX - 5}
+            y={midY - 5}
+            width={10}
+            height={10}
+            fill="#4F46E5"
+            cornerRadius={2}
+            listening={false}
+          />
+        )}
+      </Group>
     );
   }
 
   return (
-    <Line
-      points={points}
-      stroke="#4B5563"
-      strokeWidth={2.5}
-      hitStrokeWidth={20}
-      lineCap="round"
-    />
+    <Group>
+      <Line
+        points={points}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        hitStrokeWidth={24}
+        lineCap="round"
+        onClick={handleClick}
+        onTap={handleClick}
+      />
+      {isSelected && (
+        <Rect
+          x={midX - 5}
+          y={midY - 5}
+          width={10}
+          height={10}
+          fill="#4F46E5"
+          cornerRadius={2}
+          listening={false}
+        />
+      )}
+    </Group>
   );
 }

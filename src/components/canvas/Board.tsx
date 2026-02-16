@@ -29,6 +29,7 @@ interface BoardProps {
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
   onDeleteObject: (id: string) => void;
   onCreateConnector: (conn: Omit<Connector, "id">) => string;
+  onDeleteConnector: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
   onSetEditingObject: (objectId: string | null) => void;
   isObjectLocked: (objectId: string) => { locked: boolean; lockedBy?: string; lockedByColor?: string };
@@ -50,6 +51,7 @@ export function Board({
   onUpdateObject,
   onDeleteObject,
   onCreateConnector,
+  onDeleteConnector,
   onCursorMove,
   onSetEditingObject,
   isObjectLocked,
@@ -64,6 +66,7 @@ export function Board({
     height: 0,
     visible: false,
   });
+  const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(new Set());
   const draggingRef = useRef<Set<string>>(new Set());
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const justFinishedSelectionRef = useRef(false);
@@ -263,6 +266,7 @@ export function Board({
           return;
         }
         onClearSelection();
+        setSelectedConnectorIds(new Set());
         return;
       }
 
@@ -363,6 +367,15 @@ export function Board({
     [onUpdateObject]
   );
 
+  const handleConnectorSelect = useCallback(
+    (id: string) => {
+      // Clear object selection, select this connector
+      onClearSelection();
+      setSelectedConnectorIds(new Set([id]));
+    },
+    [onClearSelection]
+  );
+
   const handleDoubleClick = useCallback(
     (id: string) => {
       if (activeTool === "arrow") return;
@@ -410,6 +423,7 @@ export function Board({
 
   const handleObjectClick = useCallback(
     (id: string, multi?: boolean) => {
+      setSelectedConnectorIds(new Set()); // Clear connector selection
       if (activeTool === "arrow") {
         handleObjectClickForArrow(id);
       } else {
@@ -505,7 +519,9 @@ export function Board({
       if (e.key === "Backspace" || e.key === "Delete") {
         if (editingObjectId) return;
         selectedIds.forEach((id) => onDeleteObject(id));
+        selectedConnectorIds.forEach((id) => onDeleteConnector(id));
         onClearSelection();
+        setSelectedConnectorIds(new Set());
       }
       if (e.key === "Escape") {
         setArrowDraw(null);
@@ -514,12 +530,13 @@ export function Board({
           onSetEditingObject(null);
         }
         onClearSelection();
+        setSelectedConnectorIds(new Set());
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds, editingObjectId, onDeleteObject, onClearSelection, onSetEditingObject]);
+  }, [selectedIds, selectedConnectorIds, editingObjectId, onDeleteObject, onDeleteConnector, onClearSelection, onSetEditingObject]);
 
   const handleStageDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
@@ -597,7 +614,13 @@ export function Board({
         <Layer>
           {/* Render connectors first (below objects) */}
           {Object.values(connectors).map((conn) => (
-            <ConnectorLine key={conn.id} connector={conn} objects={objects} />
+            <ConnectorLine
+              key={conn.id}
+              connector={conn}
+              objects={objects}
+              isSelected={selectedConnectorIds.has(conn.id)}
+              onSelect={handleConnectorSelect}
+            />
           ))}
 
           {/* Arrow drawing preview */}
