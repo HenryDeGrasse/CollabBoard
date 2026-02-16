@@ -32,16 +32,27 @@ export async function getBoardMetadata(boardId: string): Promise<BoardMetadata |
 
 // ─── Board Objects ────────────────────────────────────────────
 
+// Remove undefined values that Firebase rejects
+function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
+  const clean = { ...obj };
+  for (const key of Object.keys(clean)) {
+    if (clean[key] === undefined) {
+      delete clean[key];
+    }
+  }
+  return clean;
+}
+
 export function createObject(boardId: string, obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">): string {
   const objectsRef = ref(db, `boards/${boardId}/objects`);
   const newRef = push(objectsRef);
   const id = newRef.key!;
-  const fullObj: BoardObject = {
+  const fullObj = stripUndefined({
     ...obj,
     id,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  };
+  });
   set(newRef, fullObj);
   return id;
 }

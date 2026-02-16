@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Group, Line, Circle } from "react-konva";
 import Konva from "konva";
 import type { BoardObject } from "../../types/board";
@@ -22,67 +22,77 @@ export function LineObject({
   onDragEnd,
   onUpdateObject,
 }: LineObjectProps) {
-  const points = object.points || [0, 0, object.width, object.height];
+  const basePoints = object.points || [0, 0, object.width, object.height];
   const strokeWidth = object.strokeWidth || 3;
   const endpointDraggingRef = useRef(false);
+
+  // Local override while dragging an endpoint (for live preview)
+  const [livePoints, setLivePoints] = useState<number[] | null>(null);
+  const displayPoints = livePoints ?? basePoints;
+
+  const commitEndpoint = (
+    anchorIdx: 0 | 1, // 0=start anchored, 1=end anchored
+    movedX: number,
+    movedY: number,
+    target: Konva.Node,
+  ) => {
+    endpointDraggingRef.current = false;
+    setLivePoints(null);
+
+    const anchorX = basePoints[anchorIdx === 0 ? 0 : basePoints.length - 2];
+    const anchorY = basePoints[anchorIdx === 0 ? 1 : basePoints.length - 1];
+
+    const x1 = anchorIdx === 0 ? anchorX : movedX;
+    const y1 = anchorIdx === 0 ? anchorY : movedY;
+    const x2 = anchorIdx === 0 ? movedX : anchorX;
+    const y2 = anchorIdx === 0 ? movedY : anchorY;
+
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const newPoints = [x1 - minX, y1 - minY, x2 - minX, y2 - minY];
+
+    onUpdateObject(object.id, {
+      x: object.x + minX,
+      y: object.y + minY,
+      width: Math.abs(x2 - x1) || 1,
+      height: Math.abs(y2 - y1) || 1,
+      points: newPoints,
+    });
+
+    // Reset Konva node position
+    target.x(anchorIdx === 0 ? newPoints[2] : newPoints[0]);
+    target.y(anchorIdx === 0 ? newPoints[3] : newPoints[1]);
+  };
+
+  // --- Start point handlers ---
+  const handleStartDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true;
+    const newX = e.target.x();
+    const newY = e.target.y();
+    setLivePoints([newX, newY, basePoints[basePoints.length - 2], basePoints[basePoints.length - 1]]);
+  };
+
+  const handleStartDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true;
+    commitEndpoint(1, e.target.x(), e.target.y(), e.target); // anchor=end, moved=start
+  };
+
+  // --- End point handlers ---
+  const handleEndDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true;
+    const newX = e.target.x();
+    const newY = e.target.y();
+    setLivePoints([basePoints[0], basePoints[1], newX, newY]);
+  };
+
+  const handleEndDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true;
+    commitEndpoint(0, e.target.x(), e.target.y(), e.target); // anchor=start, moved=end
+  };
 
   const handleEndpointDragStart = (e: Konva.KonvaEventObject<DragEvent>) => {
     e.cancelBubble = true;
     endpointDraggingRef.current = true;
-  };
-
-  const handleStartPointDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    e.cancelBubble = true;
-    endpointDraggingRef.current = false;
-
-    // New start point position (relative to group)
-    const newX1 = e.target.x();
-    const newY1 = e.target.y();
-    // End point stays where it was
-    const x2 = points[points.length - 2];
-    const y2 = points[points.length - 1];
-
-    // Recalculate the object origin and relative points
-    const minX = Math.min(newX1, x2);
-    const minY = Math.min(newY1, y2);
-    const newPoints = [newX1 - minX, newY1 - minY, x2 - minX, y2 - minY];
-
-    onUpdateObject(object.id, {
-      x: object.x + minX,
-      y: object.y + minY,
-      width: Math.abs(x2 - newX1) || 1,
-      height: Math.abs(y2 - newY1) || 1,
-      points: newPoints,
-    });
-
-    // Reset the circle position (Konva moved it)
-    e.target.x(newPoints[0]);
-    e.target.y(newPoints[1]);
-  };
-
-  const handleEndPointDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    e.cancelBubble = true;
-    endpointDraggingRef.current = false;
-
-    const x1 = points[0];
-    const y1 = points[1];
-    const newX2 = e.target.x();
-    const newY2 = e.target.y();
-
-    const minX = Math.min(x1, newX2);
-    const minY = Math.min(y1, newY2);
-    const newPoints = [x1 - minX, y1 - minY, newX2 - minX, newY2 - minY];
-
-    onUpdateObject(object.id, {
-      x: object.x + minX,
-      y: object.y + minY,
-      width: Math.abs(newX2 - x1) || 1,
-      height: Math.abs(newY2 - y1) || 1,
-      points: newPoints,
-    });
-
-    e.target.x(newPoints[2]);
-    e.target.y(newPoints[3]);
   };
 
   return (
@@ -110,7 +120,7 @@ export function LineObject({
     >
       {/* The line itself */}
       <Line
-        points={points}
+        points={displayPoints}
         stroke={isSelected ? "#4F46E5" : object.color}
         strokeWidth={isSelected ? strokeWidth + 1 : strokeWidth}
         hitStrokeWidth={Math.max(20, strokeWidth + 16)}
@@ -119,12 +129,12 @@ export function LineObject({
       />
 
       {/* Draggable endpoint handles when selected */}
-      {isSelected && points.length >= 4 && (
+      {isSelected && displayPoints.length >= 4 && (
         <>
           {/* Start point */}
           <Circle
-            x={points[0]}
-            y={points[1]}
+            x={displayPoints[0]}
+            y={displayPoints[1]}
             radius={6}
             fill="#FFFFFF"
             stroke="#4F46E5"
@@ -132,20 +142,21 @@ export function LineObject({
             draggable
             hitStrokeWidth={12}
             onDragStart={handleEndpointDragStart}
-            onDragEnd={handleStartPointDragEnd}
+            onDragMove={handleStartDragMove}
+            onDragEnd={handleStartDragEnd}
             onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = "grab";
+              const c = e.target.getStage()?.container();
+              if (c) c.style.cursor = "grab";
             }}
             onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = "default";
+              const c = e.target.getStage()?.container();
+              if (c) c.style.cursor = "default";
             }}
           />
           {/* End point */}
           <Circle
-            x={points[points.length - 2]}
-            y={points[points.length - 1]}
+            x={displayPoints[displayPoints.length - 2]}
+            y={displayPoints[displayPoints.length - 1]}
             radius={6}
             fill="#FFFFFF"
             stroke="#4F46E5"
@@ -153,14 +164,15 @@ export function LineObject({
             draggable
             hitStrokeWidth={12}
             onDragStart={handleEndpointDragStart}
-            onDragEnd={handleEndPointDragEnd}
+            onDragMove={handleEndDragMove}
+            onDragEnd={handleEndDragEnd}
             onMouseEnter={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = "grab";
+              const c = e.target.getStage()?.container();
+              if (c) c.style.cursor = "grab";
             }}
             onMouseLeave={(e) => {
-              const container = e.target.getStage()?.container();
-              if (container) container.style.cursor = "default";
+              const c = e.target.getStage()?.container();
+              if (c) c.style.cursor = "default";
             }}
           />
         </>
