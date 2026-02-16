@@ -224,8 +224,8 @@ export function Board({
         );
       }
 
-      // Selection rect drag
-      if (selectionStartRef.current && activeTool === "select" && !spaceHeldRef.current) {
+      // Selection rect drag (skip during right-click pan)
+      if (selectionStartRef.current && activeTool === "select" && !spaceHeldRef.current && !rightClickPanRef.current) {
         const start = selectionStartRef.current;
         setSelectionRect({
           x: start.x,
@@ -241,6 +241,7 @@ export function Board({
 
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (e.evt.button === 2) return; // Ignore right-click
       if (e.target !== e.target.getStage()) return;
 
       const stage = e.target.getStage();
@@ -434,6 +435,7 @@ export function Board({
 
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (e.evt.button === 2) return; // Ignore right-click (used for panning)
       if (e.target !== e.target.getStage()) return;
       if (spaceHeldRef.current) return; // Don't start selection while panning
 
