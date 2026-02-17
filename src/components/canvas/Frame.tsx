@@ -52,14 +52,10 @@ export function Frame({
       ref={groupRef}
       x={object.x}
       y={object.y}
+      draggable={isSelected && isSelectMode && !isEditing}
       onDragStart={() => onDragStart(object.id)}
       onDragMove={(e) => onDragMove(object.id, e.target.x(), e.target.y())}
-      onDragEnd={(e) => {
-        onDragEnd(object.id, e.target.x(), e.target.y());
-        // Turn off draggable after drag completes
-        const group = groupRef.current;
-        if (group) group.draggable(false);
-      }}
+      onDragEnd={(e) => onDragEnd(object.id, e.target.x(), e.target.y())}
     >
       {/* Frame background — subtle, sits behind everything */}
       <Rect
@@ -88,48 +84,7 @@ export function Frame({
         listening={false}
       />
 
-      {/* Header hitbox (frame selection/drag only from title row) */}
-      <Rect
-        x={0}
-        y={0}
-        width={object.width}
-        height={TITLE_HEIGHT}
-        fill="rgba(0,0,0,0)"
-        listening={isSelectMode}
-        onClick={(e) => {
-          e.cancelBubble = true;
-          onSelect(object.id, e.evt.shiftKey);
-        }}
-        onTap={(e) => {
-          e.cancelBubble = true;
-          onSelect(object.id);
-        }}
-        onDblClick={(e) => {
-          e.cancelBubble = true;
-          onDoubleClick(object.id);
-        }}
-        onDblTap={(e) => {
-          e.cancelBubble = true;
-          onDoubleClick(object.id);
-        }}
-        onMouseDown={(e) => {
-          if (!isEditing && isSelectMode) {
-            e.cancelBubble = true;
-            // Programmatically start drag on the parent Group
-            const group = groupRef.current;
-            if (group) {
-              group.draggable(true);
-              group.startDrag();
-            }
-          }
-        }}
-        onMouseUp={() => {
-          const group = groupRef.current;
-          if (group) {
-            group.draggable(false);
-          }
-        }}
-      />
+
 
       {/* Title bar bottom border */}
       <Line
@@ -254,16 +209,20 @@ interface FrameOverlayProps {
   object: BoardObject;
   isSelected: boolean;
   containedCount: number;
+  isSelectMode: boolean;
+  onSelect: (id: string, multi?: boolean) => void;
+  onDoubleClick: (id: string) => void;
+  onDragStart: (id: string) => void;
 }
 
-export function FrameOverlay({ object, isSelected, containedCount }: FrameOverlayProps) {
+export function FrameOverlay({ object, isSelected, containedCount, isSelectMode, onSelect, onDoubleClick, onDragStart }: FrameOverlayProps) {
   const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
   const borderWidth = isSelected ? 2.5 : 2;
 
   const titleFontSize = Math.min(14, Math.max(10, object.width / 20));
 
   return (
-    <Group x={object.x} y={object.y} listening={false}>
+    <Group x={object.x} y={object.y} listening={true}>
       {/* Border outline on top */}
       <Rect
         width={object.width}
@@ -346,6 +305,38 @@ export function FrameOverlay({ object, isSelected, containedCount }: FrameOverla
           />
         </>
       )}
+
+      {/* Interactive header hitbox (on top for selection/drag) */}
+      <Rect
+        x={0}
+        y={0}
+        width={object.width}
+        height={TITLE_HEIGHT}
+        fill="rgba(0,0,0,0)"
+        listening={isSelectMode}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onSelect(object.id, e.evt.shiftKey);
+        }}
+        onTap={(e) => {
+          e.cancelBubble = true;
+          onSelect(object.id);
+        }}
+        onDblClick={(e) => {
+          e.cancelBubble = true;
+          onDoubleClick(object.id);
+        }}
+        onDblTap={(e) => {
+          e.cancelBubble = true;
+          onDoubleClick(object.id);
+        }}
+        onMouseDown={(e) => {
+          if (isSelectMode && isSelected) {
+            e.cancelBubble = true;
+            onDragStart(object.id);
+          }
+        }}
+      />
     </Group>
   );
 }

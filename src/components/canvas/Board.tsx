@@ -1231,6 +1231,10 @@ export function Board({
                   object={{ ...frameObj, x: framePos.x, y: framePos.y }}
                   isSelected={selectedIds.has(obj.id)}
                   containedCount={contained.length}
+                  isSelectMode={activeTool === "select"}
+                  onSelect={handleObjectClick}
+                  onDoubleClick={handleDoubleClick}
+                  onDragStart={handleDragStart}
                 />
               );
             })}
