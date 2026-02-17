@@ -1,30 +1,16 @@
-import { getAuth } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "./firebase";
 import type { AICommandRequest, AICommandResponse } from "../types/ai";
 
-const auth = getAuth(app);
+const functions = getFunctions(app);
 
 /**
- * Send an AI command to the Vercel serverless function.
- * Auth token is derived from the current Firebase user (never send userId).
+ * Send an AI command to Firebase Cloud Function.
+ * Auth is handled automatically by Firebase SDK.
  */
 export async function sendAICommand(
   request: Omit<AICommandRequest, "commandId"> & { commandId?: string }
 ): Promise<AICommandResponse> {
-  const user = auth.currentUser;
-  if (!user) {
-    return {
-      success: false,
-      message: "Not authenticated",
-      objectsCreated: [],
-      objectsUpdated: [],
-      objectsDeleted: [],
-      runId: "",
-      error: "Not authenticated",
-    };
-  }
-
-  const token = await user.getIdToken();
   const commandId = request.commandId || crypto.randomUUID();
 
   const payload: AICommandRequest = {
@@ -37,31 +23,11 @@ export async function sendAICommand(
   };
 
   try {
-    const res = await fetch("/api/ai-agent", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      return {
-        success: false,
-        message: errorData.error || `Request failed (${res.status})`,
-        objectsCreated: [],
-        objectsUpdated: [],
-        objectsDeleted: [],
-        runId: commandId,
-        error: errorData.error || `HTTP ${res.status}`,
-      };
-    }
-
-    return await res.json();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    const aiAgent = httpsCallable<AICommandRequest, AICommandResponse>(functions, "aiAgent");
+    const result = await aiAgent(payload);
+    return result.data;
+  } catch (error: any) {
+    const message = error.message || "Unknown error";
     return {
       success: false,
       message: "AI command failed",

@@ -1,270 +1,202 @@
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { TOOL_DEFINITIONS } from "./toolSchemas";
 import * as tools from "./tools";
+import { getBoardStateForAI, type Viewport, type CompactObject } from "./boardState";
 
-const SYSTEM_PROMPT = `You are an AI assistant that manipulates a collaborative whiteboard. You have access to tools for creating and manipulating board objects.
+// ─── Guardrails ───────────────────────────────────────────────
 
-Current board state is provided as context. Use it to understand existing objects when the user references them (e.g., "move the pink stickies" or "resize the frame").
+const MAX_ITERATIONS = 5;
+const MAX_TOOL_CALLS = 25;
+const MAX_OBJECTS_CREATED = 25;
+const OPENAI_TIMEOUT_MS = 25_000;
 
-For complex commands (SWOT analysis, retro board, journey map), plan your tool calls to create a well-organized layout. Use consistent spacing (e.g., 220px between objects, 300px between frames).
+// ─── Model Selection ──────────────────────────────────────────
 
-When placing new objects, avoid overlapping existing objects. Use the board state to find open space.
+const COMPLEX_KEYWORDS = [
+  "swot", "retrospective", "retro", "journey map", "kanban",
+  "template", "workflow", "brainstorm", "mind map", "roadmap",
+  "user story", "sprint", "standup", "agile", "matrix",
+];
+
+function selectModel(command: string): string {
+  const lower = command.toLowerCase();
+  return COMPLEX_KEYWORDS.some((kw) => lower.includes(kw)) ? "gpt-4o" : "gpt-4o-mini";
+}
+
+// ─── System Prompt Builder ────────────────────────────────────
+
+function buildSystemPrompt(
+  viewport: Viewport,
+  selectedIds: string[],
+  boardObjects: CompactObject[]
+): string {
+  const objectsSummary =
+    boardObjects.length > 0
+      ? `\n\nCurrent board objects (${boardObjects.length} visible):\n${JSON.stringify(
+          boardObjects.map((o) => ({
+            id: o.id,
+            type: o.type,
+            x: Math.round(o.x),
+            y: Math.round(o.y),
+            width: Math.round(o.width),
+            height: Math.round(o.height),
+            color: o.color,
+            text: o.text,
+            parentFrameId: o.parentFrameId,
+          })),
+          null,
+          2
+        )}`
+      : "\n\nThe board is currently empty.";
+
+  const selectionInfo =
+    selectedIds.length > 0
+      ? `\nSelected objects: ${selectedIds.join(", ")}`
+      : "\nNo objects selected.";
+
+  return `You are an AI assistant that manipulates a collaborative whiteboard. You have tools for creating and manipulating board objects.
+
+Current board state and the user's viewport are provided as context. Use them to:
+- Understand existing objects when the user references them (e.g., "move the pink stickies")
+- Place new objects within or near the user's current view
+- Avoid overlapping existing objects (the system will adjust placement automatically)
+
+The user's viewport in canvas coordinates:
+  Top-left: (${Math.round(viewport.minX)}, ${Math.round(viewport.minY)})
+  Bottom-right: (${Math.round(viewport.maxX)}, ${Math.round(viewport.maxY)})
+  Center: (${Math.round(viewport.centerX)}, ${Math.round(viewport.centerY)})
+  Zoom: ${viewport.scale.toFixed(2)}x
+${selectionInfo}
+
+For complex commands (SWOT, retro, journey map), plan tool calls to create a well-organized layout centered near (${Math.round(viewport.centerX)}, ${Math.round(viewport.centerY)}). Use consistent spacing (220px between objects, 300px between frames).
 
 Available colors: yellow (#FBBF24), pink (#F472B6), blue (#3B82F6), green (#22C55E), orange (#F97316), purple (#A855F7), red (#EF4444), gray (#9CA3AF), white (#FFFFFF).
 
-Always respond with tool calls. Do not respond with text-only messages.`;
+Always respond with tool calls. Do not respond with text-only messages unless you cannot fulfill the request.${objectsSummary}`;
+}
 
-const TOOL_DEFINITIONS: OpenAI.ChatCompletionTool[] = [
-  {
-    type: "function",
-    function: {
-      name: "createStickyNote",
-      description: "Creates a sticky note on the board. Returns the objectId.",
-      parameters: {
-        type: "object",
-        properties: {
-          text: { type: "string", description: "Text content of the sticky note" },
-          x: { type: "number", description: "X position on the canvas" },
-          y: { type: "number", description: "Y position on the canvas" },
-          color: { type: "string", description: "Hex color code (e.g., #FBBF24)" },
-        },
-        required: ["text", "x", "y", "color"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "createShape",
-      description: "Creates a shape (rectangle, circle, or line) on the board.",
-      parameters: {
-        type: "object",
-        properties: {
-          type: { type: "string", enum: ["rectangle", "circle", "line"], description: "Shape type" },
-          x: { type: "number", description: "X position" },
-          y: { type: "number", description: "Y position" },
-          width: { type: "number", description: "Width" },
-          height: { type: "number", description: "Height" },
-          color: { type: "string", description: "Hex color code" },
-        },
-        required: ["type", "x", "y", "width", "height", "color"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "createFrame",
-      description: "Creates a named frame/container on the board.",
-      parameters: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "Frame title" },
-          x: { type: "number", description: "X position" },
-          y: { type: "number", description: "Y position" },
-          width: { type: "number", description: "Width" },
-          height: { type: "number", description: "Height" },
-        },
-        required: ["title", "x", "y", "width", "height"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "createConnector",
-      description: "Creates a line or arrow between two objects.",
-      parameters: {
-        type: "object",
-        properties: {
-          fromId: { type: "string", description: "Source object ID" },
-          toId: { type: "string", description: "Target object ID" },
-          style: { type: "string", enum: ["arrow", "line"], description: "Connector style" },
-        },
-        required: ["fromId", "toId", "style"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "moveObject",
-      description: "Moves an object to new coordinates.",
-      parameters: {
-        type: "object",
-        properties: {
-          objectId: { type: "string", description: "ID of the object to move" },
-          x: { type: "number", description: "New X position" },
-          y: { type: "number", description: "New Y position" },
-        },
-        required: ["objectId", "x", "y"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "resizeObject",
-      description: "Resizes an object.",
-      parameters: {
-        type: "object",
-        properties: {
-          objectId: { type: "string", description: "ID of the object to resize" },
-          width: { type: "number", description: "New width" },
-          height: { type: "number", description: "New height" },
-        },
-        required: ["objectId", "width", "height"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "updateText",
-      description: "Updates the text content of a sticky note, text element, or frame title.",
-      parameters: {
-        type: "object",
-        properties: {
-          objectId: { type: "string", description: "ID of the object" },
-          newText: { type: "string", description: "New text content" },
-        },
-        required: ["objectId", "newText"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "changeColor",
-      description: "Changes the fill color of an object.",
-      parameters: {
-        type: "object",
-        properties: {
-          objectId: { type: "string", description: "ID of the object" },
-          color: { type: "string", description: "New hex color code" },
-        },
-        required: ["objectId", "color"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "getBoardState",
-      description: "Returns all current board objects for context. Use this to understand what's on the board before making changes.",
-      parameters: {
-        type: "object",
-        properties: {},
-        required: [],
-      },
-    },
-  },
-];
+// ─── Execution ────────────────────────────────────────────────
 
-interface ExecutionResult {
-  objectsCreated: string[];
-  objectsModified: string[];
+export interface AIExecutionResult {
+  success: boolean;
   message: string;
+  objectsCreated: string[];
+  objectsUpdated: string[];
+  objectsDeleted: string[];
+  focus?: { minX: number; minY: number; maxX: number; maxY: number };
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  toolCallsCount: number;
+  durationMs: number;
 }
 
 export async function executeAICommand(
   command: string,
   boardId: string,
-  userId: string,
+  uid: string,
+  viewport: Viewport,
+  selectedIds: string[],
   openaiApiKey: string
-): Promise<ExecutionResult> {
+): Promise<AIExecutionResult> {
+  const startTime = Date.now();
+  const model = selectModel(command);
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let totalToolCalls = 0;
+
   const openai = new OpenAI({ apiKey: openaiApiKey });
 
-  // Get current board state for context
-  const boardState = await tools.getBoardState(boardId);
-  const boardContext = Object.values(boardState).length > 0
-    ? `\n\nCurrent board objects:\n${JSON.stringify(Object.values(boardState).map((obj: any) => ({
-        id: obj.id,
-        type: obj.type,
-        x: obj.x,
-        y: obj.y,
-        width: obj.width,
-        height: obj.height,
-        color: obj.color,
-        text: obj.text,
-      })), null, 2)}`
-    : "\n\nThe board is currently empty.";
+  // Load scoped board state
+  const boardObjects = await getBoardStateForAI(boardId, viewport, selectedIds);
 
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: "system", content: SYSTEM_PROMPT + boardContext },
+  // Tool context (shared, mutable — tracks created objects for placement)
+  const ctx: tools.ToolContext = {
+    boardId,
+    uid,
+    viewport,
+    existingObjects: [...boardObjects],
+  };
+
+  const systemPrompt = buildSystemPrompt(viewport, selectedIds, boardObjects);
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
     { role: "user", content: command },
   ];
 
   const objectsCreated: string[] = [];
-  const objectsModified: string[] = [];
-  let iterationCount = 0;
-  const MAX_ITERATIONS = 5;
+  const objectsUpdated: string[] = [];
 
-  while (iterationCount < MAX_ITERATIONS) {
-    iterationCount++;
+  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+    if (totalToolCalls >= MAX_TOOL_CALLS) break;
+    if (objectsCreated.length >= MAX_OBJECTS_CREATED) break;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages,
-      tools: TOOL_DEFINITIONS,
-      tool_choice: iterationCount === 1 ? "required" : "auto",
-    });
+    // Call OpenAI with timeout
+    const response = await withTimeout(
+      openai.chat.completions.create({
+        model,
+        messages,
+        tools: TOOL_DEFINITIONS,
+        tool_choice: iteration === 0 ? "required" : "auto",
+      }),
+      OPENAI_TIMEOUT_MS,
+      "OpenAI call timed out"
+    );
+
+    // Track token usage
+    if (response.usage) {
+      inputTokens += response.usage.prompt_tokens;
+      outputTokens += response.usage.completion_tokens;
+    }
 
     const choice = response.choices[0];
     if (!choice.message.tool_calls || choice.message.tool_calls.length === 0) {
-      // No more tool calls, we're done
+      // No more tool calls — done
+      const durationMs = Date.now() - startTime;
       return {
+        success: true,
+        message: choice.message.content || buildSummary(objectsCreated, objectsUpdated),
         objectsCreated,
-        objectsModified,
-        message: choice.message.content || `Completed: ${objectsCreated.length} created, ${objectsModified.length} modified`,
+        objectsUpdated,
+        objectsDeleted: [],
+        focus: computeFocusBounds(objectsCreated, ctx.existingObjects),
+        model,
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        toolCallsCount: totalToolCalls,
+        durationMs,
       };
     }
 
-    // Add assistant message with tool calls
-    messages.push(choice.message);
+    // Add assistant message
+    messages.push(choice.message as ChatCompletionMessageParam);
 
-    // Execute each tool call
-    for (const toolCall of choice.message.tool_calls) {
-      const args = JSON.parse(toolCall.function.arguments);
+    // Execute tool calls (capped)
+    const callsToExecute = choice.message.tool_calls.slice(
+      0,
+      MAX_TOOL_CALLS - totalToolCalls
+    );
+
+    for (const toolCall of callsToExecute) {
+      totalToolCalls++;
       let result: any;
 
-      switch (toolCall.function.name) {
-        case "createStickyNote":
-          result = await tools.createStickyNote(boardId, args.text, args.x, args.y, args.color, userId);
-          if (result.objectId) objectsCreated.push(result.objectId);
-          break;
-        case "createShape":
-          result = await tools.createShape(boardId, args.type, args.x, args.y, args.width, args.height, args.color, userId);
-          if (result.objectId) objectsCreated.push(result.objectId);
-          break;
-        case "createFrame":
-          result = await tools.createFrame(boardId, args.title, args.x, args.y, args.width, args.height, userId);
-          if (result.objectId) objectsCreated.push(result.objectId);
-          break;
-        case "createConnector":
-          result = await tools.createConnector(boardId, args.fromId, args.toId, args.style);
-          if (result.objectId) objectsCreated.push(result.objectId);
-          break;
-        case "moveObject":
-          result = await tools.moveObject(boardId, args.objectId, args.x, args.y);
-          if (result.objectId) objectsModified.push(result.objectId);
-          break;
-        case "resizeObject":
-          result = await tools.resizeObject(boardId, args.objectId, args.width, args.height);
-          if (result.objectId) objectsModified.push(result.objectId);
-          break;
-        case "updateText":
-          result = await tools.updateText(boardId, args.objectId, args.newText);
-          if (result.objectId) objectsModified.push(result.objectId);
-          break;
-        case "changeColor":
-          result = await tools.changeColor(boardId, args.objectId, args.color);
-          if (result.objectId) objectsModified.push(result.objectId);
-          break;
-        case "getBoardState":
-          result = await tools.getBoardState(boardId);
-          break;
-        default:
-          result = { error: `Unknown tool: ${toolCall.function.name}` };
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        result = await executeToolCall(toolCall.function.name, args, ctx, boardObjects);
+
+        if (result?.objectId) {
+          if (["createStickyNote", "createShape", "createFrame", "createConnector"].includes(toolCall.function.name)) {
+            objectsCreated.push(result.objectId);
+          } else {
+            objectsUpdated.push(result.objectId);
+          }
+        }
+      } catch (err) {
+        result = { success: false, error: String(err) };
       }
 
       messages.push({
@@ -275,9 +207,102 @@ export async function executeAICommand(
     }
   }
 
+  const durationMs = Date.now() - startTime;
   return {
+    success: true,
+    message: buildSummary(objectsCreated, objectsUpdated),
     objectsCreated,
-    objectsModified,
-    message: `Completed: ${objectsCreated.length} objects created, ${objectsModified.length} modified`,
+    objectsUpdated,
+    objectsDeleted: [],
+    focus: computeFocusBounds(objectsCreated, ctx.existingObjects),
+    model,
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    toolCallsCount: totalToolCalls,
+    durationMs,
   };
+}
+
+// ─── Tool Dispatch ────────────────────────────────────────────
+
+async function executeToolCall(
+  name: string,
+  args: Record<string, any>,
+  ctx: tools.ToolContext,
+  boardObjects: CompactObject[]
+): Promise<any> {
+  switch (name) {
+    case "createStickyNote":
+      return tools.createStickyNote(ctx, args.text, args.x, args.y, args.color);
+    case "createShape":
+      return tools.createShape(ctx, args.type, args.x, args.y, args.width, args.height, args.color);
+    case "createFrame":
+      return tools.createFrame(ctx, args.title, args.x, args.y, args.width, args.height);
+    case "createConnector":
+      return tools.createConnector(ctx, args.fromId, args.toId, args.style);
+    case "moveObject":
+      return tools.moveObject(ctx, args.objectId, args.x, args.y);
+    case "resizeObject":
+      return tools.resizeObject(ctx, args.objectId, args.width, args.height);
+    case "updateText":
+      return tools.updateText(ctx, args.objectId, args.newText);
+    case "changeColor":
+      return tools.changeColor(ctx, args.objectId, args.color);
+    case "getBoardState":
+      // Return the already-loaded board state
+      return boardObjects;
+    default:
+      return { success: false, error: `Unknown tool: ${name}` };
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────
+
+function buildSummary(created: string[], updated: string[]): string {
+  const parts: string[] = [];
+  if (created.length > 0) parts.push(`${created.length} object(s) created`);
+  if (updated.length > 0) parts.push(`${updated.length} object(s) updated`);
+  return parts.length > 0 ? `Done! ${parts.join(", ")}.` : "Command completed.";
+}
+
+function computeFocusBounds(
+  createdIds: string[],
+  allObjects: CompactObject[]
+): { minX: number; minY: number; maxX: number; maxY: number } | undefined {
+  if (createdIds.length === 0) return undefined;
+
+  const createdSet = new Set(createdIds);
+  const created = allObjects.filter((o) => createdSet.has(o.id));
+  if (created.length === 0) return undefined;
+
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+
+  for (const obj of created) {
+    minX = Math.min(minX, obj.x);
+    minY = Math.min(minY, obj.y);
+    maxX = Math.max(maxX, obj.x + obj.width);
+    maxY = Math.max(maxY, obj.y + obj.height);
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timeoutId!);
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutId!);
+    throw err;
+  }
 }

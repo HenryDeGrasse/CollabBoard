@@ -1,44 +1,86 @@
 import * as admin from "firebase-admin";
+import { resolvePlacement, clampValue, SIZE_MIN, SIZE_MAX, COORD_MIN, COORD_MAX, TEXT_MAX_LENGTH } from "./placement";
+import type { CompactObject, Viewport } from "./boardState";
 
-const db = admin.database();
+const getAdminDb = () => admin.database();
+const ServerValue = admin.database.ServerValue;
 
 interface ToolResult {
   success: boolean;
   objectId?: string;
   error?: string;
+  data?: any;
 }
 
-// ─── Tool Implementations ─────────────────────────────────────
+// Shared context for placement resolution
+export interface ToolContext {
+  boardId: string;
+  uid: string;
+  viewport: Viewport;
+  existingObjects: CompactObject[];
+}
+
+function sanitizeText(text: string | undefined): string {
+  if (!text) return "";
+  return String(text).slice(0, TEXT_MAX_LENGTH);
+}
+
+function sanitizeCoord(val: number | undefined): number {
+  if (val === undefined || val === null || isNaN(val)) return 0;
+  return clampValue(val, COORD_MIN, COORD_MAX);
+}
+
+function sanitizeSize(val: number | undefined, min = SIZE_MIN, max = SIZE_MAX): number {
+  if (val === undefined || val === null || isNaN(val)) return min;
+  return clampValue(val, min, max);
+}
+
+function sanitizeColor(color: string | undefined): string {
+  if (!color || typeof color !== "string") return "#FBBF24";
+  // Basic hex validation
+  if (/^#[0-9A-Fa-f]{6}$/.test(color)) return color;
+  return "#FBBF24";
+}
+
+// ─── Create Tools ─────────────────────────────────────────────
 
 export async function createStickyNote(
-  boardId: string,
+  ctx: ToolContext,
   text: string,
   x: number,
   y: number,
-  color: string,
-  userId: string
+  color: string
 ): Promise<ToolResult> {
   try {
-    const objectsRef = db.ref(`boards/${boardId}/objects`);
-    const newRef = objectsRef.push();
-    const id = newRef.key!;
+    const w = 150;
+    const h = 150;
+    const pos = resolvePlacement(sanitizeCoord(x), sanitizeCoord(y), w, h, ctx.viewport, ctx.existingObjects);
+
+    const db = getAdminDb();
+    const ref = db.ref(`boards/${ctx.boardId}/objects`).push();
+    const id = ref.key!;
     const now = Date.now();
 
-    await newRef.set({
+    const obj = {
       id,
       type: "sticky",
-      x,
-      y,
-      width: 150,
-      height: 150,
-      color,
-      text,
+      x: pos.x,
+      y: pos.y,
+      width: w,
+      height: h,
+      color: sanitizeColor(color),
+      text: sanitizeText(text),
       rotation: 0,
       zIndex: now,
-      createdBy: userId,
+      createdBy: ctx.uid,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+
+    await ref.set(obj);
+
+    // Track for future placement in same command
+    ctx.existingObjects.push({ ...obj, parentFrameId: null });
 
     return { success: true, objectId: id };
   } catch (error) {
@@ -47,35 +89,43 @@ export async function createStickyNote(
 }
 
 export async function createShape(
-  boardId: string,
+  ctx: ToolContext,
   type: string,
   x: number,
   y: number,
   width: number,
   height: number,
-  color: string,
-  userId: string
+  color: string
 ): Promise<ToolResult> {
   try {
-    const objectsRef = db.ref(`boards/${boardId}/objects`);
-    const newRef = objectsRef.push();
-    const id = newRef.key!;
+    const validTypes = ["rectangle", "circle", "line"];
+    const shapeType = validTypes.includes(type) ? type : "rectangle";
+    const w = sanitizeSize(width);
+    const h = sanitizeSize(height);
+    const pos = resolvePlacement(sanitizeCoord(x), sanitizeCoord(y), w, h, ctx.viewport, ctx.existingObjects);
+
+    const db = getAdminDb();
+    const ref = db.ref(`boards/${ctx.boardId}/objects`).push();
+    const id = ref.key!;
     const now = Date.now();
 
-    await newRef.set({
+    const obj = {
       id,
-      type,
-      x,
-      y,
-      width,
-      height,
-      color,
+      type: shapeType,
+      x: pos.x,
+      y: pos.y,
+      width: w,
+      height: h,
+      color: sanitizeColor(color),
       rotation: 0,
       zIndex: now,
-      createdBy: userId,
+      createdBy: ctx.uid,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+
+    await ref.set(obj);
+    ctx.existingObjects.push({ ...obj, parentFrameId: null });
 
     return { success: true, objectId: id };
   } catch (error) {
@@ -84,35 +134,41 @@ export async function createShape(
 }
 
 export async function createFrame(
-  boardId: string,
+  ctx: ToolContext,
   title: string,
   x: number,
   y: number,
   width: number,
-  height: number,
-  userId: string
+  height: number
 ): Promise<ToolResult> {
   try {
-    const objectsRef = db.ref(`boards/${boardId}/objects`);
-    const newRef = objectsRef.push();
-    const id = newRef.key!;
+    const w = sanitizeSize(width, 200, SIZE_MAX);
+    const h = sanitizeSize(height, 150, SIZE_MAX);
+    const pos = resolvePlacement(sanitizeCoord(x), sanitizeCoord(y), w, h, ctx.viewport, ctx.existingObjects);
+
+    const db = getAdminDb();
+    const ref = db.ref(`boards/${ctx.boardId}/objects`).push();
+    const id = ref.key!;
     const now = Date.now();
 
-    await newRef.set({
+    const obj = {
       id,
       type: "frame",
-      x,
-      y,
-      width,
-      height,
+      x: pos.x,
+      y: pos.y,
+      width: w,
+      height: h,
       color: "#F3F4F6",
-      text: title,
+      text: sanitizeText(title),
       rotation: 0,
       zIndex: now - 1000, // Frames render below other objects
-      createdBy: userId,
+      createdBy: ctx.uid,
       createdAt: now,
       updatedAt: now,
-    });
+    };
+
+    await ref.set(obj);
+    ctx.existingObjects.push({ ...obj, parentFrameId: null });
 
     return { success: true, objectId: id };
   } catch (error) {
@@ -121,22 +177,21 @@ export async function createFrame(
 }
 
 export async function createConnector(
-  boardId: string,
+  ctx: ToolContext,
   fromId: string,
   toId: string,
   style: string
 ): Promise<ToolResult> {
   try {
-    const connectorsRef = db.ref(`boards/${boardId}/connectors`);
-    const newRef = connectorsRef.push();
-    const id = newRef.key!;
+    if (!fromId || !toId) return { success: false, error: "Missing fromId or toId" };
+    const validStyles = ["arrow", "line"];
+    const connStyle = validStyles.includes(style) ? style : "arrow";
 
-    await newRef.set({
-      id,
-      fromId,
-      toId,
-      style,
-    });
+    const db = getAdminDb();
+    const ref = db.ref(`boards/${ctx.boardId}/connectors`).push();
+    const id = ref.key!;
+
+    await ref.set({ id, fromId, toId, style: connStyle });
 
     return { success: true, objectId: id };
   } catch (error) {
@@ -144,17 +199,21 @@ export async function createConnector(
   }
 }
 
+// ─── Mutation Tools ───────────────────────────────────────────
+
 export async function moveObject(
-  boardId: string,
+  ctx: ToolContext,
   objectId: string,
   x: number,
   y: number
 ): Promise<ToolResult> {
   try {
-    await db.ref(`boards/${boardId}/objects/${objectId}`).update({
-      x,
-      y,
-      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    if (!objectId) return { success: false, error: "Missing objectId" };
+    const db = getAdminDb();
+    await db.ref(`boards/${ctx.boardId}/objects/${objectId}`).update({
+      x: sanitizeCoord(x),
+      y: sanitizeCoord(y),
+      updatedAt: ServerValue.TIMESTAMP,
     });
     return { success: true, objectId };
   } catch (error) {
@@ -163,16 +222,18 @@ export async function moveObject(
 }
 
 export async function resizeObject(
-  boardId: string,
+  ctx: ToolContext,
   objectId: string,
   width: number,
   height: number
 ): Promise<ToolResult> {
   try {
-    await db.ref(`boards/${boardId}/objects/${objectId}`).update({
-      width,
-      height,
-      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    if (!objectId) return { success: false, error: "Missing objectId" };
+    const db = getAdminDb();
+    await db.ref(`boards/${ctx.boardId}/objects/${objectId}`).update({
+      width: sanitizeSize(width),
+      height: sanitizeSize(height),
+      updatedAt: ServerValue.TIMESTAMP,
     });
     return { success: true, objectId };
   } catch (error) {
@@ -181,14 +242,16 @@ export async function resizeObject(
 }
 
 export async function updateText(
-  boardId: string,
+  ctx: ToolContext,
   objectId: string,
   newText: string
 ): Promise<ToolResult> {
   try {
-    await db.ref(`boards/${boardId}/objects/${objectId}`).update({
-      text: newText,
-      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    if (!objectId) return { success: false, error: "Missing objectId" };
+    const db = getAdminDb();
+    await db.ref(`boards/${ctx.boardId}/objects/${objectId}`).update({
+      text: sanitizeText(newText),
+      updatedAt: ServerValue.TIMESTAMP,
     });
     return { success: true, objectId };
   } catch (error) {
@@ -197,22 +260,19 @@ export async function updateText(
 }
 
 export async function changeColor(
-  boardId: string,
+  ctx: ToolContext,
   objectId: string,
   color: string
 ): Promise<ToolResult> {
   try {
-    await db.ref(`boards/${boardId}/objects/${objectId}`).update({
-      color,
-      updatedAt: admin.database.ServerValue.TIMESTAMP,
+    if (!objectId) return { success: false, error: "Missing objectId" };
+    const db = getAdminDb();
+    await db.ref(`boards/${ctx.boardId}/objects/${objectId}`).update({
+      color: sanitizeColor(color),
+      updatedAt: ServerValue.TIMESTAMP,
     });
     return { success: true, objectId };
   } catch (error) {
     return { success: false, error: String(error) };
   }
-}
-
-export async function getBoardState(boardId: string): Promise<Record<string, any>> {
-  const snapshot = await db.ref(`boards/${boardId}/objects`).orderByChild("updatedAt").limitToLast(100).once("value");
-  return snapshot.val() || {};
 }
