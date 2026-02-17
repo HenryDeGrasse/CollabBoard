@@ -123,6 +123,9 @@ export function Board({
     startFrameY: number;
   } | null>(null);
 
+  // Live position overrides during drag — triggers re-render so connectors update
+  const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
+
   // Arrow drawing state
   const [arrowDraw, setArrowDraw] = useState<{
     fromId: string;
@@ -574,8 +577,6 @@ export function Board({
   const groupDragOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
   // Track contained objects when a frame is being dragged
   const frameContainedRef = useRef<Record<string, { dx: number; dy: number }>>({});
-  // Live position overrides during drag — triggers re-render so connectors update
-  const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
 
   // Handle frame header manual drag start (called from FrameOverlay)
   const handleFrameHeaderDragStart = useCallback((frameId: string) => {
