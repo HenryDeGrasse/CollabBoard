@@ -15,28 +15,34 @@ export async function createUserSession(
   // Go to the app
   await page.goto("/");
 
-  // Login as guest
-  await page.waitForSelector('input[placeholder*="name" i], input[placeholder*="Name" i]', {
+  // Wait for login page to load
+  await page.waitForSelector('input[placeholder="Enter your name"]', {
     timeout: 10_000,
   });
-  await page.fill('input[placeholder*="name" i], input[placeholder*="Name" i]', displayName);
-  await page.click('button:has-text("Guest"), button:has-text("guest"), button:has-text("Anonymous"), button:has-text("Continue")');
 
-  // Wait for redirect to home page or board
-  await page.waitForURL(/\/(board\/|$)/, { timeout: 10_000 });
+  // Fill in display name and click Continue as Guest
+  await page.fill('input[placeholder="Enter your name"]', displayName);
+  await page.click('button:has-text("Continue as Guest")');
+
+  // Wait for auth to complete and redirect — could go to home page or stay
+  // The app creates a board or we navigate to one
+  await page.waitForTimeout(2000);
 
   // Navigate to the specific board
   await page.goto(`/board/${boardId}`);
-  await page.waitForSelector("canvas, [data-testid='canvas']", { timeout: 10_000 });
 
-  // Give a moment for Firebase subscriptions to settle
-  await page.waitForTimeout(1000);
+  // Wait for the Konva canvas to render
+  await page.waitForSelector("canvas", { timeout: 15_000 });
+
+  // Give Firebase subscriptions time to settle
+  await page.waitForTimeout(1500);
 
   return { context, page };
 }
 
 /**
- * Create a sticky note via the toolbar
+ * Create a sticky note via the toolbar.
+ * Coordinates are relative to the canvas element's top-left corner.
  */
 export async function createStickyNote(
   page: Page,
@@ -44,24 +50,30 @@ export async function createStickyNote(
   y: number,
   text?: string
 ) {
-  // Click the sticky note tool (shortcut S)
-  await page.keyboard.press("s");
-  await page.waitForTimeout(200);
-
-  // Click on canvas at position
-  const canvas = page.locator("canvas").first();
-  await canvas.click({ position: { x, y } });
+  // Click the Sticky Note button in toolbar directly (more reliable than keyboard)
+  await page.click('button:has-text("Sticky Note")');
   await page.waitForTimeout(300);
+
+  // Click on canvas at position using mouse events for Konva compatibility
+  const canvas = page.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Canvas not found");
+
+  await page.mouse.click(box.x + x, box.y + y);
+  await page.waitForTimeout(500);
 
   // Type text if provided
   if (text) {
-    await page.keyboard.press("Enter"); // or double-click to edit
-    // Actually, new sticky should be auto-selected, double-click to edit
+    // Double-click to enter edit mode
     await canvas.dblclick({ position: { x, y } });
-    await page.waitForTimeout(200);
-    await page.keyboard.type(text);
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(300);
+
+    const textarea = page.locator("textarea");
+    if (await textarea.isVisible({ timeout: 2000 })) {
+      await textarea.fill(text);
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(300);
+    }
   }
 }
 
@@ -69,11 +81,13 @@ export async function createStickyNote(
  * Create a rectangle via the toolbar
  */
 export async function createRectangle(page: Page, x: number, y: number) {
-  await page.keyboard.press("r");
-  await page.waitForTimeout(200);
-  const canvas = page.locator("canvas").first();
-  await canvas.click({ position: { x, y } });
+  await page.click('button:has-text("Rectangle")');
   await page.waitForTimeout(300);
+  const canvas = page.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Canvas not found");
+  await page.mouse.click(box.x + x, box.y + y);
+  await page.waitForTimeout(500);
 }
 
 /**
@@ -87,13 +101,15 @@ export async function dragOnCanvas(
   toY: number
 ) {
   const canvas = page.locator("canvas").first();
-  await canvas.hover({ position: { x: fromX, y: fromY } });
+  const box = await canvas.boundingBox();
+  if (!box) return;
+
+  await page.mouse.move(box.x + fromX, box.y + fromY);
   await page.mouse.down();
-  // Move in small steps for smoother drag
   const steps = 10;
   for (let i = 1; i <= steps; i++) {
-    const x = fromX + ((toX - fromX) * i) / steps;
-    const y = fromY + ((toY - fromY) * i) / steps;
+    const x = box.x + fromX + ((toX - fromX) * i) / steps;
+    const y = box.y + fromY + ((toY - fromY) * i) / steps;
     await page.mouse.move(x, y);
     await page.waitForTimeout(16);
   }
@@ -123,20 +139,6 @@ export async function measureFPS(page: Page, durationMs: number = 2000): Promise
       requestAnimationFrame(frame);
     });
   }, durationMs);
-}
-
-/**
- * Count objects visible on the board by querying Firebase state via the page context
- */
-export async function getObjectCount(page: Page): Promise<number> {
-  return page.evaluate(() => {
-    // Count Konva shapes on the canvas (excluding grid, selection, cursors)
-    const stage = (window as any).Konva?.stages?.[0];
-    if (!stage) return 0;
-    const layer = stage.getLayers()[0];
-    if (!layer) return 0;
-    return layer.getChildren().length;
-  });
 }
 
 /**

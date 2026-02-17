@@ -18,12 +18,12 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
     // Wait for all presence to sync
     await Promise.all(sessions.map((s) => s.page.waitForTimeout(3000)));
 
-    // Each user creates a sticky note
+    // Each user creates a sticky note at different positions
     for (let i = 0; i < sessions.length; i++) {
-      const x = 150 + i * 180;
-      const y = 300;
+      const x = 100 + i * 150;
+      const y = 200;
       await createStickyNote(sessions[i].page, x, y);
-      await sessions[i].page.waitForTimeout(300);
+      await sessions[i].page.waitForTimeout(500);
     }
 
     // Wait for all objects to sync across all clients
@@ -42,19 +42,23 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
       expect(fpsResults[i]).toBeGreaterThan(30);
     }
 
-    // Verify cursor sync: move each user's mouse
-    await Promise.all(
-      sessions.map((s, i) => {
-        const canvas = s.page.locator("canvas").first();
-        return canvas.hover({ position: { x: 200 + i * 100, y: 200 } });
-      })
-    );
+    // Verify cursor sync: move each user's mouse over the canvas
+    for (let i = 0; i < sessions.length; i++) {
+      const canvas = sessions[i].page.locator("canvas").first();
+      const box = await canvas.boundingBox();
+      if (box) {
+        await sessions[i].page.mouse.move(box.x + 200 + i * 100, box.y + 200);
+      }
+    }
     await Promise.all(sessions.map((s) => s.page.waitForTimeout(1000)));
 
     // Move cursors again to trigger cursor broadcasts
-    for (const [i, session] of sessions.entries()) {
-      const canvas = session.page.locator("canvas").first();
-      await canvas.hover({ position: { x: 300 + i * 50, y: 300 } });
+    for (let i = 0; i < sessions.length; i++) {
+      const canvas = sessions[i].page.locator("canvas").first();
+      const box = await canvas.boundingBox();
+      if (box) {
+        await sessions[i].page.mouse.move(box.x + 300 + i * 50, box.y + 300);
+      }
     }
     await Promise.all(sessions.map((s) => s.page.waitForTimeout(1000)));
 

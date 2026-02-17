@@ -9,16 +9,18 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
     const userB = await createUserSession(browser, boardId, "Bob");
 
     const canvasA = userA.page.locator("canvas").first();
+    const boxA = await canvasA.boundingBox();
+    if (!boxA) throw new Error("Canvas not found");
 
     // Rapidly create 25 sticky notes
     for (let i = 0; i < 25; i++) {
       const x = 100 + (i % 5) * 160;
       const y = 100 + Math.floor(i / 5) * 160;
 
-      // Press S for sticky tool
-      await userA.page.keyboard.press("s");
+      // Click Sticky Note tool then click canvas
+      await userA.page.click('button:has-text("Sticky Note")');
       await userA.page.waitForTimeout(50);
-      await canvasA.click({ position: { x, y } });
+      await userA.page.mouse.click(boxA.x + x, boxA.y + y);
       await userA.page.waitForTimeout(100);
     }
 
@@ -36,6 +38,10 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
     console.log(`User B FPS after 25 objects: ${fpsB.toFixed(1)}`);
     expect(fpsB).toBeGreaterThan(30);
 
+    // Switch to select tool first
+    await userA.page.click('button:has-text("Select")');
+    await userA.page.waitForTimeout(100);
+
     // Rapid dragging: drag the first 10 objects quickly
     for (let i = 0; i < 10; i++) {
       const fromX = 100 + (i % 5) * 160;
@@ -43,9 +49,9 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
       const toX = fromX + 50;
       const toY = fromY + 50;
 
-      await canvasA.hover({ position: { x: fromX, y: fromY } });
+      await userA.page.mouse.move(boxA.x + fromX, boxA.y + fromY);
       await userA.page.mouse.down();
-      await userA.page.mouse.move(toX, toY, { steps: 5 });
+      await userA.page.mouse.move(boxA.x + toX, boxA.y + toY, { steps: 5 });
       await userA.page.mouse.up();
       await userA.page.waitForTimeout(50);
     }
