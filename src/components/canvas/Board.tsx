@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Stage, Layer, Arrow, Line, Rect } from "react-konva";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { Stage, Layer, Arrow, Line, Rect, Group } from "react-konva";
 import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
@@ -1055,33 +1055,107 @@ export function Board({
             />
           )}
 
-          {/* Render frames first (behind everything) */}
+          {/* Render frames + clipped contained objects */}
           {sortedObjects
             .filter((obj) => obj.type === "frame")
             .map((obj) => {
               const frameObj = objects[obj.id] || obj;
-              const containedCount = getObjectsInFrame(frameObj.id).length;
+              const contained = getObjectsInFrame(frameObj.id);
               return (
-                <Frame
-                  key={obj.id}
-                  object={frameObj}
-                  isSelected={selectedIds.has(obj.id)}
-                  isEditing={editingObjectId === obj.id}
-                  containedCount={containedCount}
-                  isSelectMode={activeTool === "select"}
-                  onSelect={handleObjectClick}
-                  onDragStart={handleDragStart}
-                  onDragMove={handleDragMove}
-                  onDragEnd={handleDragEnd}
-                  onDoubleClick={handleDoubleClick}
-                  onUpdateObject={onUpdateObject}
-                />
+                <React.Fragment key={obj.id}>
+                  {/* Frame background */}
+                  <Frame
+                    object={frameObj}
+                    isSelected={selectedIds.has(obj.id)}
+                    isEditing={editingObjectId === obj.id}
+                    containedCount={contained.length}
+                    isSelectMode={activeTool === "select"}
+                    onSelect={handleObjectClick}
+                    onDragStart={handleDragStart}
+                    onDragMove={handleDragMove}
+                    onDragEnd={handleDragEnd}
+                    onDoubleClick={handleDoubleClick}
+                    onUpdateObject={onUpdateObject}
+                  />
+
+                  {/* Clipped container for objects inside this frame */}
+                  {contained.length > 0 && (
+                    <Group
+                      clipFunc={(ctx) => {
+                        ctx.rect(
+                          frameObj.x,
+                          frameObj.y + TITLE_HEIGHT,
+                          frameObj.width,
+                          frameObj.height - TITLE_HEIGHT
+                        );
+                      }}
+                    >
+                      {contained
+                        .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+                        .map((cobj) => {
+                          const lock = isObjectLocked(cobj.id);
+                          if (cobj.type === "line") {
+                            return (
+                              <LineObject
+                                key={cobj.id}
+                                object={cobj}
+                                isSelected={selectedIds.has(cobj.id)}
+                                onSelect={handleObjectClick}
+                                onDragStart={handleDragStart}
+                                onDragMove={handleDragMove}
+                                onDragEnd={handleDragEnd}
+                                onUpdateObject={onUpdateObject}
+                              />
+                            );
+                          } else if (cobj.type === "rectangle" || cobj.type === "circle") {
+                            return (
+                              <Shape
+                                key={cobj.id}
+                                object={cobj}
+                                isSelected={selectedIds.has(cobj.id)}
+                                isEditing={editingObjectId === cobj.id}
+                                isLockedByOther={lock.locked}
+                                lockedByColor={lock.lockedByColor}
+                                draftText={getDraftTextForObject(cobj.id)?.text}
+                                onSelect={handleObjectClick}
+                                onDragStart={handleDragStart}
+                                onDragMove={handleDragMove}
+                                onDragEnd={handleDragEnd}
+                                onDoubleClick={handleDoubleClick}
+                                onUpdateObject={onUpdateObject}
+                              />
+                            );
+                          } else if (cobj.type === "sticky") {
+                            return (
+                              <StickyNote
+                                key={cobj.id}
+                                object={cobj}
+                                isSelected={selectedIds.has(cobj.id)}
+                                isEditing={editingObjectId === cobj.id}
+                                isLockedByOther={lock.locked}
+                                lockedByName={lock.lockedBy}
+                                lockedByColor={lock.lockedByColor}
+                                draftText={getDraftTextForObject(cobj.id)?.text}
+                                onSelect={handleObjectClick}
+                                onDragStart={handleDragStart}
+                                onDragMove={handleDragMove}
+                                onDragEnd={handleDragEnd}
+                                onDoubleClick={handleDoubleClick}
+                                onUpdateObject={onUpdateObject}
+                              />
+                            );
+                          }
+                          return null;
+                        })}
+                    </Group>
+                  )}
+                </React.Fragment>
               );
             })}
 
-          {/* Render line objects */}
+          {/* Render uncontained line objects */}
           {sortedObjects
-            .filter((obj) => obj.type === "line")
+            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
             .map((obj) => (
               <LineObject
                 key={obj.id}
@@ -1095,9 +1169,9 @@ export function Board({
               />
             ))}
 
-          {/* Render shapes (rectangles, circles) */}
+          {/* Render uncontained shapes (rectangles, circles) */}
           {sortedObjects
-            .filter((obj) => ["rectangle", "circle"].includes(obj.type))
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId)
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
@@ -1119,9 +1193,9 @@ export function Board({
               );
             })}
 
-          {/* Render sticky notes */}
+          {/* Render uncontained sticky notes */}
           {sortedObjects
-            .filter((obj) => obj.type === "sticky")
+            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId)
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
