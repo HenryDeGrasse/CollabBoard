@@ -247,3 +247,105 @@ export function Frame({
     </Group>
   );
 }
+
+// ─── Frame Overlay (renders on top of all objects) ─────────────
+
+interface FrameOverlayProps {
+  object: BoardObject;
+  isSelected: boolean;
+  containedCount: number;
+}
+
+export function FrameOverlay({ object, isSelected, containedCount }: FrameOverlayProps) {
+  const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
+  const borderWidth = isSelected ? 2.5 : 2;
+
+  const titleFontSize = Math.min(14, Math.max(10, object.width / 20));
+
+  return (
+    <Group x={object.x} y={object.y} listening={false}>
+      {/* Border outline on top */}
+      <Rect
+        width={object.width}
+        height={object.height}
+        fill="transparent"
+        stroke={borderColor}
+        strokeWidth={borderWidth}
+        cornerRadius={CORNER_RADIUS}
+        dash={isSelected ? undefined : [8, 4]}
+        listening={false}
+      />
+
+      {/* Header bar background */}
+      <Rect
+        x={0}
+        y={0}
+        width={object.width}
+        height={TITLE_HEIGHT}
+        fill="rgba(241, 245, 249, 0.98)"
+        cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+        listening={false}
+      />
+
+      {/* Header bottom border */}
+      <Line
+        points={[0, TITLE_HEIGHT, object.width, TITLE_HEIGHT]}
+        stroke={borderColor}
+        strokeWidth={1}
+        opacity={0.5}
+        listening={false}
+      />
+
+      {/* Frame icon */}
+      <Text
+        x={10}
+        y={TITLE_HEIGHT / 2 - 6}
+        text="⊞"
+        fontSize={12}
+        fill="#94A3B8"
+        listening={false}
+      />
+
+      {/* Title text */}
+      <Text
+        x={26}
+        y={TITLE_HEIGHT / 2 - titleFontSize / 2}
+        width={object.width - 80}
+        text={object.text || "Frame"}
+        fontSize={titleFontSize}
+        fontFamily="Inter, system-ui, sans-serif"
+        fontStyle="bold"
+        fill="#475569"
+        ellipsis
+        wrap="none"
+        listening={false}
+      />
+
+      {/* Object count badge */}
+      {containedCount > 0 && (
+        <>
+          <Rect
+            x={object.width - 40}
+            y={TITLE_HEIGHT / 2 - 9}
+            width={30}
+            height={18}
+            fill="#E2E8F0"
+            cornerRadius={9}
+            listening={false}
+          />
+          <Text
+            x={object.width - 40}
+            y={TITLE_HEIGHT / 2 - 6}
+            width={30}
+            text={String(containedCount)}
+            fontSize={10}
+            fontFamily="Inter, system-ui, sans-serif"
+            fill="#64748B"
+            align="center"
+            listening={false}
+          />
+        </>
+      )}
+    </Group>
+  );
+}

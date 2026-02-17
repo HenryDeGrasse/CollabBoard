@@ -4,7 +4,7 @@ import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
 import { LineObject } from "./LineTool";
-import { Frame } from "./Frame";
+import { Frame, FrameOverlay } from "./Frame";
 import { ConnectorLine } from "./Connector";
 import { RemoteCursor } from "./RemoteCursor";
 import { SelectionRect } from "./SelectionRect";
@@ -1140,6 +1140,22 @@ export function Board({
                   onDragEnd={handleDragEnd}
                   onDoubleClick={handleDoubleClick}
                   onUpdateObject={onUpdateObject}
+                />
+              );
+            })}
+
+          {/* Frame overlays (header + border on top of all objects) */}
+          {sortedObjects
+            .filter((obj) => obj.type === "frame")
+            .map((obj) => {
+              const frameObj = objects[obj.id] || obj;
+              const containedCount = getObjectsInFrame(frameObj.id).length;
+              return (
+                <FrameOverlay
+                  key={`overlay-${obj.id}`}
+                  object={frameObj}
+                  isSelected={selectedIds.has(obj.id)}
+                  containedCount={containedCount}
                 />
               );
             })}
