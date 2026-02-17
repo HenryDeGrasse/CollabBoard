@@ -152,6 +152,15 @@ export function shouldPopOutFromFrame(
   return getRectOverlapRatio(rect, frame) < popOutThreshold;
 }
 
+export function isInsideFrameWithHysteresis(
+  overlapRatio: number,
+  wasInside: boolean,
+  enterThreshold = 0.55,
+  exitThreshold = 0.45
+): boolean {
+  return wasInside ? overlapRatio >= exitThreshold : overlapRatio >= enterThreshold;
+}
+
 /**
  * Push a rectangle to the closest non-overlapping position outside a frame.
  */
