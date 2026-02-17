@@ -7,7 +7,6 @@ import {
   constrainObjectOutsideFrames,
   getRectOverlapRatio,
   shouldPopOutFromFrame,
-  isInsideFrameWithHysteresis,
 } from "../../utils/frame-containment";
 import type { BoardObject } from "../../types/board";
 
@@ -124,18 +123,6 @@ describe("overlap ratio + pop-out", () => {
 
     expect(getRectOverlapRatio(rectLessThanHalf, frame)).toBeCloseTo(0.4, 5);
     expect(shouldPopOutFromFrame(rectLessThanHalf, frame, 0.5)).toBe(true);
-  });
-});
-
-describe("isInsideFrameWithHysteresis", () => {
-  it("uses enter threshold when currently outside", () => {
-    expect(isInsideFrameWithHysteresis(0.54, false, 0.55, 0.45)).toBe(false);
-    expect(isInsideFrameWithHysteresis(0.55, false, 0.55, 0.45)).toBe(true);
-  });
-
-  it("uses exit threshold when currently inside", () => {
-    expect(isInsideFrameWithHysteresis(0.46, true, 0.55, 0.45)).toBe(true);
-    expect(isInsideFrameWithHysteresis(0.44, true, 0.55, 0.45)).toBe(false);
   });
 });
 

@@ -17,8 +17,7 @@ import { throttle } from "../../utils/throttle";
 import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
 import {
   constrainObjectOutsideFrames,
-  getRectOverlapRatio,
-  isInsideFrameWithHysteresis,
+  shouldPopOutFromFrame,
 } from "../../utils/frame-containment";
 
 export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line" | "frame";
@@ -83,8 +82,6 @@ export function Board({
   });
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(new Set());
   const draggingRef = useRef<Set<string>>(new Set());
-  // Drag-time preview frame assignment with hysteresis (objectId -> frameId | null)
-  const dragPreviewFrameRef = useRef<Record<string, string | null>>({});
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const justFinishedSelectionRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -233,11 +230,18 @@ export function Board({
 
   const poppedOutDraggedObjects = useMemo(() => {
     return Object.values(objects)
-      .filter((obj) => !!obj.parentFrameId && !!dragPositions[obj.id] && obj.type !== "frame")
+      .filter((obj) => !!obj.parentFrameId && !!dragPositions[obj.id])
       .map((obj) => {
         const live = dragPositions[obj.id]!;
-        const previewFrameId = dragPreviewFrameRef.current[obj.id] ?? obj.parentFrameId ?? null;
-        if (previewFrameId) return null;
+        const parent = obj.parentFrameId ? objects[obj.parentFrameId] : undefined;
+        if (!parent || parent.type !== "frame") return null;
+
+        const shouldPop = shouldPopOutFromFrame(
+          { x: live.x, y: live.y, width: obj.width, height: obj.height },
+          { x: parent.x, y: parent.y, width: parent.width, height: parent.height },
+          0.5
+        );
+        if (!shouldPop) return null;
 
         return { ...obj, x: live.x, y: live.y };
       })
@@ -246,17 +250,29 @@ export function Board({
   }, [objects, dragPositions]);
 
   // While dragging uncontained objects into a frame, show a live in-frame preview
-  // using drag-time hysteresis assignment.
+  // once overlap reaches the same threshold used for pop-out (50%).
   const enteringFrameDraggedObjects = useMemo(() => {
+    const frames = Object.values(objects)
+      .filter((o) => o.type === "frame")
+      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
     return Object.values(objects)
       .filter((obj) => !obj.parentFrameId && !!dragPositions[obj.id] && obj.type !== "frame")
       .map((obj) => {
         const live = dragPositions[obj.id]!;
-        const frameId = dragPreviewFrameRef.current[obj.id] ?? null;
-        if (!frameId) return null;
+        const targetFrame = frames.find((frame) => {
+          // Symmetric with pop-out: enter preview when >= 50% overlap.
+          return !shouldPopOutFromFrame(
+            { x: live.x, y: live.y, width: obj.width, height: obj.height },
+            { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+            0.5
+          );
+        });
+
+        if (!targetFrame) return null;
 
         return {
-          frameId,
+          frameId: targetFrame.id,
           object: { ...obj, x: live.x, y: live.y } as BoardObject,
         };
       })
@@ -364,8 +380,6 @@ export function Board({
   const TITLE_HEIGHT = 32;
   const MIN_FRAME_WIDTH = 200;
   const MIN_FRAME_HEIGHT = 150;
-  const ENTER_FRAME_OVERLAP = 0.55;
-  const EXIT_FRAME_OVERLAP = 0.45;
 
   const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
     const frames = Object.values(objects)
@@ -641,7 +655,6 @@ export function Board({
     const obj = objects[id];
     if (obj) {
       dragStartPosRef.current[id] = { x: obj.x, y: obj.y };
-      dragPreviewFrameRef.current[id] = obj.parentFrameId ?? null;
     }
 
     // If this is a frame, also move explicitly-contained objects
@@ -650,7 +663,6 @@ export function Board({
       getObjectsInFrame(obj.id).forEach((cobj) => {
         frameOffsets[cobj.id] = { dx: cobj.x - obj.x, dy: cobj.y - obj.y };
         dragStartPosRef.current[cobj.id] = { x: cobj.x, y: cobj.y };
-        dragPreviewFrameRef.current[cobj.id] = cobj.parentFrameId ?? null;
       });
       frameContainedRef.current = frameOffsets;
     } else {
@@ -666,7 +678,6 @@ export function Board({
           if (sobj && obj) {
             offsets[sid] = { dx: sobj.x - obj.x, dy: sobj.y - obj.y };
             dragStartPosRef.current[sid] = { x: sobj.x, y: sobj.y };
-            dragPreviewFrameRef.current[sid] = sobj.parentFrameId ?? null;
           }
         }
       });
@@ -686,75 +697,42 @@ export function Board({
       // Prevent non-frame objects from sliding under frames while cursor is outside.
       const isGroupDrag = selectedIds.has(id) && selectedIds.size > 1;
       if (draggedObj && draggedObj.type !== "frame" && !isGroupDrag) {
-        const frames = Object.values(objects)
-          .filter((o) => o.type === "frame")
-          .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-
         const pointer = stage?.getPointerPosition();
-        let pointerFrameId: string | null = null;
+        let frameUnderCursorId: string | null = null;
         if (pointer && stage) {
           const cx = (pointer.x - stage.x()) / stage.scaleX();
           const cy = (pointer.y - stage.y()) / stage.scaleY();
-          pointerFrameId = getFrameAtPoint(cx, cy)?.id ?? null;
+          frameUnderCursorId = getFrameAtPoint(cx, cy)?.id ?? null;
         }
 
-        const prevPreviewFrameId = dragPreviewFrameRef.current[id] ?? draggedObj.parentFrameId ?? null;
-        let activeFrameId: string | null = null;
-
-        const rect = {
-          x: primaryX,
-          y: primaryY,
-          width: draggedObj.width,
-          height: draggedObj.height,
-        };
-
-        // 1) Keep previous frame while overlap stays above exit threshold.
-        if (prevPreviewFrameId) {
-          const prevFrame = objects[prevPreviewFrameId];
-          if (prevFrame && prevFrame.type === "frame") {
-            const overlap = getRectOverlapRatio(rect, {
-              x: prevFrame.x,
-              y: prevFrame.y,
-              width: prevFrame.width,
-              height: prevFrame.height,
-            });
-            const keepInside = isInsideFrameWithHysteresis(
-              overlap,
-              true,
-              ENTER_FRAME_OVERLAP,
-              EXIT_FRAME_OVERLAP
+        // If dragging an object out of its current frame and it drops below 50% overlap,
+        // force it to pop outside unless cursor is inside another frame.
+        const currentParentFrameId = draggedObj.parentFrameId ?? null;
+        if (currentParentFrameId && frameUnderCursorId === currentParentFrameId) {
+          const currentParentFrame = objects[currentParentFrameId];
+          if (currentParentFrame && currentParentFrame.type === "frame") {
+            const willPopOut = shouldPopOutFromFrame(
+              { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
+              {
+                x: currentParentFrame.x,
+                y: currentParentFrame.y,
+                width: currentParentFrame.width,
+                height: currentParentFrame.height,
+              },
+              0.5
             );
-            if (keepInside) {
-              activeFrameId = prevPreviewFrameId;
+            if (willPopOut) {
+              frameUnderCursorId = null;
             }
           }
         }
 
-        // 2) If not inside yet, allow entering pointer frame only above enter threshold.
-        if (!activeFrameId && pointerFrameId) {
-          const pointerFrame = objects[pointerFrameId];
-          if (pointerFrame && pointerFrame.type === "frame") {
-            const overlap = getRectOverlapRatio(rect, {
-              x: pointerFrame.x,
-              y: pointerFrame.y,
-              width: pointerFrame.width,
-              height: pointerFrame.height,
-            });
-            const enter = isInsideFrameWithHysteresis(
-              overlap,
-              false,
-              ENTER_FRAME_OVERLAP,
-              EXIT_FRAME_OVERLAP
-            );
-            if (enter) {
-              activeFrameId = pointerFrameId;
-            }
-          }
-        }
-
-        dragPreviewFrameRef.current[id] = activeFrameId;
-
-        const constrained = constrainObjectOutsideFrames(rect, frames, activeFrameId);
+        const frames = Object.values(objects).filter((o) => o.type === "frame");
+        const constrained = constrainObjectOutsideFrames(
+          { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
+          frames,
+          frameUnderCursorId
+        );
         primaryX = constrained.x;
         primaryY = constrained.y;
 
@@ -844,17 +822,7 @@ export function Board({
         const pointer = stage?.getPointerPosition();
 
         let targetFrame: BoardObject | null = null;
-
-        // Prefer drag-time hysteresis preview assignment for final drop consistency.
-        const previewFrameId = dragPreviewFrameRef.current[id] ?? null;
-        if (previewFrameId) {
-          const previewFrame = objects[previewFrameId];
-          if (previewFrame && previewFrame.type === "frame") {
-            targetFrame = previewFrame;
-          }
-        }
-
-        if (!targetFrame && pointer && stage) {
+        if (pointer && stage) {
           const cx = (pointer.x - stage.x()) / stage.scaleX();
           const cy = (pointer.y - stage.y()) / stage.scaleY();
           targetFrame = getFrameAtPoint(cx, cy);
@@ -894,7 +862,6 @@ export function Board({
         });
       }
       delete dragStartPosRef.current[id];
-      delete dragPreviewFrameRef.current[id];
 
       // Commit frame-contained objects
       const frameOffsets = frameContainedRef.current;
@@ -912,7 +879,6 @@ export function Board({
           });
         }
         delete dragStartPosRef.current[cid];
-        delete dragPreviewFrameRef.current[cid];
       }
       frameContainedRef.current = {};
 
@@ -932,7 +898,6 @@ export function Board({
           });
         }
         delete dragStartPosRef.current[sid];
-        delete dragPreviewFrameRef.current[sid];
       }
       groupDragOffsetsRef.current = {};
       setDragPositions({});
@@ -1410,10 +1375,7 @@ export function Board({
             .filter((obj) => obj.type === "frame")
             .map((obj) => {
               const frameObj = objects[obj.id] || obj;
-              const contained = getObjectsInFrame(frameObj.id).filter((o) => {
-                const previewFrameId = dragPreviewFrameRef.current[o.id] ?? o.parentFrameId ?? null;
-                return previewFrameId === frameObj.id;
-              });
+              const contained = getObjectsInFrame(frameObj.id);
               const entering = enteringFrameDraggedObjects
                 .filter((entry) => entry.frameId === frameObj.id)
                 .map((entry) => entry.object);
