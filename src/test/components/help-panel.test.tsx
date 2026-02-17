@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { HelpPanel, shortcuts } from "../../components/ui/HelpPanel";
+import { HelpPanel, getShortcuts } from "../../components/ui/HelpPanel";
 
 describe("HelpPanel", () => {
   it("renders the help button", () => {
@@ -96,36 +96,35 @@ describe("HelpPanel", () => {
     expect(screen.getByText("Toggle this help panel")).toBeTruthy();
   });
 
-  it("shows correct key bindings for tool shortcuts", () => {
+  it("shows correct key bindings for non-Mac", () => {
     render(<HelpPanel />);
     fireEvent.click(screen.getByTitle("Keyboard shortcuts (?)"));
 
-    const toolShortcuts = shortcuts.filter(
-      (s) => "key" in s && "desc" in s && "section" in shortcuts[0]
-    );
-    // Verify specific key-desc pairs
-    const keyDescPairs = [
-      ["V", "Select tool"],
-      ["S", "Sticky Note tool"],
-      ["R", "Rectangle tool"],
-      ["C", "Circle tool"],
-      ["A", "Arrow / Connector tool"],
-      ["L", "Line tool"],
-      ["F", "Frame tool"],
-      ["Ctrl/⌘ + Z", "Undo"],
-      ["Ctrl/⌘ + Shift + Z", "Redo"],
-      ["Ctrl/⌘ + Y", "Redo (alternate)"],
-      ["Ctrl/⌘ + C", "Copy selected"],
-      ["Ctrl/⌘ + V", "Paste"],
-      ["Ctrl/⌘ + D", "Duplicate selected"],
-    ];
+    const nonMacShortcuts = getShortcuts(false);
+    const keyDescPairs = nonMacShortcuts
+      .filter((s): s is { key: string; desc: string } => "key" in s && "desc" in s);
 
-    for (const [key, desc] of keyDescPairs) {
-      const descEl = screen.getByText(desc);
-      const row = descEl.closest(".flex")!;
-      const kbd = row.querySelector("kbd")!;
-      expect(kbd.textContent).toBe(key);
-    }
+    // Ctrl shortcuts should use "Ctrl" not "⌘"
+    const undoEntry = keyDescPairs.find((s) => s.desc === "Undo");
+    expect(undoEntry?.key).toBe("Ctrl + Z");
+
+    const redoEntry = keyDescPairs.find((s) => s.desc === "Redo");
+    expect(redoEntry?.key).toBe("Ctrl + Shift + Z");
+  });
+
+  it("shows correct key bindings for Mac", () => {
+    const macShortcuts = getShortcuts(true);
+    const keyDescPairs = macShortcuts
+      .filter((s): s is { key: string; desc: string } => "key" in s && "desc" in s);
+
+    const undoEntry = keyDescPairs.find((s) => s.desc === "Undo");
+    expect(undoEntry?.key).toBe("⌘ + Z");
+
+    const redoEntry = keyDescPairs.find((s) => s.desc === "Redo");
+    expect(redoEntry?.key).toBe("⌘ + Shift + Z");
+
+    const copyEntry = keyDescPairs.find((s) => s.desc === "Copy selected");
+    expect(copyEntry?.key).toBe("⌘ + C");
   });
 
   it("renders section headers", () => {

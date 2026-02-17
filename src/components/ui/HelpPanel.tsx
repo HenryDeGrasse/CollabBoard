@@ -1,36 +1,45 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { HelpCircle, X } from "lucide-react";
 
-export const shortcuts = [
-  { section: "Tools" },
-  { key: "V", desc: "Select tool" },
-  { key: "S", desc: "Sticky Note tool" },
-  { key: "R", desc: "Rectangle tool" },
-  { key: "C", desc: "Circle tool" },
-  { key: "A", desc: "Arrow / Connector tool" },
-  { key: "L", desc: "Line tool" },
-  { key: "F", desc: "Frame tool" },
-  { section: "Actions" },
-  { key: "Delete / Backspace", desc: "Delete selected objects" },
-  { key: "Escape", desc: "Deselect all / cancel tool" },
-  { key: "Ctrl/⌘ + Z", desc: "Undo" },
-  { key: "Ctrl/⌘ + Shift + Z", desc: "Redo" },
-  { key: "Ctrl/⌘ + Y", desc: "Redo (alternate)" },
-  { key: "Ctrl/⌘ + C", desc: "Copy selected" },
-  { key: "Ctrl/⌘ + V", desc: "Paste" },
-  { key: "Ctrl/⌘ + D", desc: "Duplicate selected" },
-  { section: "Navigation" },
-  { key: "Space + Drag", desc: "Pan canvas" },
-  { key: "Right-click + Drag", desc: "Pan canvas" },
-  { key: "Scroll", desc: "Zoom in / out" },
-  { section: "Editing" },
-  { key: "Double-click", desc: "Edit text on object" },
-  { key: "Click away / Escape", desc: "Finish editing" },
-  { key: "?", desc: "Toggle this help panel" },
-] as const;
+export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
+export function getShortcuts(mac: boolean) {
+  const mod = mac ? "⌘" : "Ctrl";
+  return [
+    { section: "Tools" },
+    { key: "V", desc: "Select tool" },
+    { key: "S", desc: "Sticky Note tool" },
+    { key: "R", desc: "Rectangle tool" },
+    { key: "C", desc: "Circle tool" },
+    { key: "A", desc: "Arrow / Connector tool" },
+    { key: "L", desc: "Line tool" },
+    { key: "F", desc: "Frame tool" },
+    { section: "Actions" },
+    { key: "Delete / Backspace", desc: "Delete selected objects" },
+    { key: "Escape", desc: "Deselect all / cancel tool" },
+    { key: `${mod} + Z`, desc: "Undo" },
+    { key: `${mod} + Shift + Z`, desc: "Redo" },
+    { key: `${mod} + Y`, desc: "Redo (alternate)" },
+    { key: `${mod} + C`, desc: "Copy selected" },
+    { key: `${mod} + V`, desc: "Paste" },
+    { key: `${mod} + D`, desc: "Duplicate selected" },
+    { section: "Navigation" },
+    { key: "Space + Drag", desc: "Pan canvas" },
+    { key: "Right-click + Drag", desc: "Pan canvas" },
+    { key: "Scroll", desc: "Zoom in / out" },
+    { section: "Editing" },
+    { key: "Double-click", desc: "Edit text on object" },
+    { key: "Click away / Escape", desc: "Finish editing" },
+    { key: "?", desc: "Toggle this help panel" },
+  ] as const;
+}
+
+// For backward compat with tests
+export const shortcuts = getShortcuts(isMac);
 
 export function HelpPanel() {
   const [open, setOpen] = useState(false);
+  const resolvedShortcuts = useMemo(() => getShortcuts(isMac), []);
 
   // Toggle with ? key
   useEffect(() => {
@@ -84,7 +93,7 @@ export function HelpPanel() {
 
             {/* Shortcuts list */}
             <div className="px-6 py-4 max-h-[60vh] overflow-y-auto space-y-1">
-              {shortcuts.map((item, i) => {
+              {resolvedShortcuts.map((item, i) => {
                 if ("section" in item && !("key" in item)) {
                   return (
                     <div key={i} className={`text-xs font-semibold uppercase tracking-wider text-gray-400 ${i > 0 ? "pt-4 pb-1" : "pb-1"}`}>
