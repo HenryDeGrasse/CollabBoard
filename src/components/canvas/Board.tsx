@@ -295,11 +295,6 @@ export function Board({
       .filter((entry): entry is { frameId: string; object: BoardObject } => !!entry);
   }, [objects, dragPositions]);
 
-  const enteringDraggedIds = useMemo(
-    () => new Set(enteringFrameDraggedObjects.map((entry) => entry.object.id)),
-    [enteringFrameDraggedObjects]
-  );
-
   // Get remote cursors (not current user)
   const remoteCursors = useMemo(() => {
     return Object.entries(users)
@@ -791,6 +786,8 @@ export function Board({
           if (node) {
             node.x(primaryX);
             node.y(primaryY);
+            // Hide original node when entering preview is showing (avoid double render)
+            node.opacity(allowedFrameId && !currentParentFrameId ? 0 : 1);
           }
         }
       }
@@ -854,6 +851,13 @@ export function Board({
   const handleDragEnd = useCallback(
     (id: string, x: number, y: number) => {
       draggingRef.current.delete(id);
+
+      // Restore opacity on the original node (may have been hidden during entering preview)
+      const stageNode = stageRef.current;
+      if (stageNode) {
+        const node = stageNode.findOne(`#node-${id}`);
+        if (node) node.opacity(1);
+      }
 
       // Commit primary dragged object
       const startPos = dragStartPosRef.current[id];
@@ -1361,7 +1365,7 @@ export function Board({
 
           {/* Render uncontained objects first (so frame body can sit on top) */}
           {sortedObjects
-            .filter((obj) => obj.type === "line" && !obj.parentFrameId && !enteringDraggedIds.has(obj.id))
+            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
             .map((obj) => (
               <LineObject
                 key={obj.id}
@@ -1376,7 +1380,7 @@ export function Board({
             ))}
 
           {sortedObjects
-            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId && !enteringDraggedIds.has(obj.id))
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId)
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
@@ -1399,7 +1403,7 @@ export function Board({
             })}
 
           {sortedObjects
-            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId && !enteringDraggedIds.has(obj.id))
+            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId)
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
