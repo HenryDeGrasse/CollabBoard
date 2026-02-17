@@ -80,6 +80,66 @@ describe("computeResize", () => {
     });
   });
 
+  describe("shrinking objects", () => {
+    it("bottom-right: shrinks width and height", () => {
+      const result = computeResize(original, "bottom-right", 200, 180);
+      expect(result.width).toBe(100);
+      expect(result.height).toBe(80);
+      expect(result.x).toBe(100);
+      expect(result.y).toBe(100);
+    });
+
+    it("top-left: shrinks by moving origin inward", () => {
+      const result = computeResize(original, "top-left", 200, 180);
+      expect(result.x).toBe(200);
+      expect(result.y).toBe(180);
+      expect(result.width).toBe(100);
+      expect(result.height).toBe(70);
+    });
+
+    it("left: shrinks width by moving left edge right", () => {
+      const result = computeResize(original, "left", 200, 175);
+      expect(result.x).toBe(200);
+      expect(result.width).toBe(100);
+    });
+
+    it("top: shrinks height by moving top edge down", () => {
+      const result = computeResize(original, "top", 200, 180);
+      expect(result.y).toBe(180);
+      expect(result.height).toBe(70);
+    });
+
+    it("right: shrinks width", () => {
+      const result = computeResize(original, "right", 200, 175);
+      expect(result.width).toBe(100);
+      expect(result.x).toBe(100);
+    });
+
+    it("bottom: shrinks height", () => {
+      const result = computeResize(original, "bottom", 200, 180);
+      expect(result.height).toBe(80);
+      expect(result.y).toBe(100);
+    });
+
+    it("circle: shrinks with keepAspect from right handle", () => {
+      const circleOrig = { x: 100, y: 100, width: 200, height: 200 };
+      const result = computeResize(circleOrig, "right", 200, 200, 40, 40, true);
+      // width = 200 - 100 = 100, height stays 200, max(100,200)=200... 
+      // Actually with keepAspect from right: width = pointer - origX = 100
+      // keepAspect: size = max(100, 200) = 200 — this is wrong!
+      // When shrinking with aspect lock, we should use the handle's direction
+      expect(result.width).toBe(result.height);
+      expect(result.width).toBeLessThan(200);
+    });
+
+    it("circle: shrinks with keepAspect from bottom handle", () => {
+      const circleOrig = { x: 100, y: 100, width: 200, height: 200 };
+      const result = computeResize(circleOrig, "bottom", 200, 200, 40, 40, true);
+      expect(result.width).toBe(result.height);
+      expect(result.height).toBeLessThan(200);
+    });
+  });
+
   describe("keepAspect (square/circle mode)", () => {
     it("forces square dimensions from bottom-right", () => {
       const result = computeResize(original, "bottom-right", 400, 300, 40, 40, true);

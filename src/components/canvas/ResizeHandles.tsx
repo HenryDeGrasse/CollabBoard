@@ -183,9 +183,23 @@ export function computeResize(
     height = minHeight;
   }
 
-  // Keep aspect ratio for circles
+  // Keep aspect ratio for circles/squares
   if (keepAspect) {
-    const size = Math.max(width, height);
+    let size: number;
+
+    // For edge handles, use the dimension being actively resized
+    if (handle === "left" || handle === "right") {
+      size = width;
+    } else if (handle === "top" || handle === "bottom") {
+      size = height;
+    } else {
+      // Corner handles: use the larger dimension
+      size = Math.max(width, height);
+    }
+
+    // Enforce minimum
+    size = Math.max(size, Math.max(minWidth, minHeight));
+
     // Adjust position if resizing from left/top edges
     if (handle.includes("left")) x = original.x + original.width - size;
     if (handle.includes("top") || handle === "top") y = original.y + original.height - size;
