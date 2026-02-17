@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Stage, Layer, Arrow, Line } from "react-konva";
+import { Stage, Layer, Arrow, Line, Rect } from "react-konva";
 import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
@@ -96,6 +96,14 @@ export function Board({
 
   // Line drawing state
   const [lineDraw, setLineDraw] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
+
+  // Frame drawing state (drag-to-create)
+  const [frameDraw, setFrameDraw] = useState<{
     startX: number;
     startY: number;
     endX: number;
@@ -252,6 +260,13 @@ export function Board({
         );
       }
 
+      // Frame drawing preview
+      if (frameDraw && activeTool === "frame") {
+        setFrameDraw((prev) =>
+          prev ? { ...prev, endX: canvasPoint.x, endY: canvasPoint.y } : null
+        );
+      }
+
       // Selection rect drag (skip during right-click pan)
       if (selectionStartRef.current && activeTool === "select" && !spaceHeldRef.current && !rightClickPanRef.current) {
         const start = selectionStartRef.current;
@@ -268,6 +283,8 @@ export function Board({
   );
 
   const TITLE_HEIGHT = 32;
+  const MIN_FRAME_WIDTH = 200;
+  const MIN_FRAME_HEIGHT = 150;
 
   const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
     const frames = Object.values(objects)
@@ -443,21 +460,36 @@ export function Board({
         });
         onResetTool(newId);
       } else if (activeTool === "frame") {
-        // Frames get the lowest zIndex so they sit behind objects
-        const minZIndex = Math.min(0, ...Object.values(objects).map((o) => o.zIndex || 0));
-        const newId = createAndTrack({
-          type: "frame",
-          x: canvasPoint.x - 200,
-          y: canvasPoint.y - 100,
-          width: 400,
-          height: 300,
-          color: "#F8FAFC",
-          text: "Frame",
-          rotation: 0,
-          zIndex: minZIndex - 1,
-          createdBy: currentUserId,
-        });
-        onResetTool(newId);
+        if (!frameDraw) {
+          // First click: start drawing
+          setFrameDraw({
+            startX: canvasPoint.x,
+            startY: canvasPoint.y,
+            endX: canvasPoint.x,
+            endY: canvasPoint.y,
+          });
+        } else {
+          // Second click: create the frame
+          const x = Math.min(frameDraw.startX, canvasPoint.x);
+          const y = Math.min(frameDraw.startY, canvasPoint.y);
+          const width = Math.max(MIN_FRAME_WIDTH, Math.abs(canvasPoint.x - frameDraw.startX));
+          const height = Math.max(MIN_FRAME_HEIGHT, Math.abs(canvasPoint.y - frameDraw.startY));
+          const minZIndex = Math.min(0, ...Object.values(objects).map((o) => o.zIndex || 0));
+          const newId = createAndTrack({
+            type: "frame",
+            x,
+            y,
+            width,
+            height,
+            color: "#F8FAFC",
+            text: "Frame",
+            rotation: 0,
+            zIndex: minZIndex - 1,
+            createdBy: currentUserId,
+          });
+          setFrameDraw(null);
+          onResetTool(newId);
+        }
       }
     },
     [
@@ -475,6 +507,7 @@ export function Board({
       onResetTool,
       onPushUndo,
       getFrameAtPoint,
+      frameDraw,
     ]
   );
 
@@ -862,6 +895,7 @@ export function Board({
       if (e.key === "Escape") {
         setArrowDraw(null);
         setLineDraw(null);
+        setFrameDraw(null);
         if (editingObjectId) {
           setEditingObjectId(null);
           onSetEditingObject(null);
@@ -920,6 +954,15 @@ export function Board({
           {lineDraw
             ? "Click to place the line's end point — Esc to cancel"
             : "Click to place the line's start point"}
+        </div>
+      )}
+
+      {/* Frame tool hint */}
+      {activeTool === "frame" && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg pointer-events-none">
+          {frameDraw
+            ? "Click to place the opposite corner — Esc to cancel"
+            : "Click to place one corner of the frame"}
         </div>
       )}
 
@@ -992,6 +1035,22 @@ export function Board({
               strokeWidth={3}
               dash={[6, 4]}
               lineCap="round"
+              listening={false}
+            />
+          )}
+
+          {/* Frame drawing preview */}
+          {frameDraw && (
+            <Rect
+              x={Math.min(frameDraw.startX, frameDraw.endX)}
+              y={Math.min(frameDraw.startY, frameDraw.endY)}
+              width={Math.max(MIN_FRAME_WIDTH, Math.abs(frameDraw.endX - frameDraw.startX))}
+              height={Math.max(MIN_FRAME_HEIGHT, Math.abs(frameDraw.endY - frameDraw.startY))}
+              fill="rgba(248, 250, 252, 0.6)"
+              stroke="#94A3B8"
+              strokeWidth={2}
+              dash={[8, 4]}
+              cornerRadius={8}
               listening={false}
             />
           )}

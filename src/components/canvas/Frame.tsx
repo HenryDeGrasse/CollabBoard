@@ -52,10 +52,14 @@ export function Frame({
       ref={groupRef}
       x={object.x}
       y={object.y}
-      draggable={!isEditing && isSelectMode && isSelected}
       onDragStart={() => onDragStart(object.id)}
       onDragMove={(e) => onDragMove(object.id, e.target.x(), e.target.y())}
-      onDragEnd={(e) => onDragEnd(object.id, e.target.x(), e.target.y())}
+      onDragEnd={(e) => {
+        onDragEnd(object.id, e.target.x(), e.target.y());
+        // Turn off draggable after drag completes
+        const group = groupRef.current;
+        if (group) group.draggable(false);
+      }}
     >
       {/* Frame background — subtle, sits behind everything */}
       <Rect
@@ -107,6 +111,23 @@ export function Frame({
         onDblTap={(e) => {
           e.cancelBubble = true;
           onDoubleClick(object.id);
+        }}
+        onMouseDown={(e) => {
+          if (!isEditing && isSelectMode) {
+            e.cancelBubble = true;
+            // Programmatically start drag on the parent Group
+            const group = groupRef.current;
+            if (group) {
+              group.draggable(true);
+              group.startDrag();
+            }
+          }
+        }}
+        onMouseUp={() => {
+          const group = groupRef.current;
+          if (group) {
+            group.draggable(false);
+          }
         }}
       />
 
