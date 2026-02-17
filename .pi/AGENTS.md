@@ -39,6 +39,7 @@ All bug fixes and new features MUST follow TDD:
 3. **Push to GitHub** — tests + build run automatically via pre-push hook
 4. **Vercel deploys from GitHub** — only push when local dev is verified
 5. **Never push broken code** — if tests or build fail, fix before pushing
+6. **NEVER push to GitHub (which triggers Vercel deploy) without explicit user approval** — always ask "Ready to push/deploy?" and wait for confirmation before running `git push`
 
 ### Production
 - Frontend hosted on **Vercel** (NOT Firebase Hosting)
@@ -81,7 +82,7 @@ All bug fixes and new features MUST follow TDD:
 
 ## Architecture Decisions
 
-- **Frame tool removed from toolbar** — AI agent can still create frames, but not in the toolbar
+- **Frame tool in toolbar** — F shortcut, spatial containment, no nesting
 - **Arrow tool in toolbar** — more useful for MVP demos than frame tool
 - **AI agent deployment deferred to last** — requires Firebase Blaze plan + OpenAI API key
 - **Test files excluded from production build** — `tsconfig.app.json` excludes `src/test`

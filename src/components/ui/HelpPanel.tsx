@@ -35,10 +35,10 @@ export function HelpPanel() {
       {/* Help button */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-50 w-10 h-10 bg-white rounded-full shadow-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition text-gray-500 hover:text-gray-700"
+        className="fixed bottom-4 left-4 z-50 ml-20 w-8 h-8 bg-white/80 backdrop-blur rounded-lg shadow-sm border border-gray-200 flex items-center justify-center hover:bg-white transition text-gray-500 hover:text-gray-700"
         title="Keyboard shortcuts (?)"
       >
-        <HelpCircle size={20} />
+        <HelpCircle size={16} />
       </button>
 
       {/* Modal overlay */}

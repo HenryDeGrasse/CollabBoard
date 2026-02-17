@@ -309,36 +309,27 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       />
 
       {/* Presence panel */}
-      <PresencePanel users={users} currentUserId={userId} />
+      <PresencePanel
+        users={users}
+        currentUserId={userId}
+        onShareClick={() => {
+          const url = window.location.href;
+          navigator.clipboard.writeText(url).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
+        }}
+        linkCopied={copied}
+      />
 
-      {/* Board info + share link */}
-      <div className="fixed top-4 left-4 z-50 flex items-center gap-2">
+      {/* Back to Dashboard button */}
+      <div className="fixed top-4 left-4 z-50">
         <button
           onClick={() => onNavigateHome?.()}
-          className="flex items-center gap-1 text-xs bg-white/80 backdrop-blur px-2.5 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-white hover:text-gray-800 transition"
+          className="flex items-center gap-1 text-xs bg-white/80 backdrop-blur px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white hover:text-gray-800 transition shadow-sm"
           title="Back to Dashboard"
         >
           ← Dashboard
-        </button>
-        <div className="w-px h-4 bg-gray-300" />
-        <div
-          className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: myColor }}
-        />
-        <span className="text-sm text-gray-600 bg-white/80 backdrop-blur px-2 py-1 rounded">
-          {displayName}
-        </span>
-        <button
-          onClick={() => {
-            const url = window.location.href;
-            navigator.clipboard.writeText(url).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
-          }}
-          className="flex items-center gap-1 text-xs bg-white/80 backdrop-blur px-2.5 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-white hover:text-gray-800 transition"
-        >
-          {copied ? "✓ Copied!" : "📋 Share Board"}
         </button>
       </div>
 
