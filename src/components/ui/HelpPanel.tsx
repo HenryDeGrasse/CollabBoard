@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { HelpCircle, X } from "lucide-react";
 
-const shortcuts = [
+export const shortcuts = [
   { section: "Tools" },
   { key: "V", desc: "Select tool" },
   { key: "S", desc: "Sticky Note tool" },
@@ -13,22 +13,42 @@ const shortcuts = [
   { section: "Actions" },
   { key: "Delete / Backspace", desc: "Delete selected objects" },
   { key: "Escape", desc: "Deselect all / cancel tool" },
-  { key: "Ctrl + Z", desc: "Undo" },
-  { key: "Ctrl + Shift + Z", desc: "Redo" },
-  { key: "Ctrl + C", desc: "Copy selected" },
-  { key: "Ctrl + V", desc: "Paste" },
-  { key: "Ctrl + D", desc: "Duplicate selected" },
+  { key: "Ctrl/⌘ + Z", desc: "Undo" },
+  { key: "Ctrl/⌘ + Shift + Z", desc: "Redo" },
+  { key: "Ctrl/⌘ + Y", desc: "Redo (alternate)" },
+  { key: "Ctrl/⌘ + C", desc: "Copy selected" },
+  { key: "Ctrl/⌘ + V", desc: "Paste" },
+  { key: "Ctrl/⌘ + D", desc: "Duplicate selected" },
   { section: "Navigation" },
   { key: "Space + Drag", desc: "Pan canvas" },
   { key: "Right-click + Drag", desc: "Pan canvas" },
   { key: "Scroll", desc: "Zoom in / out" },
   { section: "Editing" },
   { key: "Double-click", desc: "Edit text on object" },
-  { key: "Click away", desc: "Finish editing" },
+  { key: "Click away / Escape", desc: "Finish editing" },
+  { key: "?", desc: "Toggle this help panel" },
 ] as const;
 
 export function HelpPanel() {
   const [open, setOpen] = useState(false);
+
+  // Toggle with ? key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      if (e.key === "?") {
+        e.preventDefault();
+        setOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <>

@@ -231,20 +231,22 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
         listening={false}
       />
 
-      {/* Title text */}
-      <Text
-        x={26}
-        y={TITLE_HEIGHT / 2 - titleFontSize / 2}
-        width={object.width - 80}
-        text={object.text || "Frame"}
-        fontSize={titleFontSize}
-        fontFamily="Inter, system-ui, sans-serif"
-        fontStyle="bold"
-        fill="#475569"
-        ellipsis
-        wrap="none"
-        listening={false}
-      />
+      {/* Title text — hidden while editing */}
+      {!isEditing && (
+        <Text
+          x={26}
+          y={TITLE_HEIGHT / 2 - titleFontSize / 2}
+          width={object.width - 80}
+          text={object.text || "Frame"}
+          fontSize={titleFontSize}
+          fontFamily="Inter, system-ui, sans-serif"
+          fontStyle="bold"
+          fill="#475569"
+          ellipsis
+          wrap="none"
+          listening={false}
+        />
+      )}
 
       {/* Object count badge */}
       {containedCount > 0 && (
