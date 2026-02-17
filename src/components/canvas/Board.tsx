@@ -267,6 +267,25 @@ export function Board({
     [onCursorMove, getCanvasPoint, activeTool, arrowDraw]
   );
 
+  const TITLE_HEIGHT = 32;
+
+  const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
+    const frames = Object.values(objects)
+      .filter((o) => o.type === "frame")
+      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
+    for (const frame of frames) {
+      const insideX = x >= frame.x && x <= frame.x + frame.width;
+      const insideY = y >= frame.y + TITLE_HEIGHT && y <= frame.y + frame.height;
+      if (insideX && insideY) return frame;
+    }
+    return null;
+  }, [objects]);
+
+  const getObjectsInFrame = useCallback((frameId: string) => {
+    return Object.values(objects).filter((o) => o.parentFrameId === frameId && o.type !== "frame");
+  }, [objects]);
+
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (e.evt.button === 2) return; // Ignore right-click
@@ -467,25 +486,6 @@ export function Board({
   const frameContainedRef = useRef<Record<string, { dx: number; dy: number }>>({});
   // Live position overrides during drag — triggers re-render so connectors update
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
-
-  const TITLE_HEIGHT = 32;
-
-  const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
-    const frames = Object.values(objects)
-      .filter((o) => o.type === "frame")
-      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-
-    for (const frame of frames) {
-      const insideX = x >= frame.x && x <= frame.x + frame.width;
-      const insideY = y >= frame.y + TITLE_HEIGHT && y <= frame.y + frame.height;
-      if (insideX && insideY) return frame;
-    }
-    return null;
-  }, [objects]);
-
-  const getObjectsInFrame = useCallback((frameId: string) => {
-    return Object.values(objects).filter((o) => o.parentFrameId === frameId && o.type !== "frame");
-  }, [objects]);
 
   const handleDragStart = useCallback((id: string) => {
     draggingRef.current.add(id);
