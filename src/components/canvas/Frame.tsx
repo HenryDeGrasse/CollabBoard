@@ -8,6 +8,8 @@ interface FrameProps {
   isSelected: boolean;
   isEditing: boolean;
   containedCount: number;
+  isSelectMode: boolean;
+  children?: React.ReactNode; // Contained objects rendered here
   onSelect: (id: string, multi?: boolean) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -26,6 +28,8 @@ export function Frame({
   isSelected,
   isEditing,
   containedCount,
+  isSelectMode,
+  children,
   onSelect,
   onDragStart,
   onDragMove,
@@ -36,8 +40,8 @@ export function Frame({
   const groupRef = useRef<any>(null);
   const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
-  const borderColor = isSelected ? "#4F46E5" : "#D1D5DB";
-  const borderWidth = isSelected ? 2.5 : 1.5;
+  const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
+  const borderWidth = isSelected ? 2.5 : 2;
 
   // Title font size
   const titleFontSize = useMemo(() => {
@@ -50,22 +54,30 @@ export function Frame({
       ref={groupRef}
       x={object.x}
       y={object.y}
-      draggable={!isEditing}
+      draggable={!isEditing && isSelectMode}
       onClick={(e) => {
-        e.cancelBubble = true;
-        onSelect(object.id, e.evt.shiftKey);
+        if (isSelectMode) {
+          e.cancelBubble = true;
+          onSelect(object.id, e.evt.shiftKey);
+        }
       }}
       onTap={(e) => {
-        e.cancelBubble = true;
-        onSelect(object.id);
+        if (isSelectMode) {
+          e.cancelBubble = true;
+          onSelect(object.id);
+        }
       }}
       onDblClick={(e) => {
-        e.cancelBubble = true;
-        onDoubleClick(object.id);
+        if (isSelectMode) {
+          e.cancelBubble = true;
+          onDoubleClick(object.id);
+        }
       }}
       onDblTap={(e) => {
-        e.cancelBubble = true;
-        onDoubleClick(object.id);
+        if (isSelectMode) {
+          e.cancelBubble = true;
+          onDoubleClick(object.id);
+        }
       }}
       onDragStart={() => onDragStart(object.id)}
       onDragMove={(e) => onDragMove(object.id, e.target.x(), e.target.y())}
@@ -75,11 +87,15 @@ export function Frame({
       <Rect
         width={object.width}
         height={object.height}
-        fill="rgba(248, 250, 252, 0.85)"
+        fill="rgba(248, 250, 252, 0.95)"
         stroke={borderColor}
         strokeWidth={borderWidth}
         cornerRadius={CORNER_RADIUS}
-        dash={isSelected ? undefined : [6, 3]}
+        dash={isSelected ? undefined : [8, 4]}
+        shadowColor="rgba(0, 0, 0, 0.12)"
+        shadowBlur={8}
+        shadowOffsetX={0}
+        shadowOffsetY={2}
       />
 
       {/* Title bar background */}
@@ -147,6 +163,17 @@ export function Frame({
             align="center"
           />
         </>
+      )}
+
+      {/* Clipped content area for contained objects */}
+      {children && (
+        <Group
+          clipFunc={(ctx) => {
+            ctx.rect(0, TITLE_HEIGHT, object.width, object.height - TITLE_HEIGHT);
+          }}
+        >
+          {children}
+        </Group>
       )}
 
       {/* Corner dots for visual flair */}

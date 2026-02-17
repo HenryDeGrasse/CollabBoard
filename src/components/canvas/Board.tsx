@@ -5,7 +5,7 @@ import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
 import { LineObject } from "./LineTool";
 import { Frame } from "./Frame";
-import { getContainedObjectIds } from "../../utils/frame-containment";
+import { getContainedObjectIds, snapToFrame } from "../../utils/frame-containment";
 import { ConnectorLine } from "./Connector";
 import { RemoteCursor } from "./RemoteCursor";
 import { SelectionRect } from "./SelectionRect";
@@ -547,15 +547,32 @@ export function Board({
 
       // Commit primary dragged object
       const startPos = dragStartPosRef.current[id];
-      onUpdateObject(id, { x, y });
+      const draggedObj = objects[id];
+      
+      // Check for magnetic snap to frames (if not already in a frame being dragged)
+      let finalX = x;
+      let finalY = y;
+      if (draggedObj && draggedObj.type !== "frame") {
+        const frames = Object.values(objects).filter((o) => o.type === "frame");
+        for (const frame of frames) {
+          const snapped = snapToFrame({ ...draggedObj, x, y }, frame);
+          if (snapped) {
+            finalX = snapped.x;
+            finalY = snapped.y;
+            break; // Snap to first matching frame
+          }
+        }
+      }
+
+      onUpdateObject(id, { x: finalX, y: finalY });
 
       const batchUndoActions: UndoAction[] = [];
-      if (startPos && (startPos.x !== x || startPos.y !== y)) {
+      if (startPos && (startPos.x !== finalX || startPos.y !== finalY)) {
         batchUndoActions.push({
           type: "update_object",
           objectId: id,
           before: { x: startPos.x, y: startPos.y },
-          after: { x, y },
+          after: { x: finalX, y: finalY },
         });
       }
       delete dragStartPosRef.current[id];
@@ -844,6 +861,28 @@ export function Board({
     ? "default"
     : "crosshair";
 
+  // Build containment map: frameId -> contained object IDs
+  const frameContainmentMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    const frames = sortedObjects.filter((obj) => obj.type === "frame");
+    frames.forEach((frame) => {
+      const frameObj = objects[frame.id];
+      if (frameObj) {
+        const containedIds = getContainedObjectIds(frameObj, objects);
+        map.set(frame.id, new Set(containedIds));
+      }
+    });
+    return map;
+  }, [sortedObjects, objects]);
+
+  // Helper to check if an object is contained in any frame
+  const isObjectContained = (objId: string): boolean => {
+    for (const [_, containedIds] of frameContainmentMap) {
+      if (containedIds.has(objId)) return true;
+    }
+    return false;
+  };
+
   return (
     <div
       className="relative w-full h-full overflow-hidden bg-gray-50"
@@ -947,27 +986,95 @@ export function Board({
             .filter((obj) => obj.type === "frame")
             .map((obj) => {
               const frameObj = objects[obj.id] || obj;
-              const containedIds = getContainedObjectIds(frameObj, objects);
+              const containedIds = frameContainmentMap.get(obj.id) || new Set();
+              
+              // Render contained objects as children
+              const containedObjects = Array.from(containedIds)
+                .map((cid) => objects[cid])
+                .filter(Boolean)
+                .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
               return (
                 <Frame
                   key={obj.id}
                   object={frameObj}
                   isSelected={selectedIds.has(obj.id)}
                   isEditing={editingObjectId === obj.id}
-                  containedCount={containedIds.length}
+                  containedCount={containedIds.size}
+                  isSelectMode={activeTool === "select"}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
                   onDragEnd={handleDragEnd}
                   onDoubleClick={handleDoubleClick}
                   onUpdateObject={onUpdateObject}
-                />
+                >
+                  {/* Render contained objects with relative positions */}
+                  {containedObjects.map((cobj) => {
+                    const relativeX = cobj.x - frameObj.x;
+                    const relativeY = cobj.y - frameObj.y;
+                    const lock = isObjectLocked(cobj.id);
+
+                    if (cobj.type === "line") {
+                      return (
+                        <LineObject
+                          key={cobj.id}
+                          object={{ ...cobj, x: relativeX, y: relativeY }}
+                          isSelected={selectedIds.has(cobj.id)}
+                          onSelect={handleObjectClick}
+                          onDragStart={handleDragStart}
+                          onDragMove={handleDragMove}
+                          onDragEnd={handleDragEnd}
+                          onUpdateObject={onUpdateObject}
+                        />
+                      );
+                    } else if (cobj.type === "rectangle" || cobj.type === "circle") {
+                      return (
+                        <Shape
+                          key={cobj.id}
+                          object={{ ...cobj, x: relativeX, y: relativeY }}
+                          isSelected={selectedIds.has(cobj.id)}
+                          isEditing={editingObjectId === cobj.id}
+                          isLockedByOther={lock.locked}
+                          lockedByColor={lock.lockedByColor}
+                          draftText={getDraftTextForObject(cobj.id)?.text}
+                          onSelect={handleObjectClick}
+                          onDragStart={handleDragStart}
+                          onDragMove={handleDragMove}
+                          onDragEnd={handleDragEnd}
+                          onDoubleClick={handleDoubleClick}
+                          onUpdateObject={onUpdateObject}
+                        />
+                      );
+                    } else if (cobj.type === "sticky") {
+                      return (
+                        <StickyNote
+                          key={cobj.id}
+                          object={{ ...cobj, x: relativeX, y: relativeY }}
+                          isSelected={selectedIds.has(cobj.id)}
+                          isEditing={editingObjectId === cobj.id}
+                          isLockedByOther={lock.locked}
+                          lockedByName={lock.lockedBy}
+                          lockedByColor={lock.lockedByColor}
+                          draftText={getDraftTextForObject(cobj.id)?.text}
+                          onSelect={handleObjectClick}
+                          onDragStart={handleDragStart}
+                          onDragMove={handleDragMove}
+                          onDragEnd={handleDragEnd}
+                          onDoubleClick={handleDoubleClick}
+                          onUpdateObject={onUpdateObject}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </Frame>
               );
             })}
 
-          {/* Render line objects */}
+          {/* Render line objects (not contained in frames) */}
           {sortedObjects
-            .filter((obj) => obj.type === "line")
+            .filter((obj) => obj.type === "line" && !isObjectContained(obj.id))
             .map((obj) => (
               <LineObject
                 key={obj.id}
@@ -981,9 +1088,9 @@ export function Board({
               />
             ))}
 
-          {/* Render shapes (rectangles, circles) */}
+          {/* Render shapes (rectangles, circles) - not contained in frames */}
           {sortedObjects
-            .filter((obj) => ["rectangle", "circle"].includes(obj.type))
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !isObjectContained(obj.id))
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
@@ -1005,9 +1112,9 @@ export function Board({
               );
             })}
 
-          {/* Render sticky notes */}
+          {/* Render sticky notes - not contained in frames */}
           {sortedObjects
-            .filter((obj) => obj.type === "sticky")
+            .filter((obj) => obj.type === "sticky" && !isObjectContained(obj.id))
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
