@@ -83,6 +83,8 @@ export function Board({
   });
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(new Set());
   const draggingRef = useRef<Set<string>>(new Set());
+  // Drag-time preview frame assignment with hysteresis (objectId -> frameId | null)
+  const dragPreviewFrameRef = useRef<Record<string, string | null>>({});
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const justFinishedSelectionRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -591,9 +593,6 @@ export function Board({
   );
 
   const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
-
-  // Drag-time preview frame assignment with hysteresis (objectId -> frameId | null)
-  const dragPreviewFrameRef = useRef<Record<string, string | null>>({});
 
   // Track start positions for all selected objects during group drag
   const groupDragOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
