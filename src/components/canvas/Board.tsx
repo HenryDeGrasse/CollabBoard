@@ -4,6 +4,8 @@ import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
 import { LineObject } from "./LineTool";
+import { Frame } from "./Frame";
+import { getContainedObjectIds, moveContainedObjects } from "../../utils/frame-containment";
 import { ConnectorLine } from "./Connector";
 import { RemoteCursor } from "./RemoteCursor";
 import { SelectionRect } from "./SelectionRect";
@@ -15,7 +17,7 @@ import type { UseCanvasReturn } from "../../hooks/useCanvas";
 import { throttle } from "../../utils/throttle";
 import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
 
-export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line";
+export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line" | "frame";
 
 interface BoardProps {
   objects: Record<string, BoardObject>;
@@ -400,6 +402,22 @@ export function Board({
           createdBy: currentUserId,
         });
         onResetTool(newId);
+      } else if (activeTool === "frame") {
+        // Frames get the lowest zIndex so they sit behind objects
+        const minZIndex = Math.min(0, ...Object.values(objects).map((o) => o.zIndex || 0));
+        const newId = createAndTrack({
+          type: "frame",
+          x: canvasPoint.x - 200,
+          y: canvasPoint.y - 100,
+          width: 400,
+          height: 300,
+          color: "#F8FAFC",
+          text: "Frame",
+          rotation: 0,
+          zIndex: minZIndex - 1,
+          createdBy: currentUserId,
+        });
+        onResetTool(newId);
       }
     },
     [
@@ -423,6 +441,8 @@ export function Board({
 
   // Track start positions for all selected objects during group drag
   const groupDragOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
+  // Track contained objects when a frame is being dragged
+  const frameContainedRef = useRef<Record<string, { dx: number; dy: number }>>({});
   // Live position overrides during drag — triggers re-render so connectors update
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
 
@@ -431,6 +451,22 @@ export function Board({
     const obj = objects[id];
     if (obj) {
       dragStartPosRef.current[id] = { x: obj.x, y: obj.y };
+    }
+
+    // If this is a frame, also move contained objects
+    if (obj && obj.type === "frame") {
+      const containedIds = getContainedObjectIds(obj, objects);
+      const frameOffsets: Record<string, { dx: number; dy: number }> = {};
+      containedIds.forEach((cid) => {
+        const cobj = objects[cid];
+        if (cobj) {
+          frameOffsets[cid] = { dx: cobj.x - obj.x, dy: cobj.y - obj.y };
+          dragStartPosRef.current[cid] = { x: cobj.x, y: cobj.y };
+        }
+      });
+      frameContainedRef.current = frameOffsets;
+    } else {
+      frameContainedRef.current = {};
     }
 
     // If this object is part of a multi-selection, record offsets for group drag
@@ -458,9 +494,22 @@ export function Board({
       // Build live positions for all dragged items (for connector re-render)
       const positions: Record<string, { x: number; y: number }> = { [id]: { x, y } };
 
+      // Move frame-contained objects
+      const frameOffsets = frameContainedRef.current;
+      const stage = stageRef.current;
+      for (const [cid, offset] of Object.entries(frameOffsets)) {
+        const newX = x + offset.dx;
+        const newY = y + offset.dy;
+        positions[cid] = { x: newX, y: newY };
+        throttledDragUpdate(cid, newX, newY);
+        if (stage) {
+          const node = stage.findOne(`#node-${cid}`);
+          if (node) { node.x(newX); node.y(newY); }
+        }
+      }
+
       // Move other selected objects in the group
       const offsets = groupDragOffsetsRef.current;
-      const stage = stageRef.current;
       for (const [sid, offset] of Object.entries(offsets)) {
         const newX = x + offset.dx;
         const newY = y + offset.dy;
@@ -510,6 +559,25 @@ export function Board({
         });
       }
       delete dragStartPosRef.current[id];
+
+      // Commit frame-contained objects
+      const frameOffsets = frameContainedRef.current;
+      for (const [cid, offset] of Object.entries(frameOffsets)) {
+        const newX = x + offset.dx;
+        const newY = y + offset.dy;
+        const cStart = dragStartPosRef.current[cid];
+        onUpdateObject(cid, { x: newX, y: newY });
+        if (cStart && (cStart.x !== newX || cStart.y !== newY)) {
+          batchUndoActions.push({
+            type: "update_object",
+            objectId: cid,
+            before: { x: cStart.x, y: cStart.y },
+            after: { x: newX, y: newY },
+          });
+        }
+        delete dragStartPosRef.current[cid];
+      }
+      frameContainedRef.current = {};
 
       // Commit all other group-dragged objects
       const offsets = groupDragOffsetsRef.current;
@@ -704,10 +772,27 @@ export function Board({
       if (e.key === "Backspace" || e.key === "Delete") {
         if (editingObjectId) return;
         const batchActions: UndoAction[] = [];
+        const deletedIds = new Set<string>();
         selectedIds.forEach((id) => {
           const obj = objects[id];
-          if (obj) batchActions.push({ type: "delete_object", objectId: id, object: { ...obj } });
+          if (!obj || deletedIds.has(id)) return;
+
+          // If deleting a frame, also delete contained objects
+          if (obj.type === "frame") {
+            const containedIds = getContainedObjectIds(obj, objects);
+            containedIds.forEach((cid) => {
+              if (!deletedIds.has(cid)) {
+                const cobj = objects[cid];
+                if (cobj) batchActions.push({ type: "delete_object", objectId: cid, object: { ...cobj } });
+                onDeleteObject(cid);
+                deletedIds.add(cid);
+              }
+            });
+          }
+
+          batchActions.push({ type: "delete_object", objectId: id, object: { ...obj } });
           onDeleteObject(id);
+          deletedIds.add(id);
         });
         selectedConnectorIds.forEach((id) => {
           const conn = connectors[id];
@@ -856,6 +941,29 @@ export function Board({
               listening={false}
             />
           )}
+
+          {/* Render frames first (behind everything) */}
+          {sortedObjects
+            .filter((obj) => obj.type === "frame")
+            .map((obj) => {
+              const frameObj = objects[obj.id] || obj;
+              const containedIds = getContainedObjectIds(frameObj, objects);
+              return (
+                <Frame
+                  key={obj.id}
+                  object={frameObj}
+                  isSelected={selectedIds.has(obj.id)}
+                  isEditing={editingObjectId === obj.id}
+                  containedCount={containedIds.length}
+                  onSelect={handleObjectClick}
+                  onDragStart={handleDragStart}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  onDoubleClick={handleDoubleClick}
+                  onUpdateObject={onUpdateObject}
+                />
+              );
+            })}
 
           {/* Render line objects */}
           {sortedObjects

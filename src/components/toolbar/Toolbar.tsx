@@ -6,6 +6,7 @@ import {
   Circle,
   ArrowUpRight,
   Minus,
+  Frame,
   ChevronDown,
 } from "lucide-react";
 import type { ToolType } from "../canvas/Board";
@@ -28,6 +29,7 @@ const tools: { id: ToolType; label: string; icon: React.ReactNode; shortcut: str
   { id: "circle", label: "Circle", icon: <Circle size={18} />, shortcut: "C" },
   { id: "arrow", label: "Arrow", icon: <ArrowUpRight size={18} />, shortcut: "A" },
   { id: "line", label: "Line", icon: <Minus size={18} />, shortcut: "L" },
+  { id: "frame", label: "Frame", icon: <Frame size={18} />, shortcut: "F" },
 ];
 
 function ColorDropdown({

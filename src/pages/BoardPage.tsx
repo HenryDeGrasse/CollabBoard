@@ -247,6 +247,9 @@ export function BoardPage({ boardId }: BoardPageProps) {
           case "l":
             setActiveTool("line");
             break;
+          case "f":
+            setActiveTool("frame");
+            break;
         }
       }
     };
