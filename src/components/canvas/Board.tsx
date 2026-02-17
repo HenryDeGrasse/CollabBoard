@@ -82,6 +82,8 @@ export function Board({
   });
   const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(new Set());
   const draggingRef = useRef<Set<string>>(new Set());
+  // Track which objects are currently "inside a frame" during drag, for hysteresis
+  const dragInsideFrameRef = useRef<Set<string>>(new Set());
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const justFinishedSelectionRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -236,21 +238,29 @@ export function Board({
         const parent = obj.parentFrameId ? objects[obj.parentFrameId] : undefined;
         if (!parent || parent.type !== "frame") return null;
 
+        // Hysteresis: objects currently inside use lower exit threshold (0.45)
+        const wasInside = dragInsideFrameRef.current.has(obj.id);
+        const threshold = wasInside ? 0.45 : 0.5;
         const shouldPop = shouldPopOutFromFrame(
           { x: live.x, y: live.y, width: obj.width, height: obj.height },
           { x: parent.x, y: parent.y, width: parent.width, height: parent.height },
-          0.5
+          threshold
         );
-        if (!shouldPop) return null;
 
-        return { ...obj, x: live.x, y: live.y };
+        if (shouldPop) {
+          dragInsideFrameRef.current.delete(obj.id);
+          return { ...obj, x: live.x, y: live.y };
+        } else {
+          dragInsideFrameRef.current.add(obj.id);
+          return null;
+        }
       })
       .filter((obj): obj is BoardObject => !!obj)
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
   }, [objects, dragPositions]);
 
-  // While dragging uncontained objects into a frame, show a live in-frame preview
-  // once overlap reaches the same threshold used for pop-out (50%).
+  // While dragging uncontained objects into a frame, show a live in-frame preview.
+  // Hysteresis: entering uses higher threshold (0.55), staying in uses lower (0.45).
   const enteringFrameDraggedObjects = useMemo(() => {
     const frames = Object.values(objects)
       .filter((o) => o.type === "frame")
@@ -260,21 +270,27 @@ export function Board({
       .filter((obj) => !obj.parentFrameId && !!dragPositions[obj.id] && obj.type !== "frame")
       .map((obj) => {
         const live = dragPositions[obj.id]!;
+        const wasInside = dragInsideFrameRef.current.has(obj.id);
+        const threshold = wasInside ? 0.45 : 0.55;
+
         const targetFrame = frames.find((frame) => {
-          // Symmetric with pop-out: enter preview when >= 50% overlap.
           return !shouldPopOutFromFrame(
             { x: live.x, y: live.y, width: obj.width, height: obj.height },
             { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
-            0.5
+            threshold
           );
         });
 
-        if (!targetFrame) return null;
-
-        return {
-          frameId: targetFrame.id,
-          object: { ...obj, x: live.x, y: live.y } as BoardObject,
-        };
+        if (targetFrame) {
+          dragInsideFrameRef.current.add(obj.id);
+          return {
+            frameId: targetFrame.id,
+            object: { ...obj, x: live.x, y: live.y } as BoardObject,
+          };
+        } else {
+          dragInsideFrameRef.current.delete(obj.id);
+          return null;
+        }
       })
       .filter((entry): entry is { frameId: string; object: BoardObject } => !!entry);
   }, [objects, dragPositions]);
@@ -655,6 +671,7 @@ export function Board({
     const obj = objects[id];
     if (obj) {
       dragStartPosRef.current[id] = { x: obj.x, y: obj.y };
+      if (obj.parentFrameId) dragInsideFrameRef.current.add(id);
     }
 
     // If this is a frame, also move explicitly-contained objects
@@ -705,12 +722,14 @@ export function Board({
           frameUnderCursorId = getFrameAtPoint(cx, cy)?.id ?? null;
         }
 
-        // If dragging an object out of its current frame and it drops below 50% overlap,
-        // force it to pop outside unless cursor is inside another frame.
+        // If dragging an object out of its current frame and overlap drops below threshold,
+        // force it to pop outside. Hysteresis: already-inside uses 0.45 exit threshold.
         const currentParentFrameId = draggedObj.parentFrameId ?? null;
         if (currentParentFrameId && frameUnderCursorId === currentParentFrameId) {
           const currentParentFrame = objects[currentParentFrameId];
           if (currentParentFrame && currentParentFrame.type === "frame") {
+            const wasInside = dragInsideFrameRef.current.has(id);
+            const threshold = wasInside ? 0.45 : 0.55;
             const willPopOut = shouldPopOutFromFrame(
               { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
               {
@@ -719,7 +738,7 @@ export function Board({
                 width: currentParentFrame.width,
                 height: currentParentFrame.height,
               },
-              0.5
+              threshold
             );
             if (willPopOut) {
               frameUnderCursorId = null;
@@ -901,6 +920,7 @@ export function Board({
       }
       groupDragOffsetsRef.current = {};
       setDragPositions({});
+      dragInsideFrameRef.current.clear();
 
       if (batchUndoActions.length > 0) {
         onPushUndo(
@@ -1096,6 +1116,7 @@ export function Board({
       setDragPositions({});
       frameContainedRef.current = {};
       dragStartPosRef.current = {};
+      dragInsideFrameRef.current.clear();
     }
   }, [selectionRect, objects, connectors, onSelect, onClearSelection, frameManualDrag, dragPositions, onUpdateObject, onPushUndo]);
 
