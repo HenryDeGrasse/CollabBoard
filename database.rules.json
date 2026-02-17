@@ -28,6 +28,15 @@
         }
       }
     },
+    "userBoards": {
+      "$userId": {
+        ".read": "auth != null && $userId === auth.uid",
+        ".write": "auth != null && $userId === auth.uid",
+        "$boardId": {
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    },
     "users": {
       "$userId": {
         ".read": "auth != null",

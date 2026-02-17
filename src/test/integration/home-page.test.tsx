@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HomePage } from "../../pages/HomePage";
 
@@ -11,9 +11,18 @@ vi.mock("uuid", () => ({
 
 vi.mock("../../components/auth/AuthProvider", () => ({
   useAuth: () => ({
+    userId: "user-1",
     displayName: "Test User",
     signOut: mockSignOut,
   }),
+}));
+
+vi.mock("../../services/board", () => ({
+  getUserBoardIds: vi.fn().mockResolvedValue([]),
+  getBoardsMetadata: vi.fn().mockResolvedValue({}),
+  createBoard: vi.fn().mockResolvedValue(undefined),
+  addBoardToUser: vi.fn().mockResolvedValue(undefined),
+  softDeleteBoard: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("HomePage integration", () => {
@@ -21,12 +30,25 @@ describe("HomePage integration", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a board with an 8-char id slice", async () => {
+  it("creates a board via modal with title", async () => {
     const user = userEvent.setup();
     const onNavigateToBoard = vi.fn();
     render(<HomePage onNavigateToBoard={onNavigateToBoard} />);
 
-    await user.click(screen.getByRole("button", { name: /create new board/i }));
+    // Wait for loading to finish
+    await waitFor(() => {
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+    });
+
+    // Click "New Board" button
+    await user.click(screen.getByRole("button", { name: /new board/i }));
+
+    // Modal opens — type a title
+    const titleInput = screen.getByPlaceholderText(/board title/i);
+    await user.type(titleInput, "My Board");
+
+    // Click Create
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     expect(onNavigateToBoard).toHaveBeenCalledWith("12345678");
   });
@@ -36,7 +58,11 @@ describe("HomePage integration", () => {
     const onNavigateToBoard = vi.fn();
     render(<HomePage onNavigateToBoard={onNavigateToBoard} />);
 
-    await user.type(screen.getByPlaceholderText(/enter board id/i), "board-abc");
+    await waitFor(() => {
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText(/board id/i), "board-abc");
     await user.click(screen.getByRole("button", { name: /^join$/i }));
 
     expect(onNavigateToBoard).toHaveBeenCalledWith("board-abc");
@@ -46,6 +72,10 @@ describe("HomePage integration", () => {
     const user = userEvent.setup();
     const onNavigateToBoard = vi.fn();
     render(<HomePage onNavigateToBoard={onNavigateToBoard} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument();
+    });
 
     const joinButton = screen.getByRole("button", { name: /^join$/i });
     expect(joinButton).toBeDisabled();
@@ -62,5 +92,13 @@ describe("HomePage integration", () => {
     await user.click(screen.getByRole("button", { name: /sign out/i }));
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows empty state when no boards exist", async () => {
+    render(<HomePage onNavigateToBoard={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/no boards yet/i)).toBeInTheDocument();
+    });
   });
 });

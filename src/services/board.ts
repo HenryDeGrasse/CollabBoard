@@ -7,27 +7,100 @@ import {
   onChildAdded,
   onChildChanged,
   onChildRemoved,
+  onValue,
   serverTimestamp,
   get,
   off,
+  query,
+  orderByChild,
+  equalTo,
 } from "firebase/database";
 import { db } from "./firebase";
 import type { BoardObject, Connector, BoardMetadata } from "../types/board";
 
 // ─── Board Metadata ───────────────────────────────────────────
 
-export function createBoard(boardId: string, title: string, ownerId: string) {
+export async function createBoard(boardId: string, title: string, ownerId: string, ownerName: string) {
   const metadata: BoardMetadata = {
     title,
     createdAt: Date.now(),
+    updatedAt: Date.now(),
     ownerId,
+    ownerName,
   };
-  return set(ref(db, `boards/${boardId}/metadata`), metadata);
+  await set(ref(db, `boards/${boardId}/metadata`), metadata);
+  // Also index the board under the user's boards list
+  await set(ref(db, `userBoards/${ownerId}/${boardId}`), true);
 }
 
 export async function getBoardMetadata(boardId: string): Promise<BoardMetadata | null> {
   const snapshot = await get(ref(db, `boards/${boardId}/metadata`));
   return snapshot.val();
+}
+
+export async function updateBoardMetadata(boardId: string, updates: Partial<BoardMetadata>) {
+  return update(ref(db, `boards/${boardId}/metadata`), { ...updates, updatedAt: Date.now() });
+}
+
+export async function softDeleteBoard(boardId: string) {
+  return update(ref(db, `boards/${boardId}/metadata`), { deleted: true, updatedAt: Date.now() });
+}
+
+/**
+ * Get all board IDs for a user
+ */
+export async function getUserBoardIds(userId: string): Promise<string[]> {
+  const snapshot = await get(ref(db, `userBoards/${userId}`));
+  if (!snapshot.exists()) return [];
+  return Object.keys(snapshot.val());
+}
+
+/**
+ * Get metadata for multiple boards at once
+ */
+export async function getBoardsMetadata(boardIds: string[]): Promise<Record<string, BoardMetadata>> {
+  const results: Record<string, BoardMetadata> = {};
+  await Promise.all(
+    boardIds.map(async (id) => {
+      const meta = await getBoardMetadata(id);
+      if (meta && !meta.deleted) {
+        results[id] = meta;
+      }
+    })
+  );
+  return results;
+}
+
+/**
+ * Subscribe to real-time updates for a user's board list
+ */
+export function subscribeToUserBoards(
+  userId: string,
+  onUpdate: (boardIds: string[]) => void
+) {
+  const userBoardsRef = ref(db, `userBoards/${userId}`);
+  const unsub = onValue(userBoardsRef, (snapshot) => {
+    if (snapshot.exists()) {
+      onUpdate(Object.keys(snapshot.val()));
+    } else {
+      onUpdate([]);
+    }
+  });
+  return () => off(userBoardsRef);
+}
+
+/**
+ * Add a board to a user's board list (for joining shared boards)
+ */
+export function addBoardToUser(userId: string, boardId: string) {
+  return set(ref(db, `userBoards/${userId}/${boardId}`), true);
+}
+
+/**
+ * Touch updatedAt for a board (call on object changes)
+ */
+export function touchBoard(boardId: string) {
+  return update(ref(db, `boards/${boardId}/metadata`), { updatedAt: Date.now() });
 }
 
 // ─── Board Objects ────────────────────────────────────────────

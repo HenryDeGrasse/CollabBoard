@@ -30,5 +30,8 @@ export interface Connector {
 export interface BoardMetadata {
   title: string;
   createdAt: number;
+  updatedAt: number;
   ownerId: string;
+  ownerName: string;
+  deleted?: boolean;
 }

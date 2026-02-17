@@ -11,14 +11,16 @@ import { useSelection } from "../hooks/useSelection";
 import { useAIAgent } from "../hooks/useAIAgent";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useAuth } from "../components/auth/AuthProvider";
-import { createBoard, getBoardMetadata } from "../services/board";
+import { HelpPanel } from "../components/ui/HelpPanel";
+import { createBoard, getBoardMetadata, addBoardToUser } from "../services/board";
 import { DEFAULT_STICKY_COLOR } from "../utils/colors";
 
 interface BoardPageProps {
   boardId: string;
+  onNavigateHome?: () => void;
 }
 
-export function BoardPage({ boardId }: BoardPageProps) {
+export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const { user, displayName } = useAuth();
   const userId = user?.uid || "";
 
@@ -82,9 +84,12 @@ export function BoardPage({ boardId }: BoardPageProps) {
   useEffect(() => {
     if (!boardId || !userId || initialized) return;
 
-    getBoardMetadata(boardId).then((metadata) => {
+    getBoardMetadata(boardId).then(async (metadata) => {
       if (!metadata) {
-        createBoard(boardId, "Untitled Board", userId);
+        await createBoard(boardId, "Untitled Board", userId, displayName || "Anonymous");
+      } else {
+        // Board exists — make sure it's in user's board list (e.g., joined via link)
+        await addBoardToUser(userId, boardId);
       }
       setInitialized(true);
     });
@@ -308,6 +313,14 @@ export function BoardPage({ boardId }: BoardPageProps) {
 
       {/* Board info + share link */}
       <div className="fixed top-4 left-4 z-50 flex items-center gap-2">
+        <button
+          onClick={() => onNavigateHome?.()}
+          className="flex items-center gap-1 text-xs bg-white/80 backdrop-blur px-2.5 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-white hover:text-gray-800 transition"
+          title="Back to Dashboard"
+        >
+          ← Dashboard
+        </button>
+        <div className="w-px h-4 bg-gray-300" />
         <div
           className="w-3 h-3 rounded-full"
           style={{ backgroundColor: myColor }}
@@ -368,6 +381,9 @@ export function BoardPage({ boardId }: BoardPageProps) {
 
       {/* AI Command Input */}
       <AICommandInput aiAgent={aiAgent} />
+
+      {/* Help Panel */}
+      <HelpPanel />
     </div>
   );
 }

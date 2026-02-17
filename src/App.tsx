@@ -58,7 +58,12 @@ function AppContent() {
 
   switch (route.page) {
     case "board":
-      return <BoardPage boardId={route.boardId} />;
+      return (
+        <BoardPage
+          boardId={route.boardId}
+          onNavigateHome={() => navigateTo({ page: "home" })}
+        />
+      );
     case "home":
     default:
       return (
