@@ -9,7 +9,6 @@ interface FrameProps {
   isEditing: boolean;
   containedCount: number;
   isSelectMode: boolean;
-  children?: React.ReactNode; // Contained objects rendered here
   onSelect: (id: string, multi?: boolean) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -29,7 +28,6 @@ export function Frame({
   isEditing,
   containedCount,
   isSelectMode,
-  children,
   onSelect,
   onDragStart,
   onDragMove,
@@ -72,6 +70,7 @@ export function Frame({
         shadowBlur={8}
         shadowOffsetX={0}
         shadowOffsetY={2}
+        listening={false}
       />
 
       {/* Title bar background */}
@@ -82,6 +81,7 @@ export function Frame({
         height={TITLE_HEIGHT}
         fill="rgba(241, 245, 249, 0.95)"
         cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+        listening={false}
       />
 
       {/* Header hitbox (frame selection/drag only from title row) */}
@@ -116,6 +116,7 @@ export function Frame({
         stroke={borderColor}
         strokeWidth={1}
         opacity={0.5}
+        listening={false}
       />
 
       {/* Frame icon */}
@@ -125,6 +126,7 @@ export function Frame({
         text="⊞"
         fontSize={12}
         fill="#94A3B8"
+        listening={false}
       />
 
       {/* Title text — hidden while editing */}
@@ -140,6 +142,7 @@ export function Frame({
           fill="#475569"
           ellipsis
           wrap="none"
+          listening={false}
         />
       )}
 
@@ -153,6 +156,7 @@ export function Frame({
             height={18}
             fill="#E2E8F0"
             cornerRadius={9}
+            listening={false}
           />
           <Text
             x={object.width - 40}
@@ -163,19 +167,9 @@ export function Frame({
             fontFamily="Inter, system-ui, sans-serif"
             fill="#64748B"
             align="center"
+            listening={false}
           />
         </>
-      )}
-
-      {/* Clipped content area for contained objects */}
-      {children && (
-        <Group
-          clipFunc={(ctx) => {
-            ctx.rect(0, TITLE_HEIGHT, object.width, object.height - TITLE_HEIGHT);
-          }}
-        >
-          {children}
-        </Group>
       )}
 
       {/* Corner dots for visual flair */}
@@ -186,6 +180,7 @@ export function Frame({
         height={3}
         fill="#CBD5E1"
         cornerRadius={1}
+        listening={false}
       />
       <Rect
         x={object.width - 9}
@@ -194,6 +189,7 @@ export function Frame({
         height={3}
         fill="#CBD5E1"
         cornerRadius={1}
+        listening={false}
       />
 
       {/* Resize handles */}

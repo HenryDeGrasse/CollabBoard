@@ -5,7 +5,6 @@ import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
 import { LineObject } from "./LineTool";
 import { Frame } from "./Frame";
-import { getContainedObjectIds, snapToFrame } from "../../utils/frame-containment";
 import { ConnectorLine } from "./Connector";
 import { RemoteCursor } from "./RemoteCursor";
 import { SelectionRect } from "./SelectionRect";
@@ -314,16 +313,20 @@ export function Board({
           const maxZ = Math.max(0, ...Object.values(objects).map((o) => o.zIndex || 0));
           const x = Math.min(lineDraw.startX, canvasPoint.x);
           const y = Math.min(lineDraw.startY, canvasPoint.y);
+          const width = Math.abs(canvasPoint.x - lineDraw.startX) || 1;
+          const height = Math.abs(canvasPoint.y - lineDraw.startY) || 1;
+          const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
           const newId = onCreateObject({
             type: "line",
             x,
             y,
-            width: Math.abs(canvasPoint.x - lineDraw.startX) || 1,
-            height: Math.abs(canvasPoint.y - lineDraw.startY) || 1,
+            width,
+            height,
             color: activeColor,
             rotation: 0,
             zIndex: maxZ + 1,
             createdBy: currentUserId,
+            parentFrameId: parentFrame?.id ?? null,
             points: [
               lineDraw.startX - x,
               lineDraw.startY - y,
@@ -361,45 +364,63 @@ export function Board({
       };
 
       if (activeTool === "sticky") {
+        const x = canvasPoint.x - 75;
+        const y = canvasPoint.y - 75;
+        const width = 150;
+        const height = 150;
+        const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
         const newId = createAndTrack({
           type: "sticky",
-          x: canvasPoint.x - 75,
-          y: canvasPoint.y - 75,
-          width: 150,
-          height: 150,
+          x,
+          y,
+          width,
+          height,
           color: activeColor,
           text: "",
           rotation: 0,
           zIndex: maxZIndex + 1,
           createdBy: currentUserId,
+          parentFrameId: parentFrame?.id ?? null,
         });
         onResetTool(newId);
       } else if (activeTool === "rectangle") {
+        const x = canvasPoint.x - 75;
+        const y = canvasPoint.y - 50;
+        const width = 150;
+        const height = 100;
+        const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
         const newId = createAndTrack({
           type: "rectangle",
-          x: canvasPoint.x - 75,
-          y: canvasPoint.y - 50,
-          width: 150,
-          height: 100,
+          x,
+          y,
+          width,
+          height,
           color: activeColor,
           text: "",
           rotation: 0,
           zIndex: maxZIndex + 1,
           createdBy: currentUserId,
+          parentFrameId: parentFrame?.id ?? null,
         });
         onResetTool(newId);
       } else if (activeTool === "circle") {
+        const x = canvasPoint.x - 50;
+        const y = canvasPoint.y - 50;
+        const width = 100;
+        const height = 100;
+        const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
         const newId = createAndTrack({
           type: "circle",
-          x: canvasPoint.x - 50,
-          y: canvasPoint.y - 50,
-          width: 100,
-          height: 100,
+          x,
+          y,
+          width,
+          height,
           color: activeColor,
           text: "",
           rotation: 0,
           zIndex: maxZIndex + 1,
           createdBy: currentUserId,
+          parentFrameId: parentFrame?.id ?? null,
         });
         onResetTool(newId);
       } else if (activeTool === "frame") {
@@ -434,6 +455,7 @@ export function Board({
       onSetEditingObject,
       onResetTool,
       onPushUndo,
+      getFrameAtPoint,
     ]
   );
 
@@ -446,6 +468,25 @@ export function Board({
   // Live position overrides during drag — triggers re-render so connectors update
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
 
+  const TITLE_HEIGHT = 32;
+
+  const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
+    const frames = Object.values(objects)
+      .filter((o) => o.type === "frame")
+      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
+    for (const frame of frames) {
+      const insideX = x >= frame.x && x <= frame.x + frame.width;
+      const insideY = y >= frame.y + TITLE_HEIGHT && y <= frame.y + frame.height;
+      if (insideX && insideY) return frame;
+    }
+    return null;
+  }, [objects]);
+
+  const getObjectsInFrame = useCallback((frameId: string) => {
+    return Object.values(objects).filter((o) => o.parentFrameId === frameId && o.type !== "frame");
+  }, [objects]);
+
   const handleDragStart = useCallback((id: string) => {
     draggingRef.current.add(id);
     const obj = objects[id];
@@ -453,16 +494,12 @@ export function Board({
       dragStartPosRef.current[id] = { x: obj.x, y: obj.y };
     }
 
-    // If this is a frame, also move contained objects
+    // If this is a frame, also move explicitly-contained objects
     if (obj && obj.type === "frame") {
-      const containedIds = getContainedObjectIds(obj, objects);
       const frameOffsets: Record<string, { dx: number; dy: number }> = {};
-      containedIds.forEach((cid) => {
-        const cobj = objects[cid];
-        if (cobj) {
-          frameOffsets[cid] = { dx: cobj.x - obj.x, dy: cobj.y - obj.y };
-          dragStartPosRef.current[cid] = { x: cobj.x, y: cobj.y };
-        }
+      getObjectsInFrame(obj.id).forEach((cobj) => {
+        frameOffsets[cobj.id] = { dx: cobj.x - obj.x, dy: cobj.y - obj.y };
+        dragStartPosRef.current[cobj.id] = { x: cobj.x, y: cobj.y };
       });
       frameContainedRef.current = frameOffsets;
     } else {
@@ -485,7 +522,7 @@ export function Board({
     } else {
       groupDragOffsetsRef.current = {};
     }
-  }, [objects, selectedIds]);
+  }, [objects, selectedIds, getObjectsInFrame]);
 
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
@@ -548,31 +585,31 @@ export function Board({
       // Commit primary dragged object
       const startPos = dragStartPosRef.current[id];
       const draggedObj = objects[id];
-      
-      // Check for magnetic snap to frames (if not already in a frame being dragged)
+
       let finalX = x;
       let finalY = y;
+      let finalParentFrameId: string | null | undefined = draggedObj?.parentFrameId ?? null;
+
+      // For non-frame objects, attach/detach frame membership based on center point
       if (draggedObj && draggedObj.type !== "frame") {
-        const frames = Object.values(objects).filter((o) => o.type === "frame");
-        for (const frame of frames) {
-          const snapped = snapToFrame({ ...draggedObj, x, y }, frame);
-          if (snapped) {
-            finalX = snapped.x;
-            finalY = snapped.y;
-            break; // Snap to first matching frame
-          }
-        }
+        const centerX = finalX + draggedObj.width / 2;
+        const centerY = finalY + draggedObj.height / 2;
+        const targetFrame = getFrameAtPoint(centerX, centerY);
+        finalParentFrameId = targetFrame?.id ?? null;
       }
 
-      onUpdateObject(id, { x: finalX, y: finalY });
+      onUpdateObject(id, { x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null });
 
       const batchUndoActions: UndoAction[] = [];
-      if (startPos && (startPos.x !== finalX || startPos.y !== finalY)) {
+      if (
+        startPos &&
+        (startPos.x !== finalX || startPos.y !== finalY || (draggedObj?.parentFrameId ?? null) !== (finalParentFrameId ?? null))
+      ) {
         batchUndoActions.push({
           type: "update_object",
           objectId: id,
-          before: { x: startPos.x, y: startPos.y },
-          after: { x: finalX, y: finalY },
+          before: { x: startPos.x, y: startPos.y, parentFrameId: draggedObj?.parentFrameId ?? null },
+          after: { x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null },
         });
       }
       delete dragStartPosRef.current[id];
@@ -624,7 +661,7 @@ export function Board({
         );
       }
     },
-    [onUpdateObject, onPushUndo]
+    [onUpdateObject, onPushUndo, objects, getFrameAtPoint]
   );
 
   const handleConnectorSelect = useCallback(
@@ -794,17 +831,17 @@ export function Board({
           const obj = objects[id];
           if (!obj || deletedIds.has(id)) return;
 
-          // If deleting a frame, also delete contained objects
+          // If deleting a frame, also delete objects explicitly in that frame
           if (obj.type === "frame") {
-            const containedIds = getContainedObjectIds(obj, objects);
-            containedIds.forEach((cid) => {
-              if (!deletedIds.has(cid)) {
-                const cobj = objects[cid];
-                if (cobj) batchActions.push({ type: "delete_object", objectId: cid, object: { ...cobj } });
-                onDeleteObject(cid);
-                deletedIds.add(cid);
-              }
-            });
+            Object.values(objects)
+              .filter((o) => o.parentFrameId === obj.id)
+              .forEach((cobj) => {
+                if (!deletedIds.has(cobj.id)) {
+                  batchActions.push({ type: "delete_object", objectId: cobj.id, object: { ...cobj } });
+                  onDeleteObject(cobj.id);
+                  deletedIds.add(cobj.id);
+                }
+              });
           }
 
           batchActions.push({ type: "delete_object", objectId: id, object: { ...obj } });
@@ -860,28 +897,6 @@ export function Board({
     : activeTool === "select"
     ? "default"
     : "crosshair";
-
-  // Build containment map: frameId -> contained object IDs
-  const frameContainmentMap = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    const frames = sortedObjects.filter((obj) => obj.type === "frame");
-    frames.forEach((frame) => {
-      const frameObj = objects[frame.id];
-      if (frameObj) {
-        const containedIds = getContainedObjectIds(frameObj, objects);
-        map.set(frame.id, new Set(containedIds));
-      }
-    });
-    return map;
-  }, [sortedObjects, objects]);
-
-  // Helper to check if an object is contained in any frame
-  const isObjectContained = (objId: string): boolean => {
-    for (const [_, containedIds] of frameContainmentMap) {
-      if (containedIds.has(objId)) return true;
-    }
-    return false;
-  };
 
   return (
     <div
@@ -986,21 +1001,14 @@ export function Board({
             .filter((obj) => obj.type === "frame")
             .map((obj) => {
               const frameObj = objects[obj.id] || obj;
-              const containedIds = frameContainmentMap.get(obj.id) || new Set();
-              
-              // Render contained objects as children
-              const containedObjects = Array.from(containedIds)
-                .map((cid) => objects[cid])
-                .filter(Boolean)
-                .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-
+              const containedCount = getObjectsInFrame(frameObj.id).length;
               return (
                 <Frame
                   key={obj.id}
                   object={frameObj}
                   isSelected={selectedIds.has(obj.id)}
                   isEditing={editingObjectId === obj.id}
-                  containedCount={containedIds.size}
+                  containedCount={containedCount}
                   isSelectMode={activeTool === "select"}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
@@ -1008,88 +1016,13 @@ export function Board({
                   onDragEnd={handleDragEnd}
                   onDoubleClick={handleDoubleClick}
                   onUpdateObject={onUpdateObject}
-                >
-                  {/* Render contained objects with relative positions */}
-                  {containedObjects.map((cobj) => {
-                    const relativeX = cobj.x - frameObj.x;
-                    const relativeY = cobj.y - frameObj.y;
-                    const lock = isObjectLocked(cobj.id);
-
-                    if (cobj.type === "line") {
-                      return (
-                        <LineObject
-                          key={cobj.id}
-                          object={{ ...cobj, x: relativeX, y: relativeY }}
-                          isSelected={selectedIds.has(cobj.id)}
-                          onSelect={handleObjectClick}
-                          onDragStart={handleDragStart}
-                          onDragMove={(id, rx, ry) => handleDragMove(id, rx + frameObj.x, ry + frameObj.y)}
-                          onDragEnd={(id, rx, ry) => handleDragEnd(id, rx + frameObj.x, ry + frameObj.y)}
-                          onUpdateObject={(id, updates) => {
-                            const adjusted = { ...updates };
-                            if (adjusted.x !== undefined) adjusted.x += frameObj.x;
-                            if (adjusted.y !== undefined) adjusted.y += frameObj.y;
-                            onUpdateObject(id, adjusted);
-                          }}
-                        />
-                      );
-                    } else if (cobj.type === "rectangle" || cobj.type === "circle") {
-                      return (
-                        <Shape
-                          key={cobj.id}
-                          object={{ ...cobj, x: relativeX, y: relativeY }}
-                          isSelected={selectedIds.has(cobj.id)}
-                          isEditing={editingObjectId === cobj.id}
-                          isLockedByOther={lock.locked}
-                          lockedByColor={lock.lockedByColor}
-                          draftText={getDraftTextForObject(cobj.id)?.text}
-                          onSelect={handleObjectClick}
-                          onDragStart={handleDragStart}
-                          onDragMove={(id, rx, ry) => handleDragMove(id, rx + frameObj.x, ry + frameObj.y)}
-                          onDragEnd={(id, rx, ry) => handleDragEnd(id, rx + frameObj.x, ry + frameObj.y)}
-                          onDoubleClick={handleDoubleClick}
-                          onUpdateObject={(id, updates) => {
-                            const adjusted = { ...updates };
-                            if (adjusted.x !== undefined) adjusted.x += frameObj.x;
-                            if (adjusted.y !== undefined) adjusted.y += frameObj.y;
-                            onUpdateObject(id, adjusted);
-                          }}
-                        />
-                      );
-                    } else if (cobj.type === "sticky") {
-                      return (
-                        <StickyNote
-                          key={cobj.id}
-                          object={{ ...cobj, x: relativeX, y: relativeY }}
-                          isSelected={selectedIds.has(cobj.id)}
-                          isEditing={editingObjectId === cobj.id}
-                          isLockedByOther={lock.locked}
-                          lockedByName={lock.lockedBy}
-                          lockedByColor={lock.lockedByColor}
-                          draftText={getDraftTextForObject(cobj.id)?.text}
-                          onSelect={handleObjectClick}
-                          onDragStart={handleDragStart}
-                          onDragMove={(id, rx, ry) => handleDragMove(id, rx + frameObj.x, ry + frameObj.y)}
-                          onDragEnd={(id, rx, ry) => handleDragEnd(id, rx + frameObj.x, ry + frameObj.y)}
-                          onDoubleClick={handleDoubleClick}
-                          onUpdateObject={(id, updates) => {
-                            const adjusted = { ...updates };
-                            if (adjusted.x !== undefined) adjusted.x += frameObj.x;
-                            if (adjusted.y !== undefined) adjusted.y += frameObj.y;
-                            onUpdateObject(id, adjusted);
-                          }}
-                        />
-                      );
-                    }
-                    return null;
-                  })}
-                </Frame>
+                />
               );
             })}
 
-          {/* Render line objects (not contained in frames) */}
+          {/* Render line objects */}
           {sortedObjects
-            .filter((obj) => obj.type === "line" && !isObjectContained(obj.id))
+            .filter((obj) => obj.type === "line")
             .map((obj) => (
               <LineObject
                 key={obj.id}
@@ -1103,9 +1036,9 @@ export function Board({
               />
             ))}
 
-          {/* Render shapes (rectangles, circles) - not contained in frames */}
+          {/* Render shapes (rectangles, circles) */}
           {sortedObjects
-            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !isObjectContained(obj.id))
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type))
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
@@ -1127,9 +1060,9 @@ export function Board({
               );
             })}
 
-          {/* Render sticky notes - not contained in frames */}
+          {/* Render sticky notes */}
           {sortedObjects
-            .filter((obj) => obj.type === "sticky" && !isObjectContained(obj.id))
+            .filter((obj) => obj.type === "sticky")
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (

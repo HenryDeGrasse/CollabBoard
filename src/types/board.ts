@@ -17,6 +17,8 @@ export interface BoardObject {
   // Line-specific fields
   points?: number[]; // [x1, y1, x2, y2, ...] relative to object x,y
   strokeWidth?: number;
+  // Frame grouping (explicit membership)
+  parentFrameId?: string | null;
 }
 
 export interface Connector {
