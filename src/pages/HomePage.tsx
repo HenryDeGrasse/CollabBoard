@@ -28,7 +28,8 @@ interface HomePageProps {
 type ViewMode = "grid" | "list";
 
 export function HomePage({ onNavigateToBoard }: HomePageProps) {
-  const { userId, displayName, signOut } = useAuth();
+  const { user, displayName, signOut } = useAuth();
+  const userId = user?.uid || "";
   const [boards, setBoards] = useState<Record<string, BoardMetadata>>({});
   const [loading, setLoading] = useState(true);
   const [joinBoardId, setJoinBoardId] = useState("");

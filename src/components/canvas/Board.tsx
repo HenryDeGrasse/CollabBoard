@@ -5,7 +5,7 @@ import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
 import { LineObject } from "./LineTool";
 import { Frame } from "./Frame";
-import { getContainedObjectIds, moveContainedObjects } from "../../utils/frame-containment";
+import { getContainedObjectIds } from "../../utils/frame-containment";
 import { ConnectorLine } from "./Connector";
 import { RemoteCursor } from "./RemoteCursor";
 import { SelectionRect } from "./SelectionRect";

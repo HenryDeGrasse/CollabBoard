@@ -11,9 +11,6 @@ import {
   serverTimestamp,
   get,
   off,
-  query,
-  orderByChild,
-  equalTo,
 } from "firebase/database";
 import { db } from "./firebase";
 import type { BoardObject, Connector, BoardMetadata } from "../types/board";
@@ -79,7 +76,7 @@ export function subscribeToUserBoards(
   onUpdate: (boardIds: string[]) => void
 ) {
   const userBoardsRef = ref(db, `userBoards/${userId}`);
-  const unsub = onValue(userBoardsRef, (snapshot) => {
+  onValue(userBoardsRef, (snapshot) => {
     if (snapshot.exists()) {
       onUpdate(Object.keys(snapshot.val()));
     } else {

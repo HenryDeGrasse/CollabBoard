@@ -11,7 +11,7 @@ vi.mock("uuid", () => ({
 
 vi.mock("../../components/auth/AuthProvider", () => ({
   useAuth: () => ({
-    userId: "user-1",
+    user: { uid: "user-1" },
     displayName: "Test User",
     signOut: mockSignOut,
   }),
