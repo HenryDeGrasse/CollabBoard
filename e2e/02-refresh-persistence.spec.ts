@@ -30,12 +30,12 @@ test.describe("Test 2: One User Refreshing Mid-Edit", () => {
     }
 
     // Wait for sync
-    await userB.page.waitForTimeout(1000);
+    await userB.page.waitForTimeout(500);
 
     // Now User A refreshes
     await userA.page.reload();
     await userA.page.waitForSelector("canvas", { timeout: 15_000 });
-    await userA.page.waitForTimeout(2000);
+    await userA.page.waitForTimeout(800);
 
     // After refresh, board state should be intact — canvas should be visible
     await expect(userA.page.locator("canvas").first()).toBeVisible();

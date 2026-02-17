@@ -10,10 +10,10 @@ test.describe("Test 4: Network Throttling and Disconnection Recovery", () => {
 
     // User A creates an object before going offline
     await createStickyNote(userA.page, 300, 300);
-    await userA.page.waitForTimeout(1000);
+    await userA.page.waitForTimeout(500);
 
     // Verify User B sees it
-    await userB.page.waitForTimeout(1000);
+    await userB.page.waitForTimeout(500);
 
     // Simulate User A going offline by disabling network
     const cdpA = await userA.context.newCDPSession(userA.page);
@@ -28,7 +28,7 @@ test.describe("Test 4: Network Throttling and Disconnection Recovery", () => {
     await createStickyNote(userB.page, 500, 300);
     await userB.page.waitForTimeout(500);
     await createStickyNote(userB.page, 500, 500);
-    await userB.page.waitForTimeout(1000);
+    await userB.page.waitForTimeout(500);
 
     // Wait a moment for User A's presence to drop
     await userB.page.waitForTimeout(3000);
@@ -49,7 +49,7 @@ test.describe("Test 4: Network Throttling and Disconnection Recovery", () => {
 
     // User A should be able to create new objects after reconnect
     await createStickyNote(userA.page, 700, 300);
-    await userA.page.waitForTimeout(1000);
+    await userA.page.waitForTimeout(500);
 
     // Verify no fatal errors
     const errors: string[] = [];
@@ -69,7 +69,7 @@ test.describe("Test 4: Network Throttling and Disconnection Recovery", () => {
     const userB = await createUserSession(browser, boardId, "Bob");
 
     // Both should be in presence
-    await userA.page.waitForTimeout(2000);
+    await userA.page.waitForTimeout(1000);
 
     // Disconnect User A
     const cdpA = await userA.context.newCDPSession(userA.page);

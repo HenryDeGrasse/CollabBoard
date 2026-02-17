@@ -25,8 +25,8 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
     }
 
     // Wait for all objects to sync
-    await userA.page.waitForTimeout(2000);
-    await userB.page.waitForTimeout(2000);
+    await userA.page.waitForTimeout(800);
+    await userB.page.waitForTimeout(800);
 
     // Verify User A's canvas is still responsive — measure FPS
     const fpsA = await measureFPS(userA.page, 2000);
@@ -57,7 +57,7 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
     }
 
     // Wait for sync
-    await userA.page.waitForTimeout(1000);
+    await userA.page.waitForTimeout(500);
 
     // Measure FPS after rapid dragging
     const fpsAfterDrag = await measureFPS(userA.page, 2000);

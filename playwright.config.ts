@@ -5,10 +5,10 @@ const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:5173";
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: false, // E2E tests need sequential execution
+  fullyParallel: true, // Each test uses its own boardId — safe to parallelize
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: 1,
+  workers: process.env.CI ? 2 : 4, // 4 parallel workers locally
   reporter: [["html", { open: "never" }], ["list"]],
   timeout: 60_000,
 

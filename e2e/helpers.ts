@@ -24,9 +24,10 @@ export async function createUserSession(
   await page.fill('input[placeholder="Enter your name"]', displayName);
   await page.click('button:has-text("Continue as Guest")');
 
-  // Wait for auth to complete and redirect — could go to home page or stay
-  // The app creates a board or we navigate to one
-  await page.waitForTimeout(2000);
+  // Wait for auth to complete — the home page shows "Create New Board"
+  await page.waitForSelector('button:has-text("Create New Board"), canvas', {
+    timeout: 15_000,
+  });
 
   // Navigate to the specific board
   await page.goto(`/board/${boardId}`);
@@ -34,8 +35,8 @@ export async function createUserSession(
   // Wait for the Konva canvas to render
   await page.waitForSelector("canvas", { timeout: 15_000 });
 
-  // Give Firebase subscriptions time to settle
-  await page.waitForTimeout(1500);
+  // Brief settle for Firebase subscriptions
+  await page.waitForTimeout(500);
 
   return { context, page };
 }
@@ -50,17 +51,15 @@ export async function createStickyNote(
   y: number,
   text?: string
 ) {
-  // Click the Sticky Note button in toolbar directly (more reliable than keyboard)
   await page.click('button:has-text("Sticky Note")');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(100);
 
-  // Click on canvas at position using mouse events for Konva compatibility
   const canvas = page.locator("canvas").first();
   const box = await canvas.boundingBox();
   if (!box) throw new Error("Canvas not found");
 
   await page.mouse.click(box.x + x, box.y + y);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(200);
 
   // Type text if provided
   if (text) {
@@ -82,12 +81,12 @@ export async function createStickyNote(
  */
 export async function createRectangle(page: Page, x: number, y: number) {
   await page.click('button:has-text("Rectangle")');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(100);
   const canvas = page.locator("canvas").first();
   const box = await canvas.boundingBox();
   if (!box) throw new Error("Canvas not found");
   await page.mouse.click(box.x + x, box.y + y);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(200);
 }
 
 /**

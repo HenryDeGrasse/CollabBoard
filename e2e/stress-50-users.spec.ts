@@ -49,7 +49,7 @@ test.describe("Stress Test: 50 Users + 1000 Objects", () => {
       sessions.push(session);
     }
 
-    await Promise.all(sessions.map((s) => s.page.waitForTimeout(2000)));
+    await Promise.all(sessions.map((s) => s.page.waitForTimeout(800)));
 
     // Phase 1: Create 1000 objects (200 per browser, in parallel)
     console.log("Creating 1000 objects (200 per browser via app API)...");
@@ -58,7 +58,7 @@ test.describe("Stress Test: 50 Users + 1000 Objects", () => {
     );
 
     console.log("All 1000 objects created. Waiting for sync...");
-    await Promise.all(sessions.map((s) => s.page.waitForTimeout(5000)));
+    await Promise.all(sessions.map((s) => s.page.waitForTimeout(2000)));
 
     // Phase 2: Measure FPS
     console.log("Measuring FPS on all 5 browser sessions...");

@@ -16,7 +16,7 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
     }
 
     // Wait for all presence to sync
-    await Promise.all(sessions.map((s) => s.page.waitForTimeout(3000)));
+    await Promise.all(sessions.map((s) => s.page.waitForTimeout(1000)));
 
     // Each user creates a sticky note at different positions
     for (let i = 0; i < sessions.length; i++) {
@@ -27,7 +27,7 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
     }
 
     // Wait for all objects to sync across all clients
-    await Promise.all(sessions.map((s) => s.page.waitForTimeout(2000)));
+    await Promise.all(sessions.map((s) => s.page.waitForTimeout(800)));
 
     // Measure FPS on each user's canvas
     const fpsResults: number[] = [];
@@ -50,7 +50,7 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
         await sessions[i].page.mouse.move(box.x + 200 + i * 100, box.y + 200);
       }
     }
-    await Promise.all(sessions.map((s) => s.page.waitForTimeout(1000)));
+    await Promise.all(sessions.map((s) => s.page.waitForTimeout(500)));
 
     // Move cursors again to trigger cursor broadcasts
     for (let i = 0; i < sessions.length; i++) {
@@ -60,7 +60,7 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
         await sessions[i].page.mouse.move(box.x + 300 + i * 50, box.y + 300);
       }
     }
-    await Promise.all(sessions.map((s) => s.page.waitForTimeout(1000)));
+    await Promise.all(sessions.map((s) => s.page.waitForTimeout(500)));
 
     // No errors on any client
     for (const session of sessions) {

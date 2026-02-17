@@ -15,7 +15,7 @@ test.describe("Test 1: Two Users Editing Simultaneously", () => {
 
     // User B should see the sticky note
     // Check that at least one Konva shape appeared in User B's canvas
-    await userB.page.waitForTimeout(1000);
+    await userB.page.waitForTimeout(500);
     const userBCanvas = userB.page.locator("canvas").first();
     await expect(userBCanvas).toBeVisible();
 
@@ -24,7 +24,7 @@ test.describe("Test 1: Two Users Editing Simultaneously", () => {
     await userB.page.waitForTimeout(500);
 
     // User A should see the rectangle
-    await userA.page.waitForTimeout(1000);
+    await userA.page.waitForTimeout(500);
 
     // Both users drag objects simultaneously
     await Promise.all([
@@ -33,8 +33,8 @@ test.describe("Test 1: Two Users Editing Simultaneously", () => {
     ]);
 
     // Wait for sync
-    await userA.page.waitForTimeout(1000);
-    await userB.page.waitForTimeout(1000);
+    await userA.page.waitForTimeout(500);
+    await userB.page.waitForTimeout(500);
 
     // Verify no errors in console
     const errorsA: string[] = [];
@@ -57,8 +57,8 @@ test.describe("Test 1: Two Users Editing Simultaneously", () => {
     const userB = await createUserSession(browser, bid, "Bob");
 
     // Wait for presence to sync
-    await userA.page.waitForTimeout(2000);
-    await userB.page.waitForTimeout(2000);
+    await userA.page.waitForTimeout(800);
+    await userB.page.waitForTimeout(800);
 
     // Check presence panel shows both users on User A's screen
     const presenceA = userA.page.locator("[class*='presence'], [data-testid='presence']").first();
