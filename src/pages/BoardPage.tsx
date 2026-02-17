@@ -68,6 +68,16 @@ export function BoardPage({ boardId }: BoardPageProps) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
 
+  // Expose board functions for E2E testing
+  useEffect(() => {
+    (window as any).__COLLABBOARD__ = {
+      boardId,
+      createObject,
+      objects,
+    };
+    return () => { delete (window as any).__COLLABBOARD__; };
+  }, [boardId, createObject, objects]);
+
   // Initialize board metadata if it doesn't exist
   useEffect(() => {
     if (!boardId || !userId || initialized) return;
