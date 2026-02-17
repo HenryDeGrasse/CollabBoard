@@ -41,7 +41,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     restoreConnector,
     loading,
   } = useBoard(boardId);
-  const { users, updateCursor, setEditingObject, setDraftText, isObjectLocked, getDraftTextForObject, myColor } =
+  const { users, updateCursor, setEditingObject, setDraftText, isObjectLocked, getDraftTextForObject } =
     usePresence(boardId, userId, displayName);
   const canvas = useCanvas();
   const selection = useSelection();
