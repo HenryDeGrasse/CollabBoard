@@ -250,7 +250,7 @@ export function Board({
   }, [objects, dragPositions]);
 
   // While dragging uncontained objects into a frame, show a live in-frame preview
-  // before drop so they don't appear behind the frame body.
+  // once overlap reaches the same threshold used for pop-out (50%).
   const enteringFrameDraggedObjects = useMemo(() => {
     const frames = Object.values(objects)
       .filter((o) => o.type === "frame")
@@ -260,13 +260,13 @@ export function Board({
       .filter((obj) => !obj.parentFrameId && !!dragPositions[obj.id] && obj.type !== "frame")
       .map((obj) => {
         const live = dragPositions[obj.id]!;
-        const centerX = live.x + obj.width / 2;
-        const centerY = live.y + obj.height / 2;
-
         const targetFrame = frames.find((frame) => {
-          const insideX = centerX >= frame.x && centerX <= frame.x + frame.width;
-          const insideY = centerY >= frame.y + 32 && centerY <= frame.y + frame.height;
-          return insideX && insideY;
+          // Symmetric with pop-out: enter preview when >= 50% overlap.
+          return !shouldPopOutFromFrame(
+            { x: live.x, y: live.y, width: obj.width, height: obj.height },
+            { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+            0.5
+          );
         });
 
         if (!targetFrame) return null;
@@ -278,6 +278,11 @@ export function Board({
       })
       .filter((entry): entry is { frameId: string; object: BoardObject } => !!entry);
   }, [objects, dragPositions]);
+
+  const enteringDraggedIds = useMemo(
+    () => new Set(enteringFrameDraggedObjects.map((entry) => entry.object.id)),
+    [enteringFrameDraggedObjects]
+  );
 
   // Get remote cursors (not current user)
   const remoteCursors = useMemo(() => {
@@ -1304,7 +1309,7 @@ export function Board({
 
           {/* Render uncontained objects first (so frame body can sit on top) */}
           {sortedObjects
-            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
+            .filter((obj) => obj.type === "line" && !obj.parentFrameId && !enteringDraggedIds.has(obj.id))
             .map((obj) => (
               <LineObject
                 key={obj.id}
@@ -1319,7 +1324,7 @@ export function Board({
             ))}
 
           {sortedObjects
-            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId)
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId && !enteringDraggedIds.has(obj.id))
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
@@ -1342,7 +1347,7 @@ export function Board({
             })}
 
           {sortedObjects
-            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId)
+            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId && !enteringDraggedIds.has(obj.id))
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
               return (
