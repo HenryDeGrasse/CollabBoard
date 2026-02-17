@@ -3,6 +3,10 @@ import {
   getContainedObjectIds,
   moveContainedObjects,
   getFrameBounds,
+  pushRectOutsideFrame,
+  constrainObjectOutsideFrames,
+  getRectOverlapRatio,
+  shouldPopOutFromFrame,
 } from "../../utils/frame-containment";
 import type { BoardObject } from "../../types/board";
 
@@ -85,5 +89,65 @@ describe("getFrameBounds", () => {
 
   it("returns null for empty contained ids", () => {
     expect(getFrameBounds([], {}, 20)).toBeNull();
+  });
+});
+
+describe("pushRectOutsideFrame", () => {
+  it("pushes object to the nearest outside edge", () => {
+    const rect = { x: 90, y: 120, width: 40, height: 40 };
+    const frame = { x: 100, y: 100, width: 200, height: 200 };
+
+    // Closest valid non-overlapping position is immediately left of frame.
+    expect(pushRectOutsideFrame(rect, frame)).toEqual({ x: 60, y: 120 });
+  });
+
+  it("returns same position if there is no overlap", () => {
+    const rect = { x: 20, y: 20, width: 40, height: 40 };
+    const frame = { x: 100, y: 100, width: 200, height: 200 };
+    expect(pushRectOutsideFrame(rect, frame)).toEqual({ x: 20, y: 20 });
+  });
+});
+
+describe("overlap ratio + pop-out", () => {
+  it("computes overlap ratio of object area inside frame", () => {
+    const frame = { x: 100, y: 100, width: 200, height: 200 };
+    const rectHalf = { x: 250, y: 120, width: 100, height: 100 }; // 50% inside
+
+    expect(getRectOverlapRatio(rectHalf, frame)).toBeCloseTo(0.5, 5);
+    expect(shouldPopOutFromFrame(rectHalf, frame, 0.5)).toBe(false);
+  });
+
+  it("pops out when overlap drops below 50%", () => {
+    const frame = { x: 100, y: 100, width: 200, height: 200 };
+    const rectLessThanHalf = { x: 260, y: 120, width: 100, height: 100 }; // 40% inside
+
+    expect(getRectOverlapRatio(rectLessThanHalf, frame)).toBeCloseTo(0.4, 5);
+    expect(shouldPopOutFromFrame(rectLessThanHalf, frame, 0.5)).toBe(true);
+  });
+});
+
+describe("constrainObjectOutsideFrames", () => {
+  it("keeps object outside frame when overlap occurs", () => {
+    const frame = makeObj("frame1", 100, 100, 200, 200, "frame");
+    const constrained = constrainObjectOutsideFrames(
+      { x: 90, y: 140, width: 60, height: 60 },
+      [frame],
+      null
+    );
+
+    // Should be pushed flush to frame's left edge.
+    expect(constrained).toEqual({ x: 40, y: 140 });
+  });
+
+  it("allows overlap when cursor is inside that frame", () => {
+    const frame = makeObj("frame1", 100, 100, 200, 200, "frame");
+    const constrained = constrainObjectOutsideFrames(
+      { x: 120, y: 140, width: 60, height: 60 },
+      [frame],
+      "frame1"
+    );
+
+    // No push if this frame is currently allowed.
+    expect(constrained).toEqual({ x: 120, y: 140 });
   });
 });

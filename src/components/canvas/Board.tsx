@@ -15,6 +15,10 @@ import type { UserPresence } from "../../types/presence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
 import { throttle } from "../../utils/throttle";
 import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
+import {
+  constrainObjectOutsideFrames,
+  shouldPopOutFromFrame,
+} from "../../utils/frame-containment";
 
 export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line" | "frame";
 
@@ -220,6 +224,27 @@ export function Board({
       Object.values(objects).sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)),
     [objects]
   );
+
+  const poppedOutDraggedObjects = useMemo(() => {
+    return Object.values(objects)
+      .filter((obj) => !!obj.parentFrameId && !!dragPositions[obj.id])
+      .map((obj) => {
+        const live = dragPositions[obj.id]!;
+        const parent = obj.parentFrameId ? objects[obj.parentFrameId] : undefined;
+        if (!parent || parent.type !== "frame") return null;
+
+        const shouldPop = shouldPopOutFromFrame(
+          { x: live.x, y: live.y, width: obj.width, height: obj.height },
+          { x: parent.x, y: parent.y, width: parent.width, height: parent.height },
+          0.5
+        );
+        if (!shouldPop) return null;
+
+        return { ...obj, x: live.x, y: live.y };
+      })
+      .filter((obj): obj is BoardObject => !!obj)
+      .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  }, [objects, dragPositions]);
 
   // Get remote cursors (not current user)
   const remoteCursors = useMemo(() => {
@@ -628,30 +653,90 @@ export function Board({
 
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
-      throttledDragUpdate(id, x, y);
+      const stage = stageRef.current;
+      const draggedObj = objects[id];
+      let primaryX = x;
+      let primaryY = y;
+
+      // Prevent non-frame objects from sliding under frames while cursor is outside.
+      const isGroupDrag = selectedIds.has(id) && selectedIds.size > 1;
+      if (draggedObj && draggedObj.type !== "frame" && !isGroupDrag) {
+        const pointer = stage?.getPointerPosition();
+        let frameUnderCursorId: string | null = null;
+        if (pointer && stage) {
+          const cx = (pointer.x - stage.x()) / stage.scaleX();
+          const cy = (pointer.y - stage.y()) / stage.scaleY();
+          frameUnderCursorId = getFrameAtPoint(cx, cy)?.id ?? null;
+        }
+
+        // If dragging an object out of its current frame and it drops below 50% overlap,
+        // force it to pop outside unless cursor is inside another frame.
+        const currentParentFrameId = draggedObj.parentFrameId ?? null;
+        if (currentParentFrameId && frameUnderCursorId === currentParentFrameId) {
+          const currentParentFrame = objects[currentParentFrameId];
+          if (currentParentFrame && currentParentFrame.type === "frame") {
+            const willPopOut = shouldPopOutFromFrame(
+              { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
+              {
+                x: currentParentFrame.x,
+                y: currentParentFrame.y,
+                width: currentParentFrame.width,
+                height: currentParentFrame.height,
+              },
+              0.5
+            );
+            if (willPopOut) {
+              frameUnderCursorId = null;
+            }
+          }
+        }
+
+        const frames = Object.values(objects).filter((o) => o.type === "frame");
+        const constrained = constrainObjectOutsideFrames(
+          { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
+          frames,
+          frameUnderCursorId
+        );
+        primaryX = constrained.x;
+        primaryY = constrained.y;
+
+        if (stage) {
+          const node = stage.findOne(`#node-${id}`);
+          if (node) {
+            node.x(primaryX);
+            node.y(primaryY);
+          }
+        }
+      }
+
+      throttledDragUpdate(id, primaryX, primaryY);
 
       // Build live positions for all dragged items (for connector re-render)
-      const positions: Record<string, { x: number; y: number }> = { [id]: { x, y } };
+      const positions: Record<string, { x: number; y: number }> = {
+        [id]: { x: primaryX, y: primaryY },
+      };
 
       // Move frame-contained objects
       const frameOffsets = frameContainedRef.current;
-      const stage = stageRef.current;
       for (const [cid, offset] of Object.entries(frameOffsets)) {
-        const newX = x + offset.dx;
-        const newY = y + offset.dy;
+        const newX = primaryX + offset.dx;
+        const newY = primaryY + offset.dy;
         positions[cid] = { x: newX, y: newY };
         throttledDragUpdate(cid, newX, newY);
         if (stage) {
           const node = stage.findOne(`#node-${cid}`);
-          if (node) { node.x(newX); node.y(newY); }
+          if (node) {
+            node.x(newX);
+            node.y(newY);
+          }
         }
       }
 
       // Move other selected objects in the group
       const offsets = groupDragOffsetsRef.current;
       for (const [sid, offset] of Object.entries(offsets)) {
-        const newX = x + offset.dx;
-        const newY = y + offset.dy;
+        const newX = primaryX + offset.dx;
+        const newY = primaryY + offset.dy;
         positions[sid] = { x: newX, y: newY };
         throttledDragUpdate(sid, newX, newY);
         // Move Konva node directly for instant visual feedback
@@ -677,7 +762,7 @@ export function Board({
         }
       }
     },
-    [throttledDragUpdate, stageRef, onCursorMove]
+    [throttledDragUpdate, stageRef, onCursorMove, objects, selectedIds, getFrameAtPoint]
   );
 
   const handleDragEnd = useCallback(
@@ -688,16 +773,42 @@ export function Board({
       const startPos = dragStartPosRef.current[id];
       const draggedObj = objects[id];
 
-      let finalX = x;
-      let finalY = y;
+      const livePos = dragPositions[id];
+      let finalX = livePos?.x ?? x;
+      let finalY = livePos?.y ?? y;
       let finalParentFrameId: string | null | undefined = draggedObj?.parentFrameId ?? null;
 
-      // For non-frame objects, attach/detach frame membership based on center point
+      // For non-frame objects:
+      // - membership follows cursor position on drop
+      // - if cursor is outside frames, snap object fully outside frame bounds
       if (draggedObj && draggedObj.type !== "frame") {
-        const centerX = finalX + draggedObj.width / 2;
-        const centerY = finalY + draggedObj.height / 2;
-        const targetFrame = getFrameAtPoint(centerX, centerY);
+        const stage = stageRef.current;
+        const pointer = stage?.getPointerPosition();
+
+        let targetFrame: BoardObject | null = null;
+        if (pointer && stage) {
+          const cx = (pointer.x - stage.x()) / stage.scaleX();
+          const cy = (pointer.y - stage.y()) / stage.scaleY();
+          targetFrame = getFrameAtPoint(cx, cy);
+        }
+
+        // Fallback if no pointer available
+        if (!targetFrame) {
+          const centerX = finalX + draggedObj.width / 2;
+          const centerY = finalY + draggedObj.height / 2;
+          targetFrame = getFrameAtPoint(centerX, centerY);
+        }
+
         finalParentFrameId = targetFrame?.id ?? null;
+
+        const frames = Object.values(objects).filter((o) => o.type === "frame");
+        const constrained = constrainObjectOutsideFrames(
+          { x: finalX, y: finalY, width: draggedObj.width, height: draggedObj.height },
+          frames,
+          finalParentFrameId ?? null
+        );
+        finalX = constrained.x;
+        finalY = constrained.y;
       }
 
       onUpdateObject(id, { x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null });
@@ -719,8 +830,8 @@ export function Board({
       // Commit frame-contained objects
       const frameOffsets = frameContainedRef.current;
       for (const [cid, offset] of Object.entries(frameOffsets)) {
-        const newX = x + offset.dx;
-        const newY = y + offset.dy;
+        const newX = finalX + offset.dx;
+        const newY = finalY + offset.dy;
         const cStart = dragStartPosRef.current[cid];
         onUpdateObject(cid, { x: newX, y: newY });
         if (cStart && (cStart.x !== newX || cStart.y !== newY)) {
@@ -738,8 +849,8 @@ export function Board({
       // Commit all other group-dragged objects
       const offsets = groupDragOffsetsRef.current;
       for (const [sid, offset] of Object.entries(offsets)) {
-        const newX = x + offset.dx;
-        const newY = y + offset.dy;
+        const newX = finalX + offset.dx;
+        const newY = finalY + offset.dy;
         const sStart = dragStartPosRef.current[sid];
         onUpdateObject(sid, { x: newX, y: newY });
         if (sStart && (sStart.x !== newX || sStart.y !== newY)) {
@@ -763,7 +874,7 @@ export function Board({
         );
       }
     },
-    [onUpdateObject, onPushUndo, objects, getFrameAtPoint]
+    [onUpdateObject, onPushUndo, objects, getFrameAtPoint, dragPositions, stageRef]
   );
 
   const handleConnectorSelect = useCallback(
@@ -1160,7 +1271,70 @@ export function Board({
             />
           )}
 
-          {/* Render frame backgrounds (behind objects) + clipped contained objects */}
+          {/* Render uncontained objects first (so frame body can sit on top) */}
+          {sortedObjects
+            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
+            .map((obj) => (
+              <LineObject
+                key={obj.id}
+                object={objects[obj.id] || obj}
+                isSelected={selectedIds.has(obj.id)}
+                onSelect={handleObjectClick}
+                onDragStart={handleDragStart}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
+                onUpdateObject={onUpdateObject}
+              />
+            ))}
+
+          {sortedObjects
+            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId)
+            .map((obj) => {
+              const lock = isObjectLocked(obj.id);
+              return (
+                <Shape
+                  key={obj.id}
+                  object={objects[obj.id] || obj}
+                  isSelected={selectedIds.has(obj.id)}
+                  isEditing={editingObjectId === obj.id}
+                  isLockedByOther={lock.locked}
+                  lockedByColor={lock.lockedByColor}
+                  draftText={getDraftTextForObject(obj.id)?.text}
+                  onSelect={handleObjectClick}
+                  onDragStart={handleDragStart}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  onDoubleClick={handleDoubleClick}
+                  onUpdateObject={onUpdateObject}
+                />
+              );
+            })}
+
+          {sortedObjects
+            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId)
+            .map((obj) => {
+              const lock = isObjectLocked(obj.id);
+              return (
+                <StickyNote
+                  key={obj.id}
+                  object={objects[obj.id] || obj}
+                  isSelected={selectedIds.has(obj.id)}
+                  isEditing={editingObjectId === obj.id}
+                  isLockedByOther={lock.locked}
+                  lockedByName={lock.lockedBy}
+                  lockedByColor={lock.lockedByColor}
+                  draftText={getDraftTextForObject(obj.id)?.text}
+                  onSelect={handleObjectClick}
+                  onDragStart={handleDragStart}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  onDoubleClick={handleDoubleClick}
+                  onUpdateObject={onUpdateObject}
+                />
+              );
+            })}
+
+          {/* Render frame backgrounds + clipped contained objects */}
           {sortedObjects
             .filter((obj) => obj.type === "frame")
             .map((obj) => {
@@ -1257,68 +1431,57 @@ export function Board({
               );
             })}
 
-          {/* Render uncontained objects */}
-          {sortedObjects
-            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
-            .map((obj) => (
-              <LineObject
-                key={obj.id}
-                object={objects[obj.id] || obj}
-                isSelected={selectedIds.has(obj.id)}
-                onSelect={handleObjectClick}
-                onDragStart={handleDragStart}
-                onDragMove={handleDragMove}
-                onDragEnd={handleDragEnd}
-                onUpdateObject={onUpdateObject}
-              />
-            ))}
 
-          {sortedObjects
-            .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId)
-            .map((obj) => {
-              const lock = isObjectLocked(obj.id);
-              return (
-                <Shape
-                  key={obj.id}
-                  object={objects[obj.id] || obj}
-                  isSelected={selectedIds.has(obj.id)}
-                  isEditing={editingObjectId === obj.id}
-                  isLockedByOther={lock.locked}
-                  lockedByColor={lock.lockedByColor}
-                  draftText={getDraftTextForObject(obj.id)?.text}
-                  onSelect={handleObjectClick}
-                  onDragStart={handleDragStart}
-                  onDragMove={handleDragMove}
-                  onDragEnd={handleDragEnd}
-                  onDoubleClick={handleDoubleClick}
-                  onUpdateObject={onUpdateObject}
-                />
-              );
-            })}
-
-          {sortedObjects
-            .filter((obj) => obj.type === "sticky" && !obj.parentFrameId)
-            .map((obj) => {
-              const lock = isObjectLocked(obj.id);
-              return (
-                <StickyNote
-                  key={obj.id}
-                  object={objects[obj.id] || obj}
-                  isSelected={selectedIds.has(obj.id)}
-                  isEditing={editingObjectId === obj.id}
-                  isLockedByOther={lock.locked}
-                  lockedByName={lock.lockedBy}
-                  lockedByColor={lock.lockedByColor}
-                  draftText={getDraftTextForObject(obj.id)?.text}
-                  onSelect={handleObjectClick}
-                  onDragStart={handleDragStart}
-                  onDragMove={handleDragMove}
-                  onDragEnd={handleDragEnd}
-                  onDoubleClick={handleDoubleClick}
-                  onUpdateObject={onUpdateObject}
-                />
-              );
-            })}
+          {/* Live pop-out previews for dragged objects leaving frames */}
+          {poppedOutDraggedObjects.map((obj) => {
+            const lock = isObjectLocked(obj.id);
+            return (
+              <Group key={`popout-${obj.id}`} listening={false}>
+                {obj.type === "line" ? (
+                  <LineObject
+                    object={obj}
+                    isSelected={selectedIds.has(obj.id)}
+                    onSelect={handleObjectClick}
+                    onDragStart={handleDragStart}
+                    onDragMove={handleDragMove}
+                    onDragEnd={handleDragEnd}
+                    onUpdateObject={onUpdateObject}
+                  />
+                ) : obj.type === "rectangle" || obj.type === "circle" ? (
+                  <Shape
+                    object={obj}
+                    isSelected={selectedIds.has(obj.id)}
+                    isEditing={editingObjectId === obj.id}
+                    isLockedByOther={lock.locked}
+                    lockedByColor={lock.lockedByColor}
+                    draftText={getDraftTextForObject(obj.id)?.text}
+                    onSelect={handleObjectClick}
+                    onDragStart={handleDragStart}
+                    onDragMove={handleDragMove}
+                    onDragEnd={handleDragEnd}
+                    onDoubleClick={handleDoubleClick}
+                    onUpdateObject={onUpdateObject}
+                  />
+                ) : obj.type === "sticky" ? (
+                  <StickyNote
+                    object={obj}
+                    isSelected={selectedIds.has(obj.id)}
+                    isEditing={editingObjectId === obj.id}
+                    isLockedByOther={lock.locked}
+                    lockedByName={lock.lockedBy}
+                    lockedByColor={lock.lockedByColor}
+                    draftText={getDraftTextForObject(obj.id)?.text}
+                    onSelect={handleObjectClick}
+                    onDragStart={handleDragStart}
+                    onDragMove={handleDragMove}
+                    onDragEnd={handleDragEnd}
+                    onDoubleClick={handleDoubleClick}
+                    onUpdateObject={onUpdateObject}
+                  />
+                ) : null}
+              </Group>
+            );
+          })}
 
           {/* Frame overlays (header + border on top) */}
           {sortedObjects

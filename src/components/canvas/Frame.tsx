@@ -23,6 +23,7 @@ export function Frame({
   object,
   isSelected,
   isEditing,
+  containedCount,
   isSelectMode,
   onDragStart,
   onDragMove,

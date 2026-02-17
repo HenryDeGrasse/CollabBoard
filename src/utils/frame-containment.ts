@@ -1,5 +1,12 @@
 import type { BoardObject } from "../types/board";
 
+interface RectLike {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
  * Get IDs of non-frame objects that are spatially contained within a frame.
  * An object is "contained" if at least 50% of its area overlaps the frame.
@@ -122,4 +129,93 @@ export function snapToFrame(
   if (obj.y + obj.height > fy + fh) newY = fy + fh - obj.height;
 
   return { x: newX, y: newY };
+}
+
+function intersects(a: RectLike, b: RectLike): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+export function getRectOverlapRatio(rect: RectLike, frame: RectLike): number {
+  const overlapX = Math.max(0, Math.min(rect.x + rect.width, frame.x + frame.width) - Math.max(rect.x, frame.x));
+  const overlapY = Math.max(0, Math.min(rect.y + rect.height, frame.y + frame.height) - Math.max(rect.y, frame.y));
+  const overlapArea = overlapX * overlapY;
+  const rectArea = rect.width * rect.height;
+  if (rectArea <= 0) return 0;
+  return overlapArea / rectArea;
+}
+
+export function shouldPopOutFromFrame(
+  rect: RectLike,
+  frame: RectLike,
+  popOutThreshold = 0.5
+): boolean {
+  return getRectOverlapRatio(rect, frame) < popOutThreshold;
+}
+
+/**
+ * Push a rectangle to the closest non-overlapping position outside a frame.
+ */
+export function pushRectOutsideFrame(rect: RectLike, frame: RectLike): { x: number; y: number } {
+  if (!intersects(rect, frame)) {
+    return { x: rect.x, y: rect.y };
+  }
+
+  const pushLeft = Math.abs((frame.x - rect.width) - rect.x);
+  const pushRight = Math.abs((frame.x + frame.width) - rect.x);
+  const pushUp = Math.abs((frame.y - rect.height) - rect.y);
+  const pushDown = Math.abs((frame.y + frame.height) - rect.y);
+
+  const min = Math.min(pushLeft, pushRight, pushUp, pushDown);
+
+  if (min === pushLeft) {
+    return { x: frame.x - rect.width, y: rect.y };
+  }
+  if (min === pushRight) {
+    return { x: frame.x + frame.width, y: rect.y };
+  }
+  if (min === pushUp) {
+    return { x: rect.x, y: frame.y - rect.height };
+  }
+  return { x: rect.x, y: frame.y + frame.height };
+}
+
+/**
+ * Prevent objects from overlapping frame boundaries unless cursor is inside the frame.
+ *
+ * If allowInsideFrameId is provided, overlap is allowed with that frame only.
+ */
+export function constrainObjectOutsideFrames(
+  rect: RectLike,
+  frames: BoardObject[],
+  allowInsideFrameId: string | null = null
+): { x: number; y: number } {
+  let current = { ...rect };
+
+  // Iterate a few times to resolve overlaps against multiple frames.
+  for (let i = 0; i < 4; i++) {
+    let changed = false;
+
+    for (const frame of frames) {
+      if (frame.id === allowInsideFrameId) continue;
+
+      const frameRect: RectLike = {
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+      };
+
+      if (intersects(current, frameRect)) {
+        const pushed = pushRectOutsideFrame(current, frameRect);
+        if (pushed.x !== current.x || pushed.y !== current.y) {
+          current = { ...current, x: pushed.x, y: pushed.y };
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) break;
+  }
+
+  return { x: current.x, y: current.y };
 }
