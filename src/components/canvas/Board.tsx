@@ -110,6 +110,15 @@ export function Board({
     endY: number;
   } | null>(null);
 
+  // Frame manual drag state (for dragging via overlay header)
+  const [frameManualDrag, setFrameManualDrag] = useState<{
+    frameId: string;
+    startMouseX: number;
+    startMouseY: number;
+    startFrameX: number;
+    startFrameY: number;
+  } | null>(null);
+
   // Arrow drawing state
   const [arrowDraw, setArrowDraw] = useState<{
     fromId: string;
@@ -267,6 +276,29 @@ export function Board({
         );
       }
 
+      // Frame manual drag (from overlay header)
+      if (frameManualDrag) {
+        const { frameId, startMouseX, startMouseY, startFrameX, startFrameY } = frameManualDrag;
+        const dx = canvasPoint.x - startMouseX;
+        const dy = canvasPoint.y - startMouseY;
+        const newX = startFrameX + dx;
+        const newY = startFrameY + dy;
+
+        // Update frame position in dragPositions
+        setDragPositions((prev) => ({
+          ...prev,
+          [frameId]: { x: newX, y: newY },
+        }));
+
+        // Move contained objects with the frame
+        const frameOffsets = frameContainedRef.current;
+        const newPositions: Record<string, { x: number; y: number }> = {};
+        for (const [cid, offset] of Object.entries(frameOffsets)) {
+          newPositions[cid] = { x: newX + offset.dx, y: newY + offset.dy };
+        }
+        setDragPositions((prev) => ({ ...prev, ...newPositions }));
+      }
+
       // Selection rect drag (skip during right-click pan)
       if (selectionStartRef.current && activeTool === "select" && !spaceHeldRef.current && !rightClickPanRef.current) {
         const start = selectionStartRef.current;
@@ -279,7 +311,7 @@ export function Board({
         });
       }
     },
-    [onCursorMove, getCanvasPoint, activeTool, arrowDraw]
+    [onCursorMove, getCanvasPoint, activeTool, arrowDraw, frameManualDrag]
   );
 
   const TITLE_HEIGHT = 32;
@@ -519,6 +551,43 @@ export function Board({
   const frameContainedRef = useRef<Record<string, { dx: number; dy: number }>>({});
   // Live position overrides during drag — triggers re-render so connectors update
   const [dragPositions, setDragPositions] = useState<Record<string, { x: number; y: number }>>({});
+
+  // Handle frame header manual drag start (called from FrameOverlay)
+  const handleFrameHeaderDragStart = useCallback((frameId: string) => {
+    const frame = objects[frameId];
+    if (!frame) return;
+
+    // We need to get the current mouse position on stage
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const pointerPos = stage.getPointerPosition();
+    if (!pointerPos) return;
+
+    // Convert to canvas coordinates
+    const canvasX = (pointerPos.x - viewport.x) / viewport.scale;
+    const canvasY = (pointerPos.y - viewport.y) / viewport.scale;
+
+    setFrameManualDrag({
+      frameId,
+      startMouseX: canvasX,
+      startMouseY: canvasY,
+      startFrameX: frame.x,
+      startFrameY: frame.y,
+    });
+
+    // Record start positions for undo
+    dragStartPosRef.current[frameId] = { x: frame.x, y: frame.y };
+
+    // Also record contained objects for moving with the frame
+    const frameOffsets: Record<string, { dx: number; dy: number }> = {};
+    getObjectsInFrame(frameId).forEach((cobj) => {
+      frameOffsets[cobj.id] = { dx: cobj.x - frame.x, dy: cobj.y - frame.y };
+      dragStartPosRef.current[cobj.id] = { x: cobj.x, y: cobj.y };
+    });
+    frameContainedRef.current = frameOffsets;
+
+  }, [objects, viewport, stageRef, getObjectsInFrame]);
 
   const handleDragStart = useCallback((id: string) => {
     draggingRef.current.add(id);
@@ -845,7 +914,43 @@ export function Board({
 
     selectionStartRef.current = null;
     setSelectionRect((prev) => ({ ...prev, visible: false }));
-  }, [selectionRect, objects, connectors, onSelect, onClearSelection]);
+
+    // Commit frame manual drag
+    if (frameManualDrag) {
+      const { frameId } = frameManualDrag;
+      const draggedPos = dragPositions[frameId];
+      if (draggedPos) {
+        // Commit frame position
+        onUpdateObject(frameId, { x: draggedPos.x, y: draggedPos.y });
+
+        // Commit contained objects positions
+        const frameOffsets = frameContainedRef.current;
+        for (const cid of Object.keys(frameOffsets)) {
+          const cpos = dragPositions[cid];
+          if (cpos) {
+            onUpdateObject(cid, { x: cpos.x, y: cpos.y });
+          }
+        }
+
+        // Push undo action
+        const startPos = dragStartPosRef.current[frameId];
+        if (startPos) {
+          onPushUndo({
+            type: "update_object",
+            objectId: frameId,
+            before: { x: startPos.x, y: startPos.y },
+            after: { x: draggedPos.x, y: draggedPos.y },
+          });
+        }
+      }
+
+      // Clear drag state
+      setFrameManualDrag(null);
+      setDragPositions({});
+      frameContainedRef.current = {};
+      dragStartPosRef.current = {};
+    }
+  }, [selectionRect, objects, connectors, onSelect, onClearSelection, frameManualDrag, dragPositions, onUpdateObject, onPushUndo]);
 
   // Handle keyboard delete + escape
   useEffect(() => {
@@ -1072,12 +1177,9 @@ export function Board({
                     isEditing={editingObjectId === obj.id}
                     containedCount={contained.length}
                     isSelectMode={activeTool === "select"}
-                    onSelect={handleObjectClick}
                     onDragStart={handleDragStart}
                     onDragMove={handleDragMove}
                     onDragEnd={handleDragEnd}
-                    onDoubleClick={handleDoubleClick}
-                    onUpdateObject={onUpdateObject}
                   />
 
                   {/* Clipped contained objects */}
@@ -1230,11 +1332,13 @@ export function Board({
                   key={`overlay-${obj.id}`}
                   object={{ ...frameObj, x: framePos.x, y: framePos.y }}
                   isSelected={selectedIds.has(obj.id)}
+                  isEditing={editingObjectId === obj.id}
                   containedCount={contained.length}
                   isSelectMode={activeTool === "select"}
                   onSelect={handleObjectClick}
                   onDoubleClick={handleDoubleClick}
-                  onDragStart={handleDragStart}
+                  onDragStart={handleFrameHeaderDragStart}
+                  onUpdateObject={onUpdateObject}
                 />
               );
             })}

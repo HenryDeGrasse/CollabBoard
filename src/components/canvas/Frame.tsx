@@ -9,12 +9,9 @@ interface FrameProps {
   isEditing: boolean;
   containedCount: number;
   isSelectMode: boolean;
-  onSelect: (id: string, multi?: boolean) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
-  onDoubleClick: (id: string) => void;
-  onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
 }
 
 const TITLE_HEIGHT = 32;
@@ -26,17 +23,12 @@ export function Frame({
   object,
   isSelected,
   isEditing,
-  containedCount,
   isSelectMode,
-  onSelect,
   onDragStart,
   onDragMove,
   onDragEnd,
-  onDoubleClick,
-  onUpdateObject,
 }: FrameProps) {
   const groupRef = useRef<any>(null);
-  const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
   const borderWidth = isSelected ? 2.5 : 2;
@@ -168,37 +160,7 @@ export function Frame({
         listening={false}
       />
 
-      {/* Resize handles */}
-      {isSelected && !isEditing && (
-        <ResizeHandles
-          object={object}
-          circleMode={false}
-          onResizeStart={() => {
-            originalRef.current = {
-              x: object.x,
-              y: object.y,
-              width: object.width,
-              height: object.height,
-            };
-          }}
-          onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
-            if (!originalRef.current) return;
-            const result = computeResize(
-              originalRef.current,
-              handle,
-              px,
-              py,
-              MIN_WIDTH,
-              MIN_HEIGHT,
-              false
-            );
-            onUpdateObject(object.id, result);
-          }}
-          onResizeEnd={() => {
-            originalRef.current = null;
-          }}
-        />
-      )}
+
     </Group>
   );
 }
@@ -208,14 +170,17 @@ export function Frame({
 interface FrameOverlayProps {
   object: BoardObject;
   isSelected: boolean;
+  isEditing: boolean;
   containedCount: number;
   isSelectMode: boolean;
   onSelect: (id: string, multi?: boolean) => void;
   onDoubleClick: (id: string) => void;
   onDragStart: (id: string) => void;
+  onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
 }
 
-export function FrameOverlay({ object, isSelected, containedCount, isSelectMode, onSelect, onDoubleClick, onDragStart }: FrameOverlayProps) {
+export function FrameOverlay({ object, isSelected, isEditing, containedCount, isSelectMode, onSelect, onDoubleClick, onDragStart, onUpdateObject }: FrameOverlayProps) {
+  const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
   const borderWidth = isSelected ? 2.5 : 2;
 
@@ -337,6 +302,38 @@ export function FrameOverlay({ object, isSelected, containedCount, isSelectMode,
           }
         }}
       />
+
+      {/* Resize handles (render on top of border) */}
+      {isSelected && !isEditing && (
+        <ResizeHandles
+          object={object}
+          circleMode={false}
+          onResizeStart={() => {
+            originalRef.current = {
+              x: object.x,
+              y: object.y,
+              width: object.width,
+              height: object.height,
+            };
+          }}
+          onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
+            if (!originalRef.current) return;
+            const result = computeResize(
+              originalRef.current,
+              handle,
+              px,
+              py,
+              MIN_WIDTH,
+              MIN_HEIGHT,
+              false
+            );
+            onUpdateObject(object.id, result);
+          }}
+          onResizeEnd={() => {
+            originalRef.current = null;
+          }}
+        />
+      )}
     </Group>
   );
 }
