@@ -249,6 +249,36 @@ export function Board({
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
   }, [objects, dragPositions]);
 
+  // While dragging uncontained objects into a frame, show a live in-frame preview
+  // before drop so they don't appear behind the frame body.
+  const enteringFrameDraggedObjects = useMemo(() => {
+    const frames = Object.values(objects)
+      .filter((o) => o.type === "frame")
+      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
+    return Object.values(objects)
+      .filter((obj) => !obj.parentFrameId && !!dragPositions[obj.id] && obj.type !== "frame")
+      .map((obj) => {
+        const live = dragPositions[obj.id]!;
+        const centerX = live.x + obj.width / 2;
+        const centerY = live.y + obj.height / 2;
+
+        const targetFrame = frames.find((frame) => {
+          const insideX = centerX >= frame.x && centerX <= frame.x + frame.width;
+          const insideY = centerY >= frame.y + 32 && centerY <= frame.y + frame.height;
+          return insideX && insideY;
+        });
+
+        if (!targetFrame) return null;
+
+        return {
+          frameId: targetFrame.id,
+          object: { ...obj, x: live.x, y: live.y } as BoardObject,
+        };
+      })
+      .filter((entry): entry is { frameId: string; object: BoardObject } => !!entry);
+  }, [objects, dragPositions]);
+
   // Get remote cursors (not current user)
   const remoteCursors = useMemo(() => {
     return Object.entries(users)
@@ -1341,8 +1371,15 @@ export function Board({
             .map((obj) => {
               const frameObj = objects[obj.id] || obj;
               const contained = getObjectsInFrame(frameObj.id);
+              const entering = enteringFrameDraggedObjects
+                .filter((entry) => entry.frameId === frameObj.id)
+                .map((entry) => entry.object);
+              const enteringIds = new Set(entering.map((o) => o.id));
+              const clippedObjects = [...contained, ...entering].sort(
+                (a, b) => (a.zIndex || 0) - (b.zIndex || 0)
+              );
               const framePos = dragPositions[frameObj.id] || { x: frameObj.x, y: frameObj.y };
-              
+
               return (
                 <React.Fragment key={obj.id}>
                   {/* Frame background */}
@@ -1357,8 +1394,8 @@ export function Board({
                     onDragEnd={handleDragEnd}
                   />
 
-                  {/* Clipped contained objects */}
-                  {contained.length > 0 && (
+                  {/* Clipped contained objects + entering previews */}
+                  {clippedObjects.length > 0 && (
                     <Group
                       clipFunc={(ctx) => {
                         ctx.rect(
@@ -1369,63 +1406,69 @@ export function Board({
                         );
                       }}
                     >
-                      {contained
-                        .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
-                        .map((cobj) => {
-                          const lock = isObjectLocked(cobj.id);
-                          if (cobj.type === "line") {
-                            return (
-                              <LineObject
-                                key={cobj.id}
-                                object={dragPositions[cobj.id] ? { ...cobj, ...dragPositions[cobj.id] } : cobj}
-                                isSelected={selectedIds.has(cobj.id)}
-                                onSelect={handleObjectClick}
-                                onDragStart={handleDragStart}
-                                onDragMove={handleDragMove}
-                                onDragEnd={handleDragEnd}
-                                onUpdateObject={onUpdateObject}
-                              />
-                            );
-                          } else if (cobj.type === "rectangle" || cobj.type === "circle") {
-                            return (
-                              <Shape
-                                key={cobj.id}
-                                object={dragPositions[cobj.id] ? { ...cobj, ...dragPositions[cobj.id] } : cobj}
-                                isSelected={selectedIds.has(cobj.id)}
-                                isEditing={editingObjectId === cobj.id}
-                                isLockedByOther={lock.locked}
-                                lockedByColor={lock.lockedByColor}
-                                draftText={getDraftTextForObject(cobj.id)?.text}
-                                onSelect={handleObjectClick}
-                                onDragStart={handleDragStart}
-                                onDragMove={handleDragMove}
-                                onDragEnd={handleDragEnd}
-                                onDoubleClick={handleDoubleClick}
-                                onUpdateObject={onUpdateObject}
-                              />
-                            );
-                          } else if (cobj.type === "sticky") {
-                            return (
-                              <StickyNote
-                                key={cobj.id}
-                                object={dragPositions[cobj.id] ? { ...cobj, ...dragPositions[cobj.id] } : cobj}
-                                isSelected={selectedIds.has(cobj.id)}
-                                isEditing={editingObjectId === cobj.id}
-                                isLockedByOther={lock.locked}
-                                lockedByName={lock.lockedBy}
-                                lockedByColor={lock.lockedByColor}
-                                draftText={getDraftTextForObject(cobj.id)?.text}
-                                onSelect={handleObjectClick}
-                                onDragStart={handleDragStart}
-                                onDragMove={handleDragMove}
-                                onDragEnd={handleDragEnd}
-                                onDoubleClick={handleDoubleClick}
-                                onUpdateObject={onUpdateObject}
-                              />
-                            );
-                          }
-                          return null;
-                        })}
+                      {clippedObjects.map((cobj) => {
+                        const lock = isObjectLocked(cobj.id);
+                        const isEnteringPreview = enteringIds.has(cobj.id);
+                        const liveObj = dragPositions[cobj.id]
+                          ? { ...cobj, ...dragPositions[cobj.id] }
+                          : cobj;
+
+                        const rendered =
+                          cobj.type === "line" ? (
+                            <LineObject
+                              key={cobj.id}
+                              object={liveObj}
+                              isSelected={selectedIds.has(cobj.id)}
+                              onSelect={handleObjectClick}
+                              onDragStart={handleDragStart}
+                              onDragMove={handleDragMove}
+                              onDragEnd={handleDragEnd}
+                              onUpdateObject={onUpdateObject}
+                            />
+                          ) : cobj.type === "rectangle" || cobj.type === "circle" ? (
+                            <Shape
+                              key={cobj.id}
+                              object={liveObj}
+                              isSelected={selectedIds.has(cobj.id)}
+                              isEditing={editingObjectId === cobj.id}
+                              isLockedByOther={lock.locked}
+                              lockedByColor={lock.lockedByColor}
+                              draftText={getDraftTextForObject(cobj.id)?.text}
+                              onSelect={handleObjectClick}
+                              onDragStart={handleDragStart}
+                              onDragMove={handleDragMove}
+                              onDragEnd={handleDragEnd}
+                              onDoubleClick={handleDoubleClick}
+                              onUpdateObject={onUpdateObject}
+                            />
+                          ) : cobj.type === "sticky" ? (
+                            <StickyNote
+                              key={cobj.id}
+                              object={liveObj}
+                              isSelected={selectedIds.has(cobj.id)}
+                              isEditing={editingObjectId === cobj.id}
+                              isLockedByOther={lock.locked}
+                              lockedByName={lock.lockedBy}
+                              lockedByColor={lock.lockedByColor}
+                              draftText={getDraftTextForObject(cobj.id)?.text}
+                              onSelect={handleObjectClick}
+                              onDragStart={handleDragStart}
+                              onDragMove={handleDragMove}
+                              onDragEnd={handleDragEnd}
+                              onDoubleClick={handleDoubleClick}
+                              onUpdateObject={onUpdateObject}
+                            />
+                          ) : null;
+
+                        if (!rendered) return null;
+                        return isEnteringPreview ? (
+                          <Group key={`entering-${cobj.id}`} listening={false}>
+                            {rendered}
+                          </Group>
+                        ) : (
+                          rendered
+                        );
+                      })}
                     </Group>
                   )}
                 </React.Fragment>
