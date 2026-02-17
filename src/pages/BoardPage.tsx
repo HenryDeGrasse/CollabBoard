@@ -45,7 +45,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     usePresence(boardId, userId, displayName);
   const canvas = useCanvas();
   const selection = useSelection();
-  const aiAgent = useAIAgent(boardId, userId);
+  const aiAgent = useAIAgent(boardId, canvas.stageRef, selection.selectedIds);
   const undoRedo = useUndoRedo(
     createObject,
     updateObject,

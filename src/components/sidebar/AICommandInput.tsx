@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { UseAIAgentReturn } from "../../hooks/useAIAgent";
+import type { AICommandResponse } from "../../types/ai";
 
 interface AICommandInputProps {
   aiAgent: UseAIAgentReturn;
@@ -8,18 +9,18 @@ interface AICommandInputProps {
 export function AICommandInput({ aiAgent }: AICommandInputProps) {
   const [command, setCommand] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const { isProcessing } = aiAgent;
-
-  const [comingSoonMsg, setComingSoonMsg] = useState(false);
+  const [history, setHistory] = useState<Array<{ command: string; response: AICommandResponse }>>([]);
+  const { isProcessing, sendCommand } = aiAgent;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!command.trim() || isProcessing) return;
 
-    // AI agent not yet deployed — show placeholder
-    setComingSoonMsg(true);
+    const userCommand = command.trim();
     setCommand("");
-    setTimeout(() => setComingSoonMsg(false), 5000);
+
+    const response = await sendCommand(userCommand);
+    setHistory((prev) => [...prev.slice(-4), { command: userCommand, response }]);
   };
 
   if (!isOpen) {
@@ -51,27 +52,65 @@ export function AICommandInput({ aiAgent }: AICommandInputProps) {
       </div>
 
       {/* Response area */}
-      <div className="px-4 py-3 max-h-40 overflow-y-auto">
-        {comingSoonMsg && (
-          <div className="flex items-start gap-2 text-sm text-indigo-600 bg-indigo-50 rounded-lg p-2.5">
-            <span>✨</span>
-            <div>
-              <p className="font-medium">AI Assistant coming soon!</p>
-              <p className="text-xs text-indigo-400 mt-0.5">
-                This feature will use GPT-4o to create templates, rearrange objects, and build layouts from natural language commands.
-              </p>
-            </div>
+      <div className="px-4 py-3 max-h-48 overflow-y-auto space-y-3">
+        {history.length === 0 && !isProcessing && (
+          <div className="text-xs text-gray-400 space-y-1.5">
+            <p>AI-powered board commands. Try:</p>
+            <ul className="space-y-1 text-gray-500">
+              <li className="cursor-pointer hover:text-indigo-600" onClick={() => setCommand("Create a SWOT analysis")}>
+                → "Create a SWOT analysis"
+              </li>
+              <li className="cursor-pointer hover:text-indigo-600" onClick={() => setCommand("Add 3 yellow sticky notes")}>
+                → "Add 3 yellow sticky notes"
+              </li>
+              <li className="cursor-pointer hover:text-indigo-600" onClick={() => setCommand("Set up a retrospective board")}>
+                → "Set up a retrospective board"
+              </li>
+            </ul>
           </div>
         )}
-        {!comingSoonMsg && (
-          <p className="text-xs text-gray-400">
-            AI-powered board commands are coming soon. Try: "Create a SWOT analysis", "Add sticky notes", "Arrange in a grid"
-          </p>
+
+        {history.map((entry, i) => (
+          <div key={i} className="space-y-1.5">
+            {/* User command */}
+            <div className="flex justify-end">
+              <div className="bg-indigo-50 text-indigo-700 text-sm rounded-lg px-3 py-1.5 max-w-[85%]">
+                {entry.command}
+              </div>
+            </div>
+            {/* AI response */}
+            <div className="flex justify-start">
+              <div
+                className={`text-sm rounded-lg px-3 py-1.5 max-w-[85%] ${
+                  entry.response.success
+                    ? "bg-green-50 text-green-700"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                <p>{entry.response.message}</p>
+                {entry.response.objectsCreated.length > 0 && (
+                  <p className="text-xs opacity-70 mt-0.5">
+                    {entry.response.objectsCreated.length} created
+                    {entry.response.objectsUpdated && entry.response.objectsUpdated.length > 0
+                      ? `, ${entry.response.objectsUpdated.length} updated`
+                      : ""}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {isProcessing && (
+          <div className="flex items-center gap-2 text-sm text-indigo-600">
+            <div className="animate-spin h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full" />
+            <span>Thinking...</span>
+          </div>
         )}
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="px-4 pb-3">
+      <form onSubmit={handleSubmit} className="px-4 pb-3 pt-1 border-t border-gray-100">
         <div className="flex gap-2">
           <input
             id="ai-command-input"
@@ -88,7 +127,7 @@ export function AICommandInput({ aiAgent }: AICommandInputProps) {
             disabled={isProcessing || !command.trim()}
             className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Send
+            {isProcessing ? "..." : "Send"}
           </button>
         </div>
       </form>
