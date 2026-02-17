@@ -1,8 +1,9 @@
-# AI Agent Implementation Plan (Vercel Serverless + Firebase RTDB)
+# AI Agent Implementation Plan (Supabase Edge Functions)
 
-**Status:** Active  
+**Status:** Active — Migrating to Supabase  
 **Last Updated:** February 16, 2026  
-**Decision:** Vercel AI endpoint (Firebase billing card blocks Cloud Functions/Blaze). Firebase Auth + RTDB remain for realtime board state and multiplayer. Only the AI "backend" lives at `/api/ai-agent`.
+**Decision:** Supabase Edge Functions for AI backend. Firebase org policies block service account keys AND Blaze billing. Supabase provides free Edge Functions, unrestricted service role keys, and built-in Realtime.  
+**See also:** `docs/SUPABASE_MIGRATION_PRD.md` for full migration plan.
 
 ---
 
