@@ -40,8 +40,8 @@ export function Shape({
     ? lockedByColor || "#EF4444"
     : isSelected
     ? "#4F46E5"
-    : undefined;
-  const borderWidth = isSelected || isLockedByOther ? 2 : 0;
+    : "rgba(0,0,0,0.15)";
+  const borderWidth = isSelected || isLockedByOther ? 2 : 1;
 
   const PADDING = 10;
   const isCircle = object.type === "circle";

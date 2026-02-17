@@ -41,8 +41,8 @@ export function StickyNote({
     ? lockedByColor || "#EF4444"
     : isSelected
     ? "#4F46E5"
-    : "transparent";
-  const borderWidth = isSelected || isLockedByOther ? 3 : 0;
+    : "rgba(0,0,0,0.15)";
+  const borderWidth = isSelected || isLockedByOther ? 3 : 1;
 
   const PADDING = 12;
 

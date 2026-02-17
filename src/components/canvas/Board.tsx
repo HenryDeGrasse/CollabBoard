@@ -1373,21 +1373,6 @@ export function Board({
 
           {/* Render uncontained objects first (so frame body can sit on top) */}
           {sortedObjects
-            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
-            .map((obj) => (
-              <LineObject
-                key={obj.id}
-                object={objects[obj.id] || obj}
-                isSelected={selectedIds.has(obj.id)}
-                onSelect={handleObjectClick}
-                onDragStart={handleDragStart}
-                onDragMove={handleDragMove}
-                onDragEnd={handleDragEnd}
-                onUpdateObject={onUpdateObject}
-              />
-            ))}
-
-          {sortedObjects
             .filter((obj) => ["rectangle", "circle"].includes(obj.type) && !obj.parentFrameId)
             .map((obj) => {
               const lock = isObjectLocked(obj.id);
@@ -1636,6 +1621,22 @@ export function Board({
                 isSelected={selectedConnectorIds.has(conn.id)}
                 onSelect={handleConnectorSelect}
                 positionOverrides={dragPositions}
+              />
+            ))}
+
+          {/* Uncontained lines (on top, like cross-frame connectors) */}
+          {sortedObjects
+            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
+            .map((obj) => (
+              <LineObject
+                key={obj.id}
+                object={objects[obj.id] || obj}
+                isSelected={selectedIds.has(obj.id)}
+                onSelect={handleObjectClick}
+                onDragStart={handleDragStart}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
+                onUpdateObject={onUpdateObject}
               />
             ))}
 
