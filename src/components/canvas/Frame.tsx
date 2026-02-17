@@ -54,31 +54,7 @@ export function Frame({
       ref={groupRef}
       x={object.x}
       y={object.y}
-      draggable={!isEditing && isSelectMode}
-      onClick={(e) => {
-        if (isSelectMode) {
-          e.cancelBubble = true;
-          onSelect(object.id, e.evt.shiftKey);
-        }
-      }}
-      onTap={(e) => {
-        if (isSelectMode) {
-          e.cancelBubble = true;
-          onSelect(object.id);
-        }
-      }}
-      onDblClick={(e) => {
-        if (isSelectMode) {
-          e.cancelBubble = true;
-          onDoubleClick(object.id);
-        }
-      }}
-      onDblTap={(e) => {
-        if (isSelectMode) {
-          e.cancelBubble = true;
-          onDoubleClick(object.id);
-        }
-      }}
+      draggable={!isEditing && isSelectMode && isSelected}
       onDragStart={() => onDragStart(object.id)}
       onDragMove={(e) => onDragMove(object.id, e.target.x(), e.target.y())}
       onDragEnd={(e) => onDragEnd(object.id, e.target.x(), e.target.y())}
@@ -106,6 +82,32 @@ export function Frame({
         height={TITLE_HEIGHT}
         fill="rgba(241, 245, 249, 0.95)"
         cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+      />
+
+      {/* Header hitbox (frame selection/drag only from title row) */}
+      <Rect
+        x={0}
+        y={0}
+        width={object.width}
+        height={TITLE_HEIGHT}
+        fill="rgba(0,0,0,0)"
+        listening={isSelectMode}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onSelect(object.id, e.evt.shiftKey);
+        }}
+        onTap={(e) => {
+          e.cancelBubble = true;
+          onSelect(object.id);
+        }}
+        onDblClick={(e) => {
+          e.cancelBubble = true;
+          onDoubleClick(object.id);
+        }}
+        onDblTap={(e) => {
+          e.cancelBubble = true;
+          onDoubleClick(object.id);
+        }}
       />
 
       {/* Title bar bottom border */}

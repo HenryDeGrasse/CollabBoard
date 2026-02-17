@@ -1023,9 +1023,14 @@ export function Board({
                           isSelected={selectedIds.has(cobj.id)}
                           onSelect={handleObjectClick}
                           onDragStart={handleDragStart}
-                          onDragMove={handleDragMove}
-                          onDragEnd={handleDragEnd}
-                          onUpdateObject={onUpdateObject}
+                          onDragMove={(id, rx, ry) => handleDragMove(id, rx + frameObj.x, ry + frameObj.y)}
+                          onDragEnd={(id, rx, ry) => handleDragEnd(id, rx + frameObj.x, ry + frameObj.y)}
+                          onUpdateObject={(id, updates) => {
+                            const adjusted = { ...updates };
+                            if (adjusted.x !== undefined) adjusted.x += frameObj.x;
+                            if (adjusted.y !== undefined) adjusted.y += frameObj.y;
+                            onUpdateObject(id, adjusted);
+                          }}
                         />
                       );
                     } else if (cobj.type === "rectangle" || cobj.type === "circle") {
@@ -1040,10 +1045,15 @@ export function Board({
                           draftText={getDraftTextForObject(cobj.id)?.text}
                           onSelect={handleObjectClick}
                           onDragStart={handleDragStart}
-                          onDragMove={handleDragMove}
-                          onDragEnd={handleDragEnd}
+                          onDragMove={(id, rx, ry) => handleDragMove(id, rx + frameObj.x, ry + frameObj.y)}
+                          onDragEnd={(id, rx, ry) => handleDragEnd(id, rx + frameObj.x, ry + frameObj.y)}
                           onDoubleClick={handleDoubleClick}
-                          onUpdateObject={onUpdateObject}
+                          onUpdateObject={(id, updates) => {
+                            const adjusted = { ...updates };
+                            if (adjusted.x !== undefined) adjusted.x += frameObj.x;
+                            if (adjusted.y !== undefined) adjusted.y += frameObj.y;
+                            onUpdateObject(id, adjusted);
+                          }}
                         />
                       );
                     } else if (cobj.type === "sticky") {
@@ -1059,10 +1069,15 @@ export function Board({
                           draftText={getDraftTextForObject(cobj.id)?.text}
                           onSelect={handleObjectClick}
                           onDragStart={handleDragStart}
-                          onDragMove={handleDragMove}
-                          onDragEnd={handleDragEnd}
+                          onDragMove={(id, rx, ry) => handleDragMove(id, rx + frameObj.x, ry + frameObj.y)}
+                          onDragEnd={(id, rx, ry) => handleDragEnd(id, rx + frameObj.x, ry + frameObj.y)}
                           onDoubleClick={handleDoubleClick}
-                          onUpdateObject={onUpdateObject}
+                          onUpdateObject={(id, updates) => {
+                            const adjusted = { ...updates };
+                            if (adjusted.x !== undefined) adjusted.x += frameObj.x;
+                            if (adjusted.y !== undefined) adjusted.y += frameObj.y;
+                            onUpdateObject(id, adjusted);
+                          }}
                         />
                       );
                     }
