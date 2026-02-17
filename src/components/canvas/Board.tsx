@@ -1309,17 +1309,25 @@ export function Board({
       >
         {/* Objects layer */}
         <Layer>
-          {/* Render connectors first (below objects) */}
-          {Object.values(connectors).map((conn) => (
-            <ConnectorLine
-              key={conn.id}
-              connector={conn}
-              objects={objects}
-              isSelected={selectedConnectorIds.has(conn.id)}
-              onSelect={handleConnectorSelect}
-              positionOverrides={dragPositions}
-            />
-          ))}
+          {/* Render same-frame connectors (below objects) */}
+          {Object.values(connectors)
+            .filter((conn) => {
+              const from = objects[conn.fromId];
+              const to = objects[conn.toId];
+              const fromFrame = from?.parentFrameId ?? null;
+              const toFrame = to?.parentFrameId ?? null;
+              return fromFrame === toFrame;
+            })
+            .map((conn) => (
+              <ConnectorLine
+                key={conn.id}
+                connector={conn}
+                objects={objects}
+                isSelected={selectedConnectorIds.has(conn.id)}
+                onSelect={handleConnectorSelect}
+                positionOverrides={dragPositions}
+              />
+            ))}
 
           {/* Arrow drawing preview */}
           {arrowDraw && (
@@ -1610,6 +1618,26 @@ export function Board({
                 />
               );
             })}
+
+          {/* Cross-frame connectors (on top of everything) */}
+          {Object.values(connectors)
+            .filter((conn) => {
+              const from = objects[conn.fromId];
+              const to = objects[conn.toId];
+              const fromFrame = from?.parentFrameId ?? null;
+              const toFrame = to?.parentFrameId ?? null;
+              return fromFrame !== toFrame;
+            })
+            .map((conn) => (
+              <ConnectorLine
+                key={`cross-${conn.id}`}
+                connector={conn}
+                objects={objects}
+                isSelected={selectedConnectorIds.has(conn.id)}
+                onSelect={handleConnectorSelect}
+                positionOverrides={dragPositions}
+              />
+            ))}
 
           {/* Selection rectangle */}
           <SelectionRect {...selectionRect} />
