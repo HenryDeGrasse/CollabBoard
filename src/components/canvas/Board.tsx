@@ -749,26 +749,30 @@ export function Board({
           }
         }
 
-        // For uncontained objects entering a frame: if hysteresis says
-        // we're inside, allow overlap even if cursor drifts slightly outside
-        if (!allowedFrameId && !currentParentFrameId && dragInsideFrameRef.current.has(id)) {
-          // Find which frame the hysteresis thinks we're in
-          const frames = Object.values(objects)
+        // For uncontained objects: check overlap directly to decide
+        // whether to allow entering/staying in a frame.
+        // This runs in the handler (before render memos) so the ref
+        // is set in time for the constraint below.
+        if (!allowedFrameId && !currentParentFrameId) {
+          const allFrames = Object.values(objects)
             .filter((o) => o.type === "frame")
             .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
-          for (const frame of frames) {
-            const stillInside = !shouldPopOutFromFrame(
+          const wasInside = dragInsideFrameRef.current.has(id);
+          const threshold = wasInside ? 0.45 : 0.55;
+
+          for (const frame of allFrames) {
+            const isInside = !shouldPopOutFromFrame(
               { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
               { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
-              0.45
+              threshold
             );
-            if (stillInside) {
+            if (isInside) {
               allowedFrameId = frame.id;
+              dragInsideFrameRef.current.add(id);
               break;
             }
           }
-          // If no frame qualifies at exit threshold, object has left
-          if (!allowedFrameId) {
+          if (!allowedFrameId && wasInside) {
             dragInsideFrameRef.current.delete(id);
           }
         }
