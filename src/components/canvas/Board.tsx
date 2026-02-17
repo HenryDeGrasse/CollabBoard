@@ -1429,9 +1429,9 @@ export function Board({
                 .filter((entry) => entry.frameId === frameObj.id)
                 .map((entry) => entry.object);
               const enteringIds = new Set(entering.map((o) => o.id));
-              const clippedObjects = [...contained, ...entering].sort(
-                (a, b) => (a.zIndex || 0) - (b.zIndex || 0)
-              );
+              const clippedObjects = [...contained, ...entering]
+                .filter((o) => o.type !== "line")
+                .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
               const framePos = dragPositions[frameObj.id] || { x: frameObj.x, y: frameObj.y };
 
               return (
@@ -1624,9 +1624,9 @@ export function Board({
               />
             ))}
 
-          {/* Uncontained lines (on top, like cross-frame connectors) */}
+          {/* All lines render on top (never clipped, like connectors) */}
           {sortedObjects
-            .filter((obj) => obj.type === "line" && !obj.parentFrameId)
+            .filter((obj) => obj.type === "line")
             .map((obj) => (
               <LineObject
                 key={obj.id}
