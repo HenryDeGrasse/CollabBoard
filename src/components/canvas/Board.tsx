@@ -722,10 +722,13 @@ export function Board({
           frameUnderCursorId = getFrameAtPoint(cx, cy)?.id ?? null;
         }
 
-        // If dragging an object out of its current frame and overlap drops below threshold,
-        // force it to pop outside. Hysteresis: already-inside uses 0.45 exit threshold.
+        // Determine which frame this object is allowed to overlap with.
+        // Start with the frame under the cursor, then apply hysteresis.
+        let allowedFrameId = frameUnderCursorId;
+
+        // For objects already in a frame (parentFrameId set): check pop-out
         const currentParentFrameId = draggedObj.parentFrameId ?? null;
-        if (currentParentFrameId && frameUnderCursorId === currentParentFrameId) {
+        if (currentParentFrameId && allowedFrameId === currentParentFrameId) {
           const currentParentFrame = objects[currentParentFrameId];
           if (currentParentFrame && currentParentFrame.type === "frame") {
             const wasInside = dragInsideFrameRef.current.has(id);
@@ -741,8 +744,32 @@ export function Board({
               threshold
             );
             if (willPopOut) {
-              frameUnderCursorId = null;
+              allowedFrameId = null;
             }
+          }
+        }
+
+        // For uncontained objects entering a frame: if hysteresis says
+        // we're inside, allow overlap even if cursor drifts slightly outside
+        if (!allowedFrameId && !currentParentFrameId && dragInsideFrameRef.current.has(id)) {
+          // Find which frame the hysteresis thinks we're in
+          const frames = Object.values(objects)
+            .filter((o) => o.type === "frame")
+            .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+          for (const frame of frames) {
+            const stillInside = !shouldPopOutFromFrame(
+              { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
+              { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+              0.45
+            );
+            if (stillInside) {
+              allowedFrameId = frame.id;
+              break;
+            }
+          }
+          // If no frame qualifies at exit threshold, object has left
+          if (!allowedFrameId) {
+            dragInsideFrameRef.current.delete(id);
           }
         }
 
@@ -750,7 +777,7 @@ export function Board({
         const constrained = constrainObjectOutsideFrames(
           { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
           frames,
-          frameUnderCursorId
+          allowedFrameId
         );
         primaryX = constrained.x;
         primaryY = constrained.y;
