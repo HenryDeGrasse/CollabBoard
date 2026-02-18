@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Stage, Layer, Arrow, Line, Rect, Group, Ellipse } from "react-konva";
+import { Stage, Layer, Arrow, Line, Rect, Group, Circle as KonvaCircle } from "react-konva";
 import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
@@ -805,11 +805,22 @@ export function Board({
         );
       }
 
-      // Shape drawing preview (rectangle / circle drag-to-create)
-      if (shapeDraw && (activeTool === "rectangle" || activeTool === "circle")) {
-        setShapeDraw((prev) =>
-          prev ? { ...prev, endX: canvasPoint.x, endY: canvasPoint.y } : null
-        );
+      // Shape drawing preview (rectangle / circle / sticky drag-to-create)
+      if (shapeDraw && (activeTool === "rectangle" || activeTool === "circle" || activeTool === "sticky")) {
+        setShapeDraw((prev) => {
+          if (!prev) return null;
+          let endX = canvasPoint.x;
+          let endY = canvasPoint.y;
+          // Circle + sticky: constrain to square (equal w/h)
+          if (activeTool === "circle" || activeTool === "sticky") {
+            const dx = endX - prev.startX;
+            const dy = endY - prev.startY;
+            const side = Math.max(Math.abs(dx), Math.abs(dy));
+            endX = prev.startX + side * Math.sign(dx || 1);
+            endY = prev.startY + side * Math.sign(dy || 1);
+          }
+          return { ...prev, endX, endY };
+        });
       }
 
       // Frame manual drag (from overlay header)
@@ -980,43 +991,7 @@ export function Board({
         return;
       }
 
-      // Create object at click position
-      const maxZIndex = Math.max(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
-
-      const createAndTrack = (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => {
-        const newId = onCreateObject(obj);
-        // Track for undo after Firebase sync
-        setTimeout(() => {
-          const created = objectsRef.current[newId];
-          if (created) {
-            onPushUndo({ type: "create_object", objectId: newId, object: created });
-          }
-        }, 100);
-        return newId;
-      };
-
-      if (activeTool === "sticky") {
-        const x = canvasPoint.x - 75;
-        const y = canvasPoint.y - 75;
-        const width = 150;
-        const height = 150;
-        const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
-        const newId = createAndTrack({
-          type: "sticky",
-          x,
-          y,
-          width,
-          height,
-          color: activeColor,
-          text: "",
-          rotation: 0,
-          zIndex: maxZIndex + 1,
-          createdBy: currentUserId,
-          parentFrameId: parentFrame?.id ?? null,
-        });
-        onResetTool(newId);
-      }
-      // Rectangle and circle are now created via drag (handleMouseUp) — no click-create here
+      // Sticky, rectangle, and circle are now created via drag (handleMouseUp) — no click-create here
     },
     [
       activeTool,
@@ -1548,7 +1523,8 @@ export function Board({
 
   const handleDoubleClick = useCallback(
     (id: string) => {
-      if (activeTool === "arrow") return;
+      // Only allow text editing in select mode
+      if (activeTool !== "select") return;
       const lock = isObjectLocked(id);
       if (lock.locked) return;
       setEditingObjectId(id);
@@ -1595,7 +1571,11 @@ export function Board({
     (id: string, multi?: boolean) => {
       if (activeTool === "arrow") {
         handleObjectClickForArrow(id);
-      } else {
+        return;
+      }
+      // Only allow selection in select mode
+      if (activeTool !== "select") return;
+      {
         onSelect(id, multi);
         // After selection changes, update connector selection:
         // Select connectors where both ends are in the (new) selection
@@ -1656,8 +1636,8 @@ export function Board({
         return;
       }
 
-      // Rectangle / circle: start drag-to-create
-      if (activeTool === "rectangle" || activeTool === "circle") {
+      // Rectangle / circle / sticky: start drag-to-create
+      if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "sticky") {
         setShapeDraw({
           startX: canvasPoint.x,
           startY: canvasPoint.y,
@@ -1719,8 +1699,8 @@ export function Board({
       return;
     }
 
-    // Rectangle / circle: finalize drag-to-create
-    if ((activeTool === "rectangle" || activeTool === "circle") && shapeDraw) {
+    // Rectangle / circle / sticky: finalize drag-to-create
+    if ((activeTool === "rectangle" || activeTool === "circle" || activeTool === "sticky") && shapeDraw) {
       const SHAPE_CLICK_THRESHOLD = 5;
       const dx = Math.abs(shapeDraw.endX - shapeDraw.startX);
       const dy = Math.abs(shapeDraw.endY - shapeDraw.startY);
@@ -1731,8 +1711,11 @@ export function Board({
         // Click: place default-sized shape centered on cursor
         if (activeTool === "rectangle") {
           w = 150; h = 100;
-        } else {
+        } else if (activeTool === "circle") {
           w = 100; h = 100;
+        } else {
+          // sticky
+          w = 150; h = 150;
         }
         x = shapeDraw.startX - w / 2;
         y = shapeDraw.startY - h / 2;
@@ -1741,12 +1724,19 @@ export function Board({
         y = Math.min(shapeDraw.startY, shapeDraw.endY);
         w = Math.max(20, dx);
         h = Math.max(20, dy);
+        // Circle + sticky: force square
+        if (activeTool === "circle" || activeTool === "sticky") {
+          const side = Math.max(w, h);
+          w = side;
+          h = side;
+        }
       }
 
+      const objType = activeTool === "sticky" ? "sticky" : activeTool;
       const maxZ = Math.max(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
       const parentFrame = getFrameAtPoint(x + w / 2, y + h / 2);
       const newId = onCreateObject({
-        type: activeTool,
+        type: objType,
         x, y,
         width: w,
         height: h,
@@ -2153,19 +2143,50 @@ export function Board({
               listening={false}
             />
           )}
-          {shapeDraw && activeTool === "circle" && (
-            <Ellipse
-              x={(shapeDraw.startX + shapeDraw.endX) / 2}
-              y={(shapeDraw.startY + shapeDraw.endY) / 2}
-              radiusX={Math.max(1, Math.abs(shapeDraw.endX - shapeDraw.startX) / 2)}
-              radiusY={Math.max(1, Math.abs(shapeDraw.endY - shapeDraw.startY) / 2)}
-              fill={activeColor + "66"}
-              stroke={activeColor}
-              strokeWidth={2}
-              dash={[6, 3]}
-              listening={false}
-            />
-          )}
+          {shapeDraw && activeTool === "circle" && (() => {
+            const side = Math.max(
+              Math.abs(shapeDraw.endX - shapeDraw.startX),
+              Math.abs(shapeDraw.endY - shapeDraw.startY)
+            );
+            const cx = (shapeDraw.startX + shapeDraw.endX) / 2;
+            const cy = (shapeDraw.startY + shapeDraw.endY) / 2;
+            return (
+              <KonvaCircle
+                x={cx}
+                y={cy}
+                radius={Math.max(1, side / 2)}
+                fill={activeColor + "66"}
+                stroke={activeColor}
+                strokeWidth={2}
+                dash={[6, 3]}
+                listening={false}
+              />
+            );
+          })()}
+
+          {/* Sticky drag-to-create preview (square) */}
+          {shapeDraw && activeTool === "sticky" && (() => {
+            const side = Math.max(
+              Math.abs(shapeDraw.endX - shapeDraw.startX),
+              Math.abs(shapeDraw.endY - shapeDraw.startY)
+            );
+            const x = Math.min(shapeDraw.startX, shapeDraw.endX);
+            const y = Math.min(shapeDraw.startY, shapeDraw.endY);
+            return (
+              <Rect
+                x={x}
+                y={y}
+                width={Math.max(1, side)}
+                height={Math.max(1, side)}
+                fill={activeColor + "66"}
+                stroke={activeColor}
+                strokeWidth={2}
+                dash={[6, 3]}
+                cornerRadius={8}
+                listening={false}
+              />
+            );
+          })()}
 
           {/* Render uncontained objects first (so frame body can sit on top) */}
           {visibleShapes
@@ -2181,6 +2202,7 @@ export function Board({
                   isLockedByOther={lock.locked}
                   lockedByColor={lock.lockedByColor}
                   isArrowHover={arrowHoverObjectId === obj.id}
+                  interactable={activeTool === "select"}
                   draftText={getDraftTextForObject(obj.id)?.text}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
@@ -2210,6 +2232,7 @@ export function Board({
                   lockedByColor={lock.lockedByColor}
                   draftText={getDraftTextForObject(obj.id)?.text}
                   isArrowHover={arrowHoverObjectId === obj.id}
+                  interactable={activeTool === "select"}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
@@ -2294,6 +2317,7 @@ export function Board({
                               isLockedByOther={lock.locked}
                               lockedByColor={lock.lockedByColor}
                               isArrowHover={arrowHoverObjectId === cobj.id}
+                              interactable={activeTool === "select"}
                               draftText={getDraftTextForObject(cobj.id)?.text}
                               onSelect={handleObjectClick}
                               onDragStart={handleDragStart}
@@ -2316,6 +2340,7 @@ export function Board({
                               lockedByColor={lock.lockedByColor}
                               draftText={getDraftTextForObject(cobj.id)?.text}
                               isArrowHover={arrowHoverObjectId === cobj.id}
+                              interactable={activeTool === "select"}
                               onSelect={handleObjectClick}
                               onDragStart={handleDragStart}
                               onDragMove={handleDragMove}
@@ -2388,6 +2413,7 @@ export function Board({
                     isLockedByOther={lock.locked}
                     lockedByColor={lock.lockedByColor}
                     isArrowHover={arrowHoverObjectId === obj.id}
+                  interactable={activeTool === "select"}
                     draftText={getDraftTextForObject(obj.id)?.text}
                     onSelect={handleObjectClick}
                     onDragStart={handleDragStart}
@@ -2409,6 +2435,7 @@ export function Board({
                     lockedByColor={lock.lockedByColor}
                     draftText={getDraftTextForObject(obj.id)?.text}
                     isArrowHover={arrowHoverObjectId === obj.id}
+                  interactable={activeTool === "select"}
                     onSelect={handleObjectClick}
                     onDragStart={handleDragStart}
                     onDragMove={handleDragMove}

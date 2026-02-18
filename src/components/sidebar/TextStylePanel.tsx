@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd } from "lucide-react";
+
+type VAlign = "top" | "middle" | "bottom";
 
 interface TextStylePanelProps {
   textSize: number | null;
   textColor: string;
+  textVerticalAlign: VAlign;
   onIncreaseTextSize: () => void;
   onDecreaseTextSize: () => void;
   onChangeTextColor: (color: string) => void;
+  onChangeTextVerticalAlign: (align: VAlign) => void;
 }
 
 const TEXT_COLOR_OPTIONS = [
@@ -22,12 +27,20 @@ const TEXT_COLOR_OPTIONS = [
   "#EC4899",
 ];
 
+const VALIGN_OPTIONS: { value: VAlign; icon: React.ReactNode; label: string }[] = [
+  { value: "top", icon: <AlignVerticalJustifyStart size={14} />, label: "Top" },
+  { value: "middle", icon: <AlignVerticalJustifyCenter size={14} />, label: "Center" },
+  { value: "bottom", icon: <AlignVerticalJustifyEnd size={14} />, label: "Bottom" },
+];
+
 export function TextStylePanel({
   textSize,
   textColor,
+  textVerticalAlign,
   onIncreaseTextSize,
   onDecreaseTextSize,
   onChangeTextColor,
+  onChangeTextVerticalAlign,
 }: TextStylePanelProps) {
   const [colorOpen, setColorOpen] = useState(false);
   const colorRef = useRef<HTMLDivElement>(null);
@@ -44,7 +57,8 @@ export function TextStylePanel({
   }, []);
 
   return (
-    <div className="fixed left-0 top-1/2 -translate-y-1/2 z-50">
+    // onMouseDown preventDefault keeps focus in the text-editing textarea
+    <div className="fixed left-0 top-1/2 -translate-y-1/2 z-50" onMouseDown={(e) => e.preventDefault()}>
       <div className="bg-white/95 backdrop-blur rounded-r-xl border border-l-0 border-gray-200 shadow-md p-1.5 flex flex-col items-center gap-1.5">
 
         <button
@@ -103,6 +117,24 @@ export function TextStylePanel({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Vertical alignment */}
+        <div className="flex flex-col gap-0.5 mt-0.5 border-t border-gray-200 pt-1.5">
+          {VALIGN_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onChangeTextVerticalAlign(opt.value)}
+              className={`w-8 h-7 rounded-md flex items-center justify-center transition ${
+                textVerticalAlign === opt.value
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              }`}
+              title={`Align ${opt.label}`}
+            >
+              {opt.icon}
+            </button>
+          ))}
         </div>
       </div>
     </div>

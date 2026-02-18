@@ -113,41 +113,56 @@ export function TextOverlay({
     return getAutoContrastingTextColor(object.color);
   }, [object.color, object.type, object.textColor]);
 
+  const vAlign = object.type === "frame" ? "top" : (object.textVerticalAlign ?? "middle");
+
   // Screen position
   const screenX = object.x * scale + stageX;
   const screenY = object.y * scale + stageY;
 
   return (
-    <textarea
-      ref={textareaRef}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        onDraftChange?.(e.target.value);
-      }}
-      onBlur={handleBlur}
-      onKeyDown={handleKeyDown}
+    <div
       style={{
         position: "absolute",
         left: `${screenX + layout.offsetX * scale}px`,
         top: `${screenY + layout.offsetY * scale}px`,
         width: `${layout.innerWidth * scale}px`,
         height: `${layout.innerHeight * scale}px`,
-        fontSize: `${fontSize * scale}px`,
-        fontFamily: "Inter, system-ui, sans-serif",
-        fontWeight: object.type === "frame" ? "bold" : "normal",
-        color: textColor,
-        background: "transparent",
-        border: "2px solid rgba(79, 70, 229, 0.5)",
-        borderRadius: `${4 * scale}px`,
-        outline: "none",
-        resize: "none",
-        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: vAlign === "top" ? "flex-start" : vAlign === "bottom" ? "flex-end" : "center",
         zIndex: 1000,
-        padding: `${2 * scale}px`,
-        lineHeight: "1.4",
-        textAlign: object.type === "frame" ? "left" : "center",
+        pointerEvents: "none",
       }}
-    />
+    >
+      <textarea
+        ref={textareaRef}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          onDraftChange?.(e.target.value);
+        }}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxHeight: `${layout.innerHeight * scale}px`,
+          fontSize: `${fontSize * scale}px`,
+          fontFamily: "Inter, system-ui, sans-serif",
+          fontWeight: object.type === "frame" ? "bold" : "normal",
+          color: textColor,
+          background: "transparent",
+          border: "2px solid rgba(16, 185, 129, 0.6)",
+          borderRadius: `${4 * scale}px`,
+          outline: "none",
+          resize: "none",
+          overflow: "hidden",
+          padding: `${2 * scale}px`,
+          lineHeight: "1.4",
+          textAlign: object.type === "frame" ? "left" : "center",
+          pointerEvents: "auto",
+        }}
+      />
+    </div>
   );
 }

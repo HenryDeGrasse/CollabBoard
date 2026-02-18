@@ -547,6 +547,24 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     [selection.selectedIds, objects, updateObject]
   );
 
+  type VAlign = "top" | "middle" | "bottom";
+  const selectedTextVerticalAligns = textStyleTargets.map((o) => o.textVerticalAlign ?? "middle");
+  const selectedTextVerticalAlign: VAlign =
+    selectedTextVerticalAligns.length > 0 && selectedTextVerticalAligns.every((a) => a === selectedTextVerticalAligns[0])
+      ? (selectedTextVerticalAligns[0] as VAlign)
+      : "middle";
+
+  const handleChangeTextVerticalAlign = useCallback(
+    (align: VAlign) => {
+      selection.selectedIds.forEach((id) => {
+        const obj = objects[id];
+        if (!obj || !isTextCapableObjectType(obj.type)) return;
+        updateObject(id, { textVerticalAlign: align });
+      });
+    },
+    [selection.selectedIds, objects, updateObject]
+  );
+
   if (!joined || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -586,9 +604,11 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         <TextStylePanel
           textSize={selectedTextSize}
           textColor={selectedTextColor}
+          textVerticalAlign={selectedTextVerticalAlign}
           onIncreaseTextSize={() => handleAdjustSelectedTextSize(2)}
           onDecreaseTextSize={() => handleAdjustSelectedTextSize(-2)}
           onChangeTextColor={handleChangeSelectedTextColor}
+          onChangeTextVerticalAlign={handleChangeTextVerticalAlign}
         />
       )}
 
@@ -670,9 +690,9 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         onRotatingChange={setIsRotating}
         onResetTool={(selectId) => {
           if (selectId) {
-            // Object just created — select it but stay in current tool mode.
+            // Object just created — don't select it (no handles flicker)
+            // Just clear any existing selection.
             selection.clearSelection();
-            selection.select(selectId);
           } else {
             // No ID = Escape pressed or explicit reset → return to select tool.
             setActiveTool("select");

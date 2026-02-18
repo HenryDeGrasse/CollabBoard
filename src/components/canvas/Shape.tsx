@@ -18,6 +18,8 @@ interface ShapeProps {
   draftText?: string;
   /** True when arrow tool is hovering over this object */
   isArrowHover?: boolean;
+  /** Whether objects can be interacted with (select mode) */
+  interactable?: boolean;
   onSelect: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -43,6 +45,7 @@ export const Shape = React.memo(function Shape({
   onDoubleClick,
   onUpdateObject,
   isArrowHover,
+  interactable = true,
   onRotateStart,
   onRotateMove,
   onRotateEnd,
@@ -114,7 +117,7 @@ export const Shape = React.memo(function Shape({
                 opacity={draftText ? 0.7 : 1}
                 wrap="word"
                 ellipsis
-                verticalAlign="middle"
+                verticalAlign={object.textVerticalAlign ?? "middle"}
                 align="center"
               />
             )}
@@ -147,7 +150,7 @@ export const Shape = React.memo(function Shape({
                 opacity={draftText ? 0.7 : 1}
                 wrap="word"
                 ellipsis
-                verticalAlign="middle"
+                verticalAlign={object.textVerticalAlign ?? "middle"}
                 align="center"
               />
             )}
@@ -188,7 +191,7 @@ export const Shape = React.memo(function Shape({
       offsetY={object.height / 2}
       rotation={object.rotation || 0}
       opacity={isArrowHover ? 0.55 : 1}
-      draggable={!isEditing}
+      draggable={interactable && !isEditing}
       onClick={() => onSelect(object.id)}
       onTap={() => onSelect(object.id)}
       onDblClick={() => onDoubleClick(object.id)}

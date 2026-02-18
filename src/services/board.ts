@@ -15,6 +15,7 @@ function dbToObject(row: any): BoardObject {
     text: row.text || "",
     textSize: row.text_size ?? null,
     textColor: row.text_color ?? null,
+    textVerticalAlign: row.text_vertical_align ?? null,
     rotation: row.rotation,
     zIndex: row.z_index,
     createdBy: row.created_by,
@@ -38,6 +39,7 @@ function objectToDb(obj: Partial<BoardObject> & { boardId?: string }) {
   if (obj.text !== undefined) row.text = obj.text;
   if (obj.textSize !== undefined) row.text_size = obj.textSize;
   if (obj.textColor !== undefined) row.text_color = obj.textColor;
+  if (obj.textVerticalAlign !== undefined) row.text_vertical_align = obj.textVerticalAlign;
   if (obj.rotation !== undefined) row.rotation = obj.rotation;
   if (obj.zIndex !== undefined) row.z_index = obj.zIndex;
   if (obj.createdBy !== undefined) row.created_by = obj.createdBy;

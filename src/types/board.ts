@@ -11,6 +11,7 @@ export interface BoardObject {
   text?: string;
   textSize?: number | null;
   textColor?: string | null;
+  textVerticalAlign?: "top" | "middle" | "bottom" | null;
   rotation: number;
   zIndex: number;
   createdBy: string;

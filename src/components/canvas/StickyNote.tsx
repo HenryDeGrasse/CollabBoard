@@ -18,6 +18,7 @@ interface StickyNoteProps {
   lockedByColor?: string;
   draftText?: string;
   isArrowHover?: boolean;
+  interactable?: boolean;
   onSelect: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -37,6 +38,7 @@ export const StickyNote = React.memo(function StickyNote({
   lockedByColor,
   draftText,
   isArrowHover,
+  interactable = true,
   onSelect,
   onDragStart,
   onDragMove,
@@ -82,7 +84,7 @@ export const StickyNote = React.memo(function StickyNote({
       offsetY={object.height / 2}
       rotation={object.rotation || 0}
       opacity={isArrowHover ? 0.55 : 1}
-      draggable={!isEditing}
+      draggable={interactable && !isEditing}
       onClick={() => onSelect(object.id)}
       onTap={() => onSelect(object.id)}
       onDblClick={() => onDoubleClick(object.id)}
@@ -150,7 +152,7 @@ export const StickyNote = React.memo(function StickyNote({
           fontStyle={draftText ? "italic" : "normal"}
           wrap="word"
           ellipsis
-          verticalAlign="middle"
+          verticalAlign={object.textVerticalAlign ?? "middle"}
           align="center"
           opacity={draftText ? 0.7 : 1}
         />

@@ -17,6 +17,7 @@ function dbToObject(row: any): BoardObject {
     text: row.text || "",
     textSize: row.text_size ?? null,
     textColor: row.text_color ?? null,
+    textVerticalAlign: row.text_vertical_align ?? null,
     rotation: row.rotation,
     zIndex: row.z_index,
     createdBy: row.created_by,
