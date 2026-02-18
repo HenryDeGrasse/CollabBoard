@@ -115,6 +115,25 @@ export async function getUserBoards(userId: string): Promise<BoardMetadata[]> {
     .filter(Boolean) as BoardMetadata[];
 }
 
+export async function fetchBoardMetadata(boardId: string): Promise<BoardMetadata | null> {
+  const { data, error } = await supabase
+    .from("boards")
+    .select("id, title, owner_id, created_at, updated_at, deleted_at")
+    .eq("id", boardId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    title: data.title,
+    ownerId: data.owner_id,
+    createdAt: new Date(data.created_at).getTime(),
+    updatedAt: new Date(data.updated_at).getTime(),
+    deletedAt: data.deleted_at ? new Date(data.deleted_at).getTime() : null,
+  };
+}
+
 export async function updateBoardMetadata(
   boardId: string,
   updates: Partial<{ title: string }>

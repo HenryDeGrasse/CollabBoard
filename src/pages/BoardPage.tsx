@@ -15,12 +15,120 @@ import { useAuth } from "../components/auth/AuthProvider";
 import { HelpPanel } from "../components/ui/HelpPanel";
 import { joinBoard, touchBoard } from "../services/board";
 import { DEFAULT_STICKY_COLOR } from "../utils/colors";
+import { Link, Copy, Hash, Shield } from "lucide-react";
 import {
   isTextCapableObjectType,
   resolveObjectTextSize,
   clampTextSizeForType,
   getAutoContrastingTextColor,
 } from "../utils/text-style";
+
+/* ─── Inline board-title editor ──────────────────────────────── */
+function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(title); }, [title]);
+  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== title) onRename(trimmed);
+    else setDraft(title);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        className="text-sm font-medium text-gray-700 hover:text-gray-900 truncate max-w-[260px] px-2 py-1 rounded hover:bg-gray-100 transition"
+        title="Click to rename board"
+      >
+        {title}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") { setDraft(title); setEditing(false); }
+      }}
+      className="text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-400 w-[220px] text-center"
+      maxLength={60}
+    />
+  );
+}
+
+/* ─── Header share button with dropdown ──────────────────────── */
+function ShareButton({ boardUrl, boardId }: { boardUrl: string; boardId: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState<"link" | "id" | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const copy = (text: string, what: "link" | "id") => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(what);
+      setTimeout(() => setCopied(null), 2000);
+    });
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="px-2.5 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition flex items-center gap-1"
+        title="Share board"
+      >
+        {copied ? (
+          <span className="text-emerald-600 font-medium">✓ Copied</span>
+        ) : (
+          <>
+            <Link size={14} />
+            <span className="font-medium">Share</span>
+          </>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-9 w-48 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
+          <button
+            onClick={() => copy(boardUrl, "link")}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition text-left"
+          >
+            <Copy size={13} className="shrink-0" />
+            <span>Copy share link</span>
+          </button>
+          <div className="h-px bg-gray-100 mx-2" />
+          <button
+            onClick={() => copy(boardId, "id")}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition text-left"
+          >
+            <Hash size={13} className="shrink-0" />
+            <span>Copy board ID</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface BoardPageProps {
   boardId: string;
@@ -56,6 +164,8 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const {
     objects,
     connectors,
+    boardTitle,
+    updateBoardTitle,
     createObject,
     updateObject,
     deleteObject,
@@ -460,31 +570,50 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       )}
 
       {/* ── Top header bar ─────────────────────────────────── */}
-      <div className="fixed top-0 left-0 right-0 z-50 h-11 bg-white/80 backdrop-blur-sm border-b border-gray-200 flex items-center justify-between px-3">
+      <div className="fixed top-0 left-0 right-0 z-50 h-11 bg-white/90 backdrop-blur-sm border-b border-gray-200 flex items-center px-3">
         {/* Left: dashboard button */}
-        <button
-          onClick={() => { captureThumbnail(); onNavigateHome?.(); }}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition px-2 py-1.5 rounded-lg hover:bg-gray-100"
-          title="Back to Dashboard"
-        >
-          ← <span className="font-medium">Dashboard</span>
-        </button>
-
-        {/* Center: zoom */}
-        <div className="text-xs text-gray-400 tabular-nums">
-          {Math.round(canvas.viewport.scale * 100)}%
+        <div className="flex items-center gap-2 min-w-[140px]">
+          <button
+            onClick={() => { captureThumbnail(); onNavigateHome?.(); }}
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition px-2 py-1.5 rounded-lg hover:bg-gray-100"
+            title="Back to Dashboard"
+          >
+            ← <span className="font-medium">Dashboard</span>
+          </button>
         </div>
 
-        {/* Right: presence + help */}
-        <div className="flex items-center gap-1.5">
-          <PresencePanel
-            users={users}
-            currentUserId={userId}
-            boardUrl={window.location.href}
-            boardId={boardId}
-          />
+        {/* Center: board title (editable on click) */}
+        <div className="flex-1 flex justify-center">
+          <BoardTitleEditor title={boardTitle} onRename={updateBoardTitle} />
+        </div>
+
+        {/* Right: share, permissions, help */}
+        <div className="flex items-center gap-1 min-w-[140px] justify-end">
+          <ShareButton boardUrl={window.location.href} boardId={boardId} />
+          <button
+            className="px-2.5 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition flex items-center gap-1"
+            title="Permissions (coming soon)"
+            onClick={() => {/* future: open permissions modal */}}
+          >
+            <Shield size={14} />
+          </button>
           <HelpPanel />
         </div>
+      </div>
+
+      {/* ── Online users — below header, top-left ────────── */}
+      <div className="fixed top-12 left-3 z-40">
+        <PresencePanel
+          users={users}
+          currentUserId={userId}
+          boardUrl={window.location.href}
+          boardId={boardId}
+        />
+      </div>
+
+      {/* ── Zoom indicator — bottom-left ─────────────────── */}
+      <div className="fixed bottom-4 left-4 z-50 bg-white/80 backdrop-blur rounded-lg px-3 py-1.5 text-xs text-gray-500 border border-gray-200 tabular-nums">
+        {Math.round(canvas.viewport.scale * 100)}%
       </div>
 
       {/* Main canvas */}

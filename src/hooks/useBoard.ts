@@ -40,6 +40,8 @@ function dbToConnector(row: any): Connector {
 export interface UseBoardReturn {
   objects: Record<string, BoardObject>;
   connectors: Record<string, Connector>;
+  boardTitle: string;
+  updateBoardTitle: (title: string) => void;
   createObject: (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => string;
   updateObject: (id: string, updates: Partial<BoardObject>) => void;
   deleteObject: (id: string) => void;
@@ -57,6 +59,7 @@ const UPDATE_FLUSH_MS = 40;
 export function useBoard(boardId: string): UseBoardReturn {
   const [objects, setObjects] = useState<Record<string, BoardObject>>({});
   const [connectors, setConnectors] = useState<Record<string, Connector>>({});
+  const [boardTitle, setBoardTitle] = useState("Untitled Board");
   const [loading, setLoading] = useState(true);
   const subscribedRef = useRef(false);
   const pendingObjectUpdatesRef = useRef<Record<string, Partial<BoardObject>>>({});
@@ -96,13 +99,15 @@ export function useBoard(boardId: string): UseBoardReturn {
 
     async function init() {
       try {
-        // Fetch initial data
-        const [objs, conns] = await Promise.all([
+        // Fetch initial data + board metadata
+        const [objs, conns, meta] = await Promise.all([
           boardService.fetchBoardObjects(boardId),
           boardService.fetchBoardConnectors(boardId),
+          boardService.fetchBoardMetadata(boardId),
         ]);
         setObjects(objs);
         setConnectors(conns);
+        if (meta?.title) setBoardTitle(meta.title);
       } catch (err) {
         console.error("Failed to load board:", err);
       } finally {
@@ -335,6 +340,14 @@ export function useBoard(boardId: string): UseBoardReturn {
     [boardId]
   );
 
+  const updateBoardTitle = useCallback(
+    (title: string) => {
+      setBoardTitle(title);
+      boardService.updateBoardMetadata(boardId, { title }).catch(console.error);
+    },
+    [boardId]
+  );
+
   const restoreObject = useCallback(
     (obj: BoardObject) => {
       setObjects((prev) => ({ ...prev, [obj.id]: obj }));
@@ -380,6 +393,8 @@ export function useBoard(boardId: string): UseBoardReturn {
   return {
     objects,
     connectors,
+    boardTitle,
+    updateBoardTitle,
     createObject,
     updateObject,
     deleteObject,

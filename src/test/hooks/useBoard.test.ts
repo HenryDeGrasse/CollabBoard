@@ -4,6 +4,7 @@ import type { BoardObject } from "../../types/board";
 
 const mockFetchBoardObjects = vi.fn();
 const mockFetchBoardConnectors = vi.fn();
+const mockFetchBoardMetadata = vi.fn();
 const mockUpdateObject = vi.fn();
 const mockCreateObject = vi.fn();
 const mockDeleteObject = vi.fn();
@@ -20,6 +21,7 @@ let connectorChangeHandler: ((eventType: "INSERT" | "UPDATE" | "DELETE", row: an
 vi.mock("../../services/board", () => ({
   fetchBoardObjects: (...args: any[]) => mockFetchBoardObjects(...args),
   fetchBoardConnectors: (...args: any[]) => mockFetchBoardConnectors(...args),
+  fetchBoardMetadata: (...args: any[]) => mockFetchBoardMetadata(...args),
   updateObject: (...args: any[]) => mockUpdateObject(...args),
   createObject: (...args: any[]) => mockCreateObject(...args),
   deleteObject: (...args: any[]) => mockDeleteObject(...args),
@@ -64,6 +66,7 @@ describe("useBoard", () => {
 
     mockFetchBoardObjects.mockResolvedValue({ "obj-1": obj });
     mockFetchBoardConnectors.mockResolvedValue({});
+    mockFetchBoardMetadata.mockResolvedValue({ id: "board-1", title: "Test Board", ownerId: "user-1", createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null });
     mockUpdateObject.mockResolvedValue(undefined);
     mockCreateObject.mockResolvedValue("obj-2");
     mockDeleteObject.mockResolvedValue(undefined);
