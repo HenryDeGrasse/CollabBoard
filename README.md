@@ -329,10 +329,13 @@ Husky hooks run on every commit and push:
 Automatic on push to `main` (if GitHub connected). Manual:
 
 ```bash
-vercel --prod
+COLLAB_PUSH_APPROVED=1 git push   # bare git push is blocked by the pre-push hook
+vercel --prod                      # only after explicit approval
 ```
 
-> ⛔ **Must get explicit approval before running `git push` or `vercel --prod`** — see `AGENTS.md`.
+> ⛔ **Must get explicit approval before pushing or deploying** — see `AGENTS.md`.
+> A husky pre-push hook blocks plain `git push` (mirrors the pip → uv pattern).
+> Approved pushes require `COLLAB_PUSH_APPROVED=1 git push`.
 
 **Environment variables** (set in Vercel dashboard — not from `.env` files):
 

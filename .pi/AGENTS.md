@@ -36,6 +36,21 @@ All bug fixes and new features MUST follow TDD:
 - **If the user says "push to production"** in the same message as a feature request, implement the feature first, then ASK before actually running push/deploy.
 - Committing locally (`git commit`) is fine without asking — that's just local safety. Pushing and deploying affect production and other people.
 
+### How the push gate works (mirrors pip → uv)
+
+A husky `pre-push` hook **blocks all `git push` calls by default** — exactly like `pip` erroring and saying "use uv instead". The only way to push is:
+
+```bash
+COLLAB_PUSH_APPROVED=1 git push
+```
+
+This means:
+1. `git push` (no env var) → blocked with an ⛔ message and exit 1
+2. `COLLAB_PUSH_APPROVED=1 git push` → runs preflight (tests + build), then pushes
+
+**You must only run the approved form AFTER the user has explicitly said to push.**
+The env var is the proof-of-approval token — treat obtaining it (the user's "yes") as a prerequisite, not a formality.
+
 ### Why
 `git push` triggers Vercel auto-deploy. Running it without permission can ship broken or unfinished work to production. The user must always have final say.
 
