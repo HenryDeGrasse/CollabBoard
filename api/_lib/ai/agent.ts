@@ -19,6 +19,12 @@ import {
 } from "./templates.js";
 import { generatePlan, validatePlan, executePlan, type Plan } from "./planner.js";
 import { getSupabaseAdmin } from "../supabaseAdmin.js";
+import {
+  getBoardVersion,
+  incrementBoardVersion,
+  updateJobProgress,
+  loadJob,
+} from "./versioning.js";
 
 // ─── Guardrails ───────────────────────────────────────────────
 
@@ -57,6 +63,35 @@ export async function executeAICommand(
 ): Promise<AIExecutionResult> {
   const startTime = Date.now();
 
+  // ── Board versioning: capture version at start ──
+  let boardVersionStart: number;
+  try {
+    boardVersionStart = await getBoardVersion(boardId);
+  } catch {
+    boardVersionStart = 0; // graceful fallback if column doesn't exist yet
+  }
+
+  // ── Resumable: check if this is a resumption of a prior job ──
+  if (commandId) {
+    const existingJob = await loadJob(boardId, commandId);
+    if (existingJob && existingJob.status === "completed") {
+      // Already completed — return idempotent result
+      return {
+        success: true,
+        message: "Command already completed (idempotent).",
+        objectsCreated: [],
+        objectsUpdated: [],
+        objectsDeleted: [],
+        model: "cached",
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        toolCallsCount: 0,
+        durationMs: Date.now() - startTime,
+      };
+    }
+  }
+
   // Load board state
   const boardObjects = await getBoardStateForAI(boardId, viewport, selectedIds);
 
@@ -82,28 +117,28 @@ export async function executeAICommand(
   };
 
   // Progress helper: update ai_runs if we have a commandId
-  const updateProgress = async (status: string, step?: string) => {
+  const updateProgress = async (status: string, step?: string, currentStep?: number) => {
     if (!commandId) return;
     try {
-      const supabase = getSupabaseAdmin();
-      await supabase
-        .from("ai_runs")
-        .update({
-          status,
-          response: step ? { progress: step } : undefined,
-        })
-        .eq("board_id", boardId)
-        .eq("command_id", commandId);
+      await updateJobProgress(boardId, commandId, {
+        status,
+        currentStep,
+        boardVersionStart,
+        response: step ? { progress: step } : undefined,
+      });
     } catch {
       /* non-critical */
     }
   };
 
   // ── Route to the appropriate execution path ──
+  // Wrap all paths: on success, bump board version + record completion.
+
+  let result: AIExecutionResult;
 
   // Path 1: Deterministic template (Phase 2)
   if (route.intent === "create_template" && route.templateId) {
-    return executeTemplatePath(
+    result = await executeTemplatePath(
       command,
       route,
       ctx,
@@ -113,11 +148,9 @@ export async function executeAICommand(
       startTime,
       updateProgress
     );
-  }
-
-  // Path 2: Plan → Execute for reorganize (Phase 3)
-  if (route.intent === "reorganize") {
-    return executePlannerPath(
+  } else if (route.intent === "reorganize") {
+    // Path 2: Plan → Execute for reorganize (Phase 3)
+    result = await executePlannerPath(
       command,
       route,
       ctx,
@@ -128,11 +161,10 @@ export async function executeAICommand(
       startTime,
       updateProgress
     );
-  }
-
-  // Path 3: General tool-calling loop (existing behavior, optimized)
-  return executeToolLoop(
-    command,
+  } else {
+    // Path 3: General tool-calling loop (existing behavior, optimized)
+    result = await executeToolLoop(
+      command,
     route,
     ctx,
     viewport,
@@ -141,7 +173,25 @@ export async function executeAICommand(
     openaiApiKey,
     startTime,
     updateProgress
-  );
+    );
+  }
+
+  // ── Post-execution: bump board version on success ──
+  if (result.success && (result.objectsCreated.length > 0 || result.objectsUpdated.length > 0 || result.objectsDeleted.length > 0)) {
+    try {
+      const boardVersionEnd = await incrementBoardVersion(boardId);
+      if (commandId) {
+        await updateJobProgress(boardId, commandId, {
+          status: "completed",
+          boardVersionEnd,
+        });
+      }
+    } catch {
+      /* non-critical: version bump is best-effort */
+    }
+  }
+
+  return result;
 }
 
 // ─── Path 1: Template Execution ──────────────────────────────

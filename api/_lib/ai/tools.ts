@@ -43,6 +43,17 @@ export interface ToolContext {
   existingObjects: CompactObject[];
   /** Auto-populated on the first free-placement without explicit x/y. */
   batchGrid?: BatchGrid;
+  /** Monotonic counter for generating stable client_ids within a job. */
+  clientIdCounter?: number;
+}
+
+/** Generate a deterministic client_id for idempotent creates within a job. */
+function nextClientId(ctx: ToolContext, commandId?: string): string | null {
+  if (!commandId) return null;
+  ctx.clientIdCounter = (ctx.clientIdCounter ?? 0) + 1;
+  // Deterministic: same commandId + counter = same UUID seed
+  // Use a simple scheme: hash of commandId + counter
+  return `${commandId.slice(0, 8)}-0000-4000-8000-${String(ctx.clientIdCounter).padStart(12, "0")}`;
 }
 
 // ─── Sanitizers ───────────────────────────────────────────────
