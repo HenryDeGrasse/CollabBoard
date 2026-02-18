@@ -2,6 +2,7 @@ import React, { useMemo, useRef } from "react";
 import { Group, Rect, Text } from "react-konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
+import { RotationHandle } from "./RotationHandle";
 import { calculateFontSize } from "../../utils/text-fit";
 import {
   getAutoContrastingTextColor,
@@ -22,6 +23,9 @@ interface StickyNoteProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onDoubleClick: (id: string) => void;
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
+  onRotateStart?: (id: string) => void;
+  onRotateMove?: (id: string, angle: number) => void;
+  onRotateEnd?: (id: string, angle: number) => void;
 }
 
 export const StickyNote = React.memo(function StickyNote({
@@ -37,6 +41,9 @@ export const StickyNote = React.memo(function StickyNote({
   onDragEnd,
   onDoubleClick,
   onUpdateObject,
+  onRotateStart,
+  onRotateMove,
+  onRotateEnd,
 }: StickyNoteProps) {
   const groupRef = useRef<any>(null);
   const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -67,8 +74,11 @@ export const StickyNote = React.memo(function StickyNote({
     <Group
       id={`node-${object.id}`}
       ref={groupRef}
-      x={object.x}
-      y={object.y}
+      x={object.x + object.width / 2}
+      y={object.y + object.height / 2}
+      offsetX={object.width / 2}
+      offsetY={object.height / 2}
+      rotation={object.rotation || 0}
       draggable={!isEditing}
       onClick={() => onSelect(object.id)}
       onTap={() => onSelect(object.id)}
@@ -76,10 +86,14 @@ export const StickyNote = React.memo(function StickyNote({
       onDblTap={() => onDoubleClick(object.id)}
       onDragStart={() => onDragStart(object.id)}
       onDragMove={(e) => {
-        onDragMove(object.id, e.target.x(), e.target.y());
+        const cx = e.target.x();
+        const cy = e.target.y();
+        onDragMove(object.id, cx - object.width / 2, cy - object.height / 2);
       }}
       onDragEnd={(e) => {
-        onDragEnd(object.id, e.target.x(), e.target.y());
+        const cx = e.target.x();
+        const cy = e.target.y();
+        onDragEnd(object.id, cx - object.width / 2, cy - object.height / 2);
       }}
       onMouseEnter={(e) => {
         if (isLockedByOther) {
@@ -140,21 +154,34 @@ export const StickyNote = React.memo(function StickyNote({
       )}
       {/* Resize handles (only when selected, not editing) */}
       {isSelected && !isEditing && (
-        <ResizeHandles
-          object={object}
-          circleMode={true}
-          onResizeStart={() => {
-            originalRef.current = { x: object.x, y: object.y, width: object.width, height: object.height };
-          }}
-          onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
-            if (!originalRef.current) return;
-            const result = computeResize(originalRef.current, handle, px, py, 60, 60, true);
-            onUpdateObject(object.id, result);
-          }}
-          onResizeEnd={() => {
-            originalRef.current = null;
-          }}
-        />
+        <>
+          <ResizeHandles
+            object={object}
+            circleMode={true}
+            onResizeStart={() => {
+              originalRef.current = { x: object.x, y: object.y, width: object.width, height: object.height };
+            }}
+            onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
+              if (!originalRef.current) return;
+              const result = computeResize(originalRef.current, handle, px, py, 60, 60, true);
+              onUpdateObject(object.id, result);
+            }}
+            onResizeEnd={() => {
+              originalRef.current = null;
+            }}
+          />
+          <RotationHandle
+            objectWidth={object.width}
+            objectHeight={object.height}
+            rotation={object.rotation || 0}
+            onRotateStart={() => onRotateStart?.(object.id)}
+            onRotateMove={(angle, shift) => {
+              const snapped = shift ? Math.round(angle / 15) * 15 : angle;
+              onRotateMove?.(object.id, snapped);
+            }}
+            onRotateEnd={() => onRotateEnd?.(object.id, object.rotation || 0)}
+          />
+        </>
       )}
     </Group>
   );

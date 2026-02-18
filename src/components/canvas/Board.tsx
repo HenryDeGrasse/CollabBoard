@@ -1221,10 +1221,9 @@ export function Board({
         primaryY = constrained.y;
 
         if (stage) {
+          setNodeTopLeft(id, primaryX, primaryY);
           const node = stage.findOne(`#node-${id}`);
           if (node) {
-            node.x(primaryX);
-            node.y(primaryY);
             // Hide original node when entering preview is showing (avoid double render)
             node.opacity(allowedFrameId && !currentParentFrameId ? 0 : 1);
           }
@@ -1251,13 +1250,7 @@ export function Board({
         // Preserve the child's actual parent frame ID (may differ from primary drag target)
         parentFrameMap[cid] = objectsRef.current[cid]?.parentFrameId ?? null;
         // Move Konva node directly for instant visual feedback (no DB write during drag)
-        if (stage) {
-          const node = stage.findOne(`#node-${cid}`);
-          if (node) {
-            node.x(newX);
-            node.y(newY);
-          }
-        }
+        if (stage) setNodeTopLeft(cid, newX, newY);
       }
 
       // Move other selected objects in the group
@@ -1268,13 +1261,7 @@ export function Board({
         positions[sid] = { x: newX, y: newY };
         parentFrameMap[sid] = objectsRef.current[sid]?.parentFrameId ?? null;
         // Move Konva node directly for instant visual feedback (no DB write during drag)
-        if (stage) {
-          const node = stage.findOne(`#node-${sid}`);
-          if (node) {
-            node.x(newX);
-            node.y(newY);
-          }
-        }
+        if (stage) setNodeTopLeft(sid, newX, newY);
       }
 
       // Schedule a local visual update at display refresh rate (~60fps).
@@ -1479,6 +1466,63 @@ export function Board({
       setSelectedConnectorIds(new Set([id]));
     },
     [onClearSelection]
+  );
+
+  // ─── Helpers for center-offset nodes ────────────────────────
+  // Shapes and stickies use Konva offset (center pivot for rotation).
+  // Their Konva x/y = topLeft + width/2.  Frames/lines use top-left.
+  const setNodeTopLeft = useCallback(
+    (nodeId: string, topLeftX: number, topLeftY: number) => {
+      const stageNode = stageRef.current;
+      if (!stageNode) return;
+      const node = stageNode.findOne(`#node-${nodeId}`);
+      if (!node) return;
+      const obj = objectsRef.current[nodeId];
+      if (obj && (obj.type === "sticky" || obj.type === "rectangle" || obj.type === "circle")) {
+        node.x(topLeftX + obj.width / 2);
+        node.y(topLeftY + obj.height / 2);
+      } else {
+        node.x(topLeftX);
+        node.y(topLeftY);
+      }
+    },
+    []
+  );
+
+  // ─── Rotation ───────────────────────────────────────────────
+  const rotateStartRef = useRef<{ id: string; rotation: number } | null>(null);
+
+  const handleRotateStart = useCallback((id: string) => {
+    const obj = objectsRef.current[id];
+    if (!obj) return;
+    rotateStartRef.current = { id, rotation: obj.rotation || 0 };
+  }, []);
+
+  const handleRotateMove = useCallback(
+    (id: string, angle: number) => {
+      // Normalise to [0, 360)
+      const norm = ((angle % 360) + 360) % 360;
+      onUpdateObject(id, { rotation: norm });
+    },
+    [onUpdateObject]
+  );
+
+  const handleRotateEnd = useCallback(
+    (id: string, _angle: number) => {
+      const obj = objectsRef.current[id];
+      if (!obj) return;
+      const start = rotateStartRef.current;
+      if (start && start.id === id) {
+        onPushUndo({
+          type: "update_object",
+          objectId: id,
+          before: { rotation: start.rotation },
+          after: { rotation: obj.rotation },
+        });
+      }
+      rotateStartRef.current = null;
+    },
+    [onPushUndo]
   );
 
   const handleDoubleClick = useCallback(
@@ -2026,6 +2070,9 @@ export function Board({
                   onDragEnd={handleDragEnd}
                   onDoubleClick={handleDoubleClick}
                   onUpdateObject={onUpdateObject}
+                  onRotateStart={handleRotateStart}
+                  onRotateMove={handleRotateMove}
+                  onRotateEnd={handleRotateEnd}
                 />
               );
             })}
@@ -2050,6 +2097,9 @@ export function Board({
                   onDragEnd={handleDragEnd}
                   onDoubleClick={handleDoubleClick}
                   onUpdateObject={onUpdateObject}
+                  onRotateStart={handleRotateStart}
+                  onRotateMove={handleRotateMove}
+                  onRotateEnd={handleRotateEnd}
                 />
               );
             })}
@@ -2131,6 +2181,9 @@ export function Board({
                               onDragEnd={handleDragEnd}
                               onDoubleClick={handleDoubleClick}
                               onUpdateObject={onUpdateObject}
+                              onRotateStart={handleRotateStart}
+                              onRotateMove={handleRotateMove}
+                              onRotateEnd={handleRotateEnd}
                             />
                           ) : cobj.type === "sticky" ? (
                             <StickyNote
@@ -2148,6 +2201,9 @@ export function Board({
                               onDragEnd={handleDragEnd}
                               onDoubleClick={handleDoubleClick}
                               onUpdateObject={onUpdateObject}
+                              onRotateStart={handleRotateStart}
+                              onRotateMove={handleRotateMove}
+                              onRotateEnd={handleRotateEnd}
                             />
                           ) : null;
 
@@ -2217,6 +2273,9 @@ export function Board({
                     onDragEnd={handleDragEnd}
                     onDoubleClick={handleDoubleClick}
                     onUpdateObject={onUpdateObject}
+                    onRotateStart={handleRotateStart}
+                    onRotateMove={handleRotateMove}
+                    onRotateEnd={handleRotateEnd}
                   />
                 ) : obj.type === "sticky" ? (
                   <StickyNote
@@ -2233,6 +2292,9 @@ export function Board({
                     onDragEnd={handleDragEnd}
                     onDoubleClick={handleDoubleClick}
                     onUpdateObject={onUpdateObject}
+                    onRotateStart={handleRotateStart}
+                    onRotateMove={handleRotateMove}
+                    onRotateEnd={handleRotateEnd}
                   />
                 ) : null}
               </Group>

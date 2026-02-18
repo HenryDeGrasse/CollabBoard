@@ -23,6 +23,10 @@ All bug fixes and new features MUST follow TDD:
 - Firebase and Konva are mocked in `src/test/setup.ts`
 - Run: `npm test` (all) or `npx vitest run src/test/path/to/test.ts` (single)
 
+## Commit Discipline
+
+**After every message/response, make a git commit** with all current changes. This ensures incremental progress is never lost. Use Conventional Commits format. Only commit; do NOT push unless the user explicitly asks.
+
 ## Quality Gates & Deployment Pipeline
 
 ### Before Every Commit

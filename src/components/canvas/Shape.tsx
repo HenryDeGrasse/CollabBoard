@@ -2,6 +2,7 @@ import React, { useMemo, useRef } from "react";
 import { Group, Rect, Circle, Line, Text } from "react-konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
+import { RotationHandle } from "./RotationHandle";
 import { calculateFontSize } from "../../utils/text-fit";
 import {
   getAutoContrastingTextColor,
@@ -21,6 +22,9 @@ interface ShapeProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onDoubleClick: (id: string) => void;
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
+  onRotateStart?: (id: string) => void;
+  onRotateMove?: (id: string, angle: number) => void;
+  onRotateEnd?: (id: string, angle: number) => void;
 }
 
 export const Shape = React.memo(function Shape({
@@ -36,6 +40,9 @@ export const Shape = React.memo(function Shape({
   onDragEnd,
   onDoubleClick,
   onUpdateObject,
+  onRotateStart,
+  onRotateMove,
+  onRotateEnd,
 }: ShapeProps) {
   const groupRef = useRef<any>(null);
   const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -170,8 +177,11 @@ export const Shape = React.memo(function Shape({
     <Group
       id={`node-${object.id}`}
       ref={groupRef}
-      x={object.x}
-      y={object.y}
+      x={object.x + object.width / 2}
+      y={object.y + object.height / 2}
+      offsetX={object.width / 2}
+      offsetY={object.height / 2}
+      rotation={object.rotation || 0}
       draggable={!isEditing}
       onClick={() => onSelect(object.id)}
       onTap={() => onSelect(object.id)}
@@ -179,10 +189,10 @@ export const Shape = React.memo(function Shape({
       onDblTap={() => onDoubleClick(object.id)}
       onDragStart={() => onDragStart(object.id)}
       onDragMove={(e) => {
-        onDragMove(object.id, e.target.x(), e.target.y());
+        onDragMove(object.id, e.target.x() - object.width / 2, e.target.y() - object.height / 2);
       }}
       onDragEnd={(e) => {
-        onDragEnd(object.id, e.target.x(), e.target.y());
+        onDragEnd(object.id, e.target.x() - object.width / 2, e.target.y() - object.height / 2);
       }}
       onMouseEnter={(e) => {
         if (isLockedByOther) {
@@ -196,31 +206,44 @@ export const Shape = React.memo(function Shape({
       }}
     >
       {renderShape()}
-      {/* Resize handles */}
+      {/* Resize handles + rotation */}
       {isSelected && !isEditing && object.type !== "line" && (
-        <ResizeHandles
-          object={object}
-          circleMode={isCircle}
-          onResizeStart={() => {
-            originalRef.current = { x: object.x, y: object.y, width: object.width, height: object.height };
-          }}
-          onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
-            if (!originalRef.current) return;
-            const result = computeResize(
-              originalRef.current,
-              handle,
-              px,
-              py,
-              40,
-              40,
-              isCircle // keepAspect for circles
-            );
-            onUpdateObject(object.id, result);
-          }}
-          onResizeEnd={() => {
-            originalRef.current = null;
-          }}
-        />
+        <>
+          <ResizeHandles
+            object={object}
+            circleMode={isCircle}
+            onResizeStart={() => {
+              originalRef.current = { x: object.x, y: object.y, width: object.width, height: object.height };
+            }}
+            onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
+              if (!originalRef.current) return;
+              const result = computeResize(
+                originalRef.current,
+                handle,
+                px,
+                py,
+                40,
+                40,
+                isCircle // keepAspect for circles
+              );
+              onUpdateObject(object.id, result);
+            }}
+            onResizeEnd={() => {
+              originalRef.current = null;
+            }}
+          />
+          <RotationHandle
+            objectWidth={object.width}
+            objectHeight={object.height}
+            rotation={object.rotation || 0}
+            onRotateStart={() => onRotateStart?.(object.id)}
+            onRotateMove={(angle, shift) => {
+              const snapped = shift ? Math.round(angle / 15) * 15 : angle;
+              onRotateMove?.(object.id, snapped);
+            }}
+            onRotateEnd={() => onRotateEnd?.(object.id, object.rotation || 0)}
+          />
+        </>
       )}
     </Group>
   );
