@@ -329,6 +329,10 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     .map((id) => objects[id])
     .filter(Boolean) as BoardObject[];
 
+  const hasRotatableSelected = selectedObjects.some(
+    (obj) => obj.type === "sticky" || obj.type === "rectangle" || obj.type === "circle"
+  );
+
   const textStyleTargets = selectedObjects.filter((obj) =>
     isTextCapableObjectType(obj.type)
   );
@@ -490,6 +494,13 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
 
       {/* Help Panel */}
       <HelpPanel />
+
+      {/* Rotation hint */}
+      {activeTool === "select" && hasRotatableSelected && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900/80 backdrop-blur text-white text-xs px-4 py-2 rounded-full pointer-events-none">
+          Hold <kbd className="px-1.5 py-0.5 bg-white/20 rounded text-[11px] font-medium mx-0.5">Shift</kbd> while rotating to snap to 15° increments
+        </div>
+      )}
     </div>
   );
 }
