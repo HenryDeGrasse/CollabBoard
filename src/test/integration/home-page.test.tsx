@@ -89,6 +89,25 @@ describe("HomePage integration", () => {
     expect(mockJoinBoard).toHaveBeenCalledWith("abc-123", "user-123");
   });
 
+  it("shows toast when joining a board that does not exist", async () => {
+    mockJoinBoard.mockRejectedValueOnce(new Error("Board not found"));
+    const user = userEvent.setup();
+    render(<HomePage onNavigateToBoard={mockNavigate} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/no boards yet/i)).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText(/board id/i);
+    await user.type(input, "bad-id");
+    await user.click(screen.getByRole("button", { name: /^join$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/board not found/i)).toBeInTheDocument();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("calls signOut when clicking sign out", async () => {
     const user = userEvent.setup();
     render(<HomePage onNavigateToBoard={mockNavigate} />);

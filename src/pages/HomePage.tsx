@@ -46,6 +46,14 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState("");
   const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "error" | "info" } | null>(null);
+
+  // Auto-dismiss toast after 3 s
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // Load user's boards
   useEffect(() => {
@@ -102,13 +110,18 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
 
   const handleJoinBoard = useCallback(async () => {
     const id = joinBoardId.trim();
-    if (id && userId) {
-      try {
-        await joinBoard(id, userId);
-        onNavigateToBoard(id);
-      } catch (err) {
-        console.error("Failed to join board:", err);
+    if (!id || !userId) return;
+    try {
+      await joinBoard(id, userId);
+      onNavigateToBoard(id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "Board not found") {
+        setToast({ message: "Board not found — double-check the ID and try again.", type: "error" });
+      } else {
+        setToast({ message: "Something went wrong joining that board.", type: "error" });
       }
+      console.error("Failed to join board:", err);
     }
   }, [joinBoardId, userId, onNavigateToBoard]);
 
@@ -285,6 +298,18 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
               <button onClick={handleCreateBoard} className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>Create</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.type === "error" ? "bg-red-600" : "bg-slate-700"}`}
+          style={{ animation: "toastIn 0.2s ease-out" }}
+        >
+          <span>{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-1 opacity-70 hover:opacity-100 transition leading-none">✕</button>
+          <style>{`@keyframes toastIn { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }`}</style>
         </div>
       )}
 
