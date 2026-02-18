@@ -1,6 +1,7 @@
 # 🎨 CollabBoard — Real-time Collaborative Whiteboard
 
 **🌐 Live Demo: [collab-board-ochre-gamma.vercel.app](https://collab-board-ochre-gamma.vercel.app)**
+Loom Video: https://www.loom.com/share/24cd82d468d24d06aa0ead8466fe77ee
 
 A real-time collaborative whiteboard that enables multiple users to brainstorm, map ideas, and run workshops simultaneously on an infinite canvas. Built for speed, collaboration, and ease of use.
 
