@@ -17,9 +17,17 @@ import {
   ExternalLink,
   LayoutGrid,
   List,
-  LayoutDashboard,
-  Layers,
 } from "lucide-react";
+
+// Inline logo matching the login page — two cursor arrows (navy + mint)
+function CollabBoardLogo({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden>
+      <path d="M3 3L3 21L13 15L3 3Z"   fill="#0F2044" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M11 9L11 27L21 21L11 9Z" fill="#10B981" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 interface HomePageProps {
   onNavigateToBoard: (boardId: string) => void;
@@ -108,6 +116,7 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
     try {
       await softDeleteBoard(boardId);
       setBoards((prev) => prev.filter((b) => b.id !== boardId));
+      localStorage.removeItem(`collabboard-thumb-${boardId}`); // clean up thumbnail
     } catch (err) {
       console.error("Failed to delete board:", err);
     }
@@ -130,12 +139,12 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <LayoutDashboard size={24} className="text-indigo-600" />
+          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "#0F2044" }}>
+            <CollabBoardLogo size={28} />
             CollabBoard
           </h1>
           <div className="flex items-center gap-4">
@@ -164,19 +173,19 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search boards..."
-                className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition shadow-sm"
+                className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition shadow-sm"
               />
             </div>
             <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`p-2 transition ${viewMode === "grid" ? "bg-indigo-50 text-indigo-600" : "text-gray-400 hover:text-gray-600"}`}
+                className={`p-2 transition ${viewMode === "grid" ? "bg-emerald-50 text-emerald-600" : "text-gray-400 hover:text-gray-600"}`}
               >
                 <LayoutGrid size={16} />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`p-2 transition ${viewMode === "list" ? "bg-indigo-50 text-indigo-600" : "text-gray-400 hover:text-gray-600"}`}
+                className={`p-2 transition ${viewMode === "list" ? "bg-emerald-50 text-emerald-600" : "text-gray-400 hover:text-gray-600"}`}
               >
                 <List size={16} />
               </button>
@@ -193,13 +202,13 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
                 onChange={(e) => setJoinBoardId(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleJoinBoard()}
                 placeholder="Board ID"
-                className="w-32 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition shadow-sm"
+                className="w-32 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition shadow-sm"
               />
               <button onClick={handleJoinBoard} disabled={!joinBoardId.trim()} className="px-4 py-2.5 bg-gray-800 text-white rounded-xl text-sm font-medium hover:bg-gray-900 transition disabled:opacity-50 shadow-sm">
                 Join
               </button>
             </div>
-            <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition shadow-md hover:shadow-lg">
+            <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-medium transition shadow-md hover:shadow-lg" style={{ backgroundColor: "#10B981" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor="#059669")} onMouseLeave={e => (e.currentTarget.style.backgroundColor="#10B981")}>
               <Plus size={16} />
               New Board
             </button>
@@ -208,18 +217,18 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
 
         {loading && (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full" />
+            <div className="animate-spin w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full" />
           </div>
         )}
 
         {!loading && filteredBoards.length === 0 && !searchQuery && (
           <div className="text-center py-20">
-            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Layers size={32} className="text-indigo-400" />
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "rgba(16,185,129,0.08)" }}>
+              <CollabBoardLogo size={34} />
             </div>
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">No boards yet</h2>
+            <h2 className="text-xl font-semibold mb-2" style={{ color: "#0F2044" }}>No boards yet</h2>
             <p className="text-gray-500 mb-6">Create your first collaborative whiteboard to get started.</p>
-            <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition shadow-md">
+            <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 px-6 py-3 text-white rounded-xl font-medium transition shadow-md" style={{ backgroundColor: "#10B981" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor="#059669")} onMouseLeave={e => (e.currentTarget.style.backgroundColor="#10B981")}>
               <Plus size={18} />
               Create Your First Board
             </button>
@@ -268,10 +277,10 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowCreateModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Create New Board</h2>
-            <input autoFocus type="text" value={newBoardTitle} onChange={(e) => setNewBoardTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()} placeholder="Board title (optional)" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition mb-4" />
+            <input autoFocus type="text" value={newBoardTitle} onChange={(e) => setNewBoardTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()} placeholder="Board title (optional)" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition mb-4" />
             <div className="flex gap-3">
               <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">Cancel</button>
-              <button onClick={handleCreateBoard} className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition shadow-md">Create</button>
+              <button onClick={handleCreateBoard} className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md" style={{ backgroundColor: "#10B981" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor="#059669")} onMouseLeave={e => (e.currentTarget.style.backgroundColor="#10B981")}>Create</button>
             </div>
           </div>
         </div>
@@ -311,7 +320,7 @@ function BoardCard({ meta, isOwner, onOpen, onDelete, formatDate }: BoardItemPro
   const thumbnail = localStorage.getItem(`collabboard-thumb-${meta.id}`);
 
   return (
-    <div className="group bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all hover:border-indigo-300 cursor-pointer" onClick={onOpen}>
+    <div className="group bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all hover:border-emerald-300 cursor-pointer" onClick={onOpen}>
       <div className="h-32 relative overflow-hidden" style={thumbnail ? {} : { background: `linear-gradient(135deg, hsl(${hue1}, 70%, 92%), hsl(${hue2}, 60%, 88%))` }}>
         {thumbnail ? (
           <img src={thumbnail} alt={meta.title || "Board preview"} className="w-full h-full object-cover" />
@@ -352,7 +361,7 @@ function BoardRow({ meta, isOwner, onOpen, onDelete, formatDate }: BoardItemProp
   const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   return (
-    <div className="group flex items-center gap-4 px-4 py-3 bg-white rounded-xl border border-gray-200 hover:border-indigo-300 hover:shadow-sm transition cursor-pointer" onClick={onOpen}>
+    <div className="group flex items-center gap-4 px-4 py-3 bg-white rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition cursor-pointer" onClick={onOpen}>
       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: `hsl(${hash % 360}, 60%, 65%)` }} />
       <div className="flex-1 min-w-0"><h3 className="font-medium text-gray-900 truncate text-sm">{meta.title || "Untitled Board"}</h3></div>
       {!isOwner && <span className="text-xs text-gray-400 flex items-center gap-1 shrink-0"><Users size={11} />Shared</span>}

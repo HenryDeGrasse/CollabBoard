@@ -83,12 +83,29 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const aiAgent = useAIAgent(boardId, canvas.stageRef, selection.selectedIds);
 
   // ── Thumbnail capture ────────────────────────────────────────
+  // Konva's toDataURL captures transparent pixels. JPEG converts
+  // transparency → black. Fix: composite onto a white canvas first.
   const captureThumbnail = useCallback(() => {
     const stage = canvas.stageRef.current;
     if (!stage || !boardId) return;
     try {
-      const dataUrl = stage.toDataURL({ pixelRatio: 0.25, mimeType: "image/jpeg", quality: 0.6 });
-      localStorage.setItem(`collabboard-thumb-${boardId}`, dataUrl);
+      const rawUrl = stage.toDataURL({ pixelRatio: 0.25 }); // PNG — preserves transparency
+      const img = new Image();
+      img.onload = () => {
+        const cvs = document.createElement("canvas");
+        cvs.width = img.width;
+        cvs.height = img.height;
+        const ctx = cvs.getContext("2d");
+        if (!ctx) return;
+        ctx.fillStyle = "#F8FAFC"; // slate-50 — matches canvas background
+        ctx.fillRect(0, 0, cvs.width, cvs.height);
+        ctx.drawImage(img, 0, 0);
+        try {
+          const dataUrl = cvs.toDataURL("image/jpeg", 0.65);
+          localStorage.setItem(`collabboard-thumb-${boardId}`, dataUrl);
+        } catch { /* storage full or unavailable */ }
+      };
+      img.src = rawUrl;
     } catch {
       // Canvas tainted or unavailable — ignore
     }
