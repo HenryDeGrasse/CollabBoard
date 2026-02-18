@@ -56,9 +56,11 @@ vi.mock("konva", () => ({
   },
 }));
 
-// Stub clipboard API
-Object.assign(navigator, {
-  clipboard: {
-    writeText: vi.fn().mockResolvedValue(undefined),
-  },
-});
+// Stub clipboard API (jsdom only)
+if (typeof navigator !== "undefined") {
+  Object.assign(navigator, {
+    clipboard: {
+      writeText: vi.fn().mockResolvedValue(undefined),
+    },
+  });
+}

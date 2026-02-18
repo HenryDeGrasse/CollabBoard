@@ -33,7 +33,7 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 ### ⌨️ Keyboard Shortcuts
 - **Tools**: `V` Select · `S` Sticky · `R` Rect · `C` Circle · `A` Arrow · `L` Line · `F` Frame
 - **Edit**: `⌘/Ctrl+Z` undo · `⌘/Ctrl+⇧+Z` redo · `⌘/Ctrl+C/V/D` copy/paste/duplicate
-- **Canvas**: `Delete/Backspace` delete · `Escape` deselect · `?` toggle shortcuts panel
+- **Canvas**: `Delete/Backspace` delete · `Escape` return to Select tool · `?` toggle shortcuts panel
 - Platform-aware: shows `⌘` on Mac, `Ctrl` on Windows/Linux
 
 ### 👥 Multiplayer
@@ -41,7 +41,8 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 - **Real-time Sync** — All object changes propagate within <100ms via Supabase Realtime
 - **Edit Locking** — Visual lock indicator when another user is editing an object
 - **Live Draft Preview** — See collaborators' text as they type (italic, color-coded)
-- **Presence Panel** — Online users list with share link and board ID copy
+- **Presence Panel** — Online users list
+- **Header Share Menu** — Copy board link / board ID from the top-right Share button
 
 ### 🗂️ Dashboard
 - **My Boards / Shared with Me** — Create, search, soft-delete, and join boards
@@ -54,7 +55,9 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 - **Intent Router** — Heuristic router selects model, tools, and context scope per command
 - **Board Digest** — Compact board summary (~95% token reduction vs. full JSON)
 - **Template Engine** — Pre-built layouts (SWOT, Kanban, etc.) with fail-fast rollback
-- **Plan → Validate → Execute** — Structured pipeline with progress streaming and idempotency
+- **Plan → Validate → Execute** — Structured pipeline with progress updates and backend validation
+- **Resumable Jobs** — Continue interrupted commands via stable `commandId`
+- **Board Versioning + Idempotency** — Version-tracked mutations and retry-safe object creation (`client_id`)
 - **Bulk Tools** — `bulkCreate` and `bulkDelete` for efficient multi-object operations
 
 ### 🔐 Authentication
@@ -74,7 +77,7 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 | Database & Auth | Supabase (Postgres + Row Level Security + Realtime) |
 | API / AI Backend | Vercel Serverless Functions + OpenAI GPT-4o |
 | Hosting | Vercel |
-| Testing | Vitest (229 unit/integration tests) |
+| Testing | Vitest (272 unit/integration tests) + Playwright E2E |
 
 ---
 
@@ -123,13 +126,35 @@ SUPABASE_SERVICE_ROLE_KEY=<service_role key from supabase status>
 OPENAI_API_KEY=sk-your-openai-key
 ```
 
-### 4 — Run the dev server
+### 4 — Run frontend + API dev servers
+
+Terminal A (frontend):
 
 ```bash
 npm run dev
 ```
 
-Open http://localhost:5173. All data writes go to your local Supabase — production is untouched.
+Terminal B (local API server with `.env.local` precedence):
+
+```bash
+npx tsx api/_dev-server.mjs
+```
+
+Open http://localhost:5173.
+
+### 5 — Verify API is targeting local Supabase
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+Expected `supabaseUrl`:
+
+```json
+{"supabaseUrl":"http://127.0.0.1:54321", "hasServiceKey": true}
+```
+
+If `supabaseUrl` points to `*.supabase.co`, restart the API dev server. Otherwise browser auth tokens from local Supabase will fail with `401 Unauthorized`. All local data writes should go to your local Supabase instance — production stays untouched.
 
 ---
 
@@ -192,23 +217,26 @@ npx supabase db push
 src/
 ├── components/
 │   ├── canvas/       # Board, StickyNote, Shape, Connector, Frame, RotationHandle, RemoteCursor
-│   ├── toolbar/      # Toolbar, ColorPicker
+│   ├── toolbar/      # Toolbar, ColorPicker, StrokeWidthPicker
 │   ├── sidebar/      # PresencePanel, TextStylePanel, AICommandInput
 │   ├── ui/           # HelpPanel
 │   └── auth/         # AuthProvider, LoginPage
-├── hooks/            # useBoard, usePresence, useCanvas, useSelection, useAIAgent
+├── hooks/            # useBoard, usePresence, useCanvas, useSelection, useAIAgent,
 │                     # useUndoRedo, useCursorInterpolation
 ├── services/         # supabase, board, presence, ai-agent
 ├── types/            # board, presence, ai
-├── utils/            # colors, geometry, throttle, ids, text-fit, text-style
-│                     # selection, frame-containment, frame-placement, frame-create
-├── test/             # 229 Vitest unit + integration tests (25 files)
+├── utils/            # colors, geometry, throttle, ids, text-fit, text-style,
+│                     # text-overlay-layout, selection, frame-containment, frame-placement
+├── test/             # 272 Vitest tests across 30 files
 └── pages/            # HomePage (dashboard), BoardPage (canvas)
 api/
-├── ai-agent.ts       # Vercel serverless entry point
-└── _lib/ai/          # agent, router, digest, planner, templates, tools, errors
+├── ai-agent.ts       # Main AI entrypoint
+├── ai-continue.ts    # Resume interrupted AI runs
+├── health.ts         # Local API diagnostics (/api/health)
+├── _dev-server.mjs   # Local API dev server
+└── _lib/ai/          # agent, router, digest, planner, templates, tools, versioning, errors
 supabase/
-└── migrations/       # 001–006 SQL migrations (applied in order)
+└── migrations/       # 001–008 SQL migrations (versioning + text vertical align included)
 docs/                 # PRDs, planning artifacts
 ```
 
@@ -257,6 +285,8 @@ useAIAgent.ts
     → plan()             — structured action plan
     → validate()         — pre-flight checks
     → execute()          — bulk CRUD via Supabase service role
+    → versioning()       — board version bump + idempotent job tracking
+  → /api/ai-continue     — resume interrupted runs by commandId
 ```
 
 ---
@@ -264,18 +294,22 @@ useAIAgent.ts
 ## ✅ Testing
 
 ```bash
-npm test              # Run all 229 tests once
+npm test              # Run all 272 tests once
 npm run test:watch    # Watch mode
+npm run test:e2e      # Playwright end-to-end suite
 ```
 
-**25 test files covering:**
+**30 Vitest files covering:**
 - Hooks: `useCanvas`, `useSelection`, `useUndoRedo`, `usePresence`, `useBoard`
 - Components: `computeResize`, `frame-interaction`, `help-panel`
-- Services: `board`, `rls-policies`
-- Utils: `colors`, `frame-containment`, `frame-create`, `frame-placement`, `geometry`
-         `ids`, `selection`, `text-fit`, `throttle`, `ai-router`
+- Services (client): `board`, `rls-policies`, `ai-agent`
+- Services (API route + backend helpers): `ai-continue` route, `health` route, AI `versioning`
+- Utils: `colors`, `frame-containment`, `frame-create`, `frame-placement`, `geometry`,
+  `ids`, `selection`, `text-fit`, `text-overlay-layout`, `throttle`, `ai-router`
 - Integration: `ai-command-input`, `home-page`, `login-page`, `toolbar`
 - Types: `board`
+
+Detailed mapping: see [`docs/regression-test-matrix.md`](docs/regression-test-matrix.md).
 
 ---
 
@@ -283,7 +317,7 @@ npm run test:watch    # Watch mode
 
 Husky hooks run on every commit and push:
 
-- **Pre-commit**: all 229 tests must pass
+- **Pre-commit**: all 272 Vitest tests must pass
 - **Pre-push**: tests + production build must both pass
 
 ---
@@ -343,7 +377,7 @@ npx supabase db push                             # push pending migrations
 - **DB Environment Branching** — Supabase branch-per-PR for isolated migration testing
 - **Access Control** — Public/private boards, share by link or email
 - **Export** — PNG/SVG image export, JSON board export
-- **Board Versioning** — Named snapshots with restore
+- **Conflict-aware Replanning** — Auto-replan small version deltas, pause for confirmation on large conflicts
 - **AI Drawing Intent** — Natural language object placement and diagramming
 
 ---

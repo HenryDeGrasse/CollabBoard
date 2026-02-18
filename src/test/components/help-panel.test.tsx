@@ -96,6 +96,18 @@ describe("HelpPanel", () => {
     expect(screen.getByText("Toggle this help panel")).toBeTruthy();
   });
 
+  it("includes creating and connector discoverability hints", () => {
+    render(<HelpPanel />);
+    fireEvent.click(screen.getByTitle("Keyboard shortcuts (?)"));
+
+    expect(screen.getByText("Draw shape / sticky to size")).toBeTruthy();
+    expect(screen.getByText("Place default-sized object")).toBeTruthy();
+    expect(screen.getByText("Snap rotation to 15°")).toBeTruthy();
+
+    expect(screen.getByText("Connect with arrow")).toBeTruthy();
+    expect(screen.getByText("Select connector (then Delete)")).toBeTruthy();
+  });
+
   it("shows correct key bindings for non-Mac", () => {
     render(<HelpPanel />);
     fireEvent.click(screen.getByTitle("Keyboard shortcuts (?)"));
@@ -133,7 +145,9 @@ describe("HelpPanel", () => {
 
     expect(screen.getByText("Tools")).toBeTruthy();
     expect(screen.getByText("Actions")).toBeTruthy();
+    expect(screen.getByText("Creating")).toBeTruthy();
     expect(screen.getByText("Navigation")).toBeTruthy();
     expect(screen.getByText("Editing")).toBeTruthy();
+    expect(screen.getByText("Connectors")).toBeTruthy();
   });
 });

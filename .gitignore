@@ -33,6 +33,5 @@ test-results/
 playwright-report/
 blob-report/
 
-# Local dev servers
-api/_dev-server.mjs
+# Local debug artifacts
 tmp-*.png

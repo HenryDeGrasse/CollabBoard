@@ -6,6 +6,7 @@ import {
   getFrameHeaderHeight,
   resolveObjectTextSize,
 } from "../../utils/text-style";
+import { estimateVerticalPaddingTop } from "../../utils/text-overlay-layout";
 
 interface TextOverlayProps {
   object: BoardObject;
@@ -119,23 +120,17 @@ export function TextOverlay({
   const screenX = object.x * scale + stageX;
   const screenY = object.y * scale + stageY;
 
-  // Estimate text content height to compute vertical offset padding.
-  // lineHeight ≈ fontSize * 1.4; approximate lines from text wrapping.
   const scaledFontSize = fontSize * scale;
-  const lineH = scaledFontSize * 1.4;
   const boxW = layout.innerWidth * scale;
   const boxH = layout.innerHeight * scale;
-  // Rough char-per-line estimate
-  const charsPerLine = Math.max(1, Math.floor(boxW / (scaledFontSize * 0.55)));
-  const lineCount = Math.max(1, Math.ceil((text || "A").length / charsPerLine));
-  const contentH = Math.min(lineCount * lineH, boxH);
 
-  let paddingTop = 0;
-  if (vAlign === "middle") {
-    paddingTop = Math.max(0, (boxH - contentH) / 2);
-  } else if (vAlign === "bottom") {
-    paddingTop = Math.max(0, boxH - contentH);
-  }
+  const paddingTop = estimateVerticalPaddingTop({
+    text,
+    boxWidth: boxW,
+    boxHeight: boxH,
+    scaledFontSize,
+    vAlign,
+  });
 
   return (
     <textarea
