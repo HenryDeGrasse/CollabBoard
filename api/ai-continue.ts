@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { authenticateRequest } from "./_lib/auth.js";
+import { verifyToken, AuthError } from "./_lib/auth.js";
 import { loadJob } from "./_lib/ai/versioning.js";
 import { executeAICommand } from "./_lib/ai/agent.js";
 
@@ -14,8 +14,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const uid = await authenticateRequest(req);
-  if (!uid) {
+  let uid: string;
+  try {
+    uid = await verifyToken(req.headers.authorization ?? null);
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return res.status(err.status).json({ error: err.message });
+    }
     return res.status(401).json({ error: "Unauthorized" });
   }
 

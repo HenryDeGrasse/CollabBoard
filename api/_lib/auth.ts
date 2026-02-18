@@ -30,6 +30,14 @@ export async function verifyToken(authHeader: string | null): Promise<string> {
   } = await supabase.auth.getUser(token);
 
   if (error || !user) {
+    // Log the real error in dev so it's easy to diagnose
+    if (process.env.NODE_ENV !== "production") {
+      console.error(
+        "[auth] Token verification failed:",
+        error?.message ?? "user is null",
+        `(Supabase URL: ${process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL})`
+      );
+    }
     throw new AuthError(401, "Invalid or expired token");
   }
 
