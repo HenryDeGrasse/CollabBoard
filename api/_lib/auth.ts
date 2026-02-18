@@ -1,46 +1,4 @@
-import { getAdminAuth, getAdminDb } from "./firebaseAdmin";
-
-/**
- * Verify Firebase ID token from Authorization header.
- * Returns the uid. Throws on invalid/missing token.
- */
-export async function verifyToken(authHeader: string | null): Promise<string> {
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    throw new AuthError(401, "Missing or malformed Authorization header");
-  }
-
-  const idToken = authHeader.slice(7);
-  if (!idToken) {
-    throw new AuthError(401, "Empty token");
-  }
-
-  try {
-    const decoded = await getAdminAuth().verifyIdToken(idToken);
-    return decoded.uid;
-  } catch {
-    throw new AuthError(401, "Invalid or expired token");
-  }
-}
-
-/**
- * Assert that the user has access to the board.
- * Checks: board exists + user has membership (userBoards/{uid}/{boardId}).
- */
-export async function assertCanWriteBoard(uid: string, boardId: string): Promise<void> {
-  const db = getAdminDb();
-
-  // Check board exists
-  const metadataSnap = await db.ref(`boards/${boardId}/metadata`).once("value");
-  if (!metadataSnap.exists()) {
-    throw new AuthError(404, "Board not found");
-  }
-
-  // Check user membership
-  const membershipSnap = await db.ref(`userBoards/${uid}/${boardId}`).once("value");
-  if (!membershipSnap.exists()) {
-    throw new AuthError(403, "Not authorized to modify this board");
-  }
-}
+import { getSupabaseAdmin } from "./supabaseAdmin";
 
 export class AuthError extends Error {
   status: number;
@@ -48,5 +6,70 @@ export class AuthError extends Error {
     super(message);
     this.status = status;
     this.name = "AuthError";
+  }
+}
+
+/**
+ * Verify a Supabase access token from the Authorization header.
+ * Returns the user's UUID.
+ */
+export async function verifyToken(authHeader: string | null): Promise<string> {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new AuthError(401, "Missing or malformed Authorization header");
+  }
+
+  const token = authHeader.slice(7);
+  if (!token) {
+    throw new AuthError(401, "Empty token");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    throw new AuthError(401, "Invalid or expired token");
+  }
+
+  return user.id;
+}
+
+/**
+ * Assert that the user has write access to the board.
+ * Checks: board exists + user is a member with editor/owner role.
+ */
+export async function assertCanWriteBoard(
+  uid: string,
+  boardId: string
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  // Check board exists
+  const { data: board, error: boardError } = await supabase
+    .from("boards")
+    .select("id")
+    .eq("id", boardId)
+    .single();
+
+  if (boardError || !board) {
+    throw new AuthError(404, "Board not found");
+  }
+
+  // Check membership
+  const { data: member, error: memberError } = await supabase
+    .from("board_members")
+    .select("role")
+    .eq("board_id", boardId)
+    .eq("user_id", uid)
+    .single();
+
+  if (memberError || !member) {
+    throw new AuthError(403, "Not authorized to modify this board");
+  }
+
+  if (member.role === "viewer") {
+    throw new AuthError(403, "Viewers cannot modify the board");
   }
 }

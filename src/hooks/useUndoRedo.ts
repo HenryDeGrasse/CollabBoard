@@ -28,6 +28,8 @@ export function useUndoRedo(
   // For re-creating deleted objects with their original ID
   restoreObject: (obj: BoardObject) => void,
   restoreConnector: (conn: Connector) => void,
+  // Batch restore: inserts in FK-safe order (frames before children)
+  restoreObjects?: (objs: BoardObject[]) => void,
 ): UseUndoRedoReturn {
   const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
   const [redoStack, setRedoStack] = useState<UndoAction[]>([]);
@@ -61,10 +63,42 @@ export function useUndoRedo(
       case "delete_connector":
         restoreConnector(action.connector);
         break;
-      case "batch":
-        // Undo in reverse order
-        [...action.actions].reverse().forEach(executeUndo);
+      case "batch": {
+        // Undo in reverse order, but respect FK constraints:
+        //   1. Restore objects first (frames before children)
+        //   2. Then restore connectors (which reference those objects)
+        //   3. Then process all other actions
+        const reversed = [...action.actions].reverse();
+
+        const deleteObjActions = reversed.filter(
+          (a) => a.type === "delete_object"
+        ) as Extract<UndoAction, { type: "delete_object" }>[];
+        const deleteConnActions = reversed.filter(
+          (a) => a.type === "delete_connector"
+        );
+        const others = reversed.filter(
+          (a) => a.type !== "delete_object" && a.type !== "delete_connector"
+        );
+
+        // Step 1: Restore objects (FK-safe: frames before children)
+        if (deleteObjActions.length > 0 && restoreObjects) {
+          restoreObjects(deleteObjActions.map((a) => a.object));
+        } else {
+          const sorted = deleteObjActions.sort((a, b) => {
+            const aChild = a.object.parentFrameId ? 1 : 0;
+            const bChild = b.object.parentFrameId ? 1 : 0;
+            return aChild - bChild;
+          });
+          sorted.forEach(executeUndo);
+        }
+
+        // Step 2: Restore connectors (endpoints now exist)
+        deleteConnActions.forEach(executeUndo);
+
+        // Step 3: Everything else
+        others.forEach(executeUndo);
         break;
+      }
     }
   }, [deleteObject, restoreObject, updateObject, deleteConnector, restoreConnector]);
 

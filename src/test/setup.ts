@@ -1,40 +1,41 @@
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 
-// Mock Firebase
-vi.mock("../services/firebase", () => ({
-  auth: {
-    currentUser: { uid: "test-user-1", displayName: "Test User" },
-    signOut: vi.fn(),
-    onAuthStateChanged: vi.fn(),
+// Mock Supabase client
+vi.mock("../services/supabase", () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      signInAnonymously: vi.fn().mockResolvedValue({ error: null }),
+      signInWithOAuth: vi.fn().mockResolvedValue({ error: null }),
+      signOut: vi.fn().mockResolvedValue({ error: null }),
+      updateUser: vi.fn().mockResolvedValue({ error: null }),
+    },
+    from: vi.fn(() => ({
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    })),
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnThis(),
+      unsubscribe: vi.fn(),
+      track: vi.fn(),
+      untrack: vi.fn(),
+      send: vi.fn().mockResolvedValue(undefined),
+      presenceState: vi.fn(() => ({})),
+    })),
+    removeChannel: vi.fn(),
+    rpc: vi.fn().mockResolvedValue({ error: null }),
   },
-  db: {},
-}));
-
-// Mock firebase/auth
-vi.mock("firebase/auth", () => ({
-  getAuth: vi.fn(),
-  onAuthStateChanged: vi.fn(),
-  signInAnonymously: vi.fn(),
-  signInWithPopup: vi.fn(),
-  GoogleAuthProvider: vi.fn(),
-  updateProfile: vi.fn(),
-}));
-
-// Mock firebase/database
-vi.mock("firebase/database", () => ({
-  ref: vi.fn(),
-  set: vi.fn(),
-  get: vi.fn(),
-  push: vi.fn(),
-  update: vi.fn(),
-  remove: vi.fn(),
-  onChildAdded: vi.fn(() => vi.fn()),
-  onChildChanged: vi.fn(() => vi.fn()),
-  onChildRemoved: vi.fn(() => vi.fn()),
-  onValue: vi.fn(() => vi.fn()),
-  onDisconnect: vi.fn(() => ({ set: vi.fn(), remove: vi.fn() })),
-  serverTimestamp: vi.fn(() => Date.now()),
 }));
 
 // Mock Konva (canvas-dependent)

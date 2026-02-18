@@ -1,8 +1,12 @@
-import { useMemo, useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import { Group, Rect, Text } from "react-konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
 import { calculateFontSize } from "../../utils/text-fit";
+import {
+  getAutoContrastingTextColor,
+  resolveObjectTextSize,
+} from "../../utils/text-style";
 
 interface StickyNoteProps {
   object: BoardObject;
@@ -20,7 +24,7 @@ interface StickyNoteProps {
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
 }
 
-export function StickyNote({
+export const StickyNote = React.memo(function StickyNote({
   object,
   isSelected,
   isEditing,
@@ -46,22 +50,18 @@ export function StickyNote({
 
   const PADDING = 12;
 
-  // Auto-fit font size
-  const fontSize = useMemo(
-    () => calculateFontSize(object.text || "", object.width, object.height, PADDING, 10, 32),
-    [object.text, object.width, object.height]
-  );
+  // Auto-fit text size unless user explicitly overrides it.
+  const fontSize = useMemo(() => {
+    if (typeof object.textSize === "number") {
+      return resolveObjectTextSize(object);
+    }
+    return calculateFontSize(object.text || "", object.width, object.height, PADDING, 10, 32);
+  }, [object.type, object.text, object.width, object.height, object.textSize]);
 
-  // Auto text color based on background luminance
   const textColor = useMemo(() => {
-    const hex = object.color.replace("#", "");
-    if (hex.length < 6) return "#1F2937";
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? "#1F2937" : "#FFFFFF";
-  }, [object.color]);
+    if (object.textColor) return object.textColor;
+    return getAutoContrastingTextColor(object.color);
+  }, [object.color, object.textColor]);
 
   return (
     <Group
@@ -158,4 +158,4 @@ export function StickyNote({
       )}
     </Group>
   );
-}
+});

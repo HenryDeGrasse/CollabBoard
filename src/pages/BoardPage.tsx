@@ -4,6 +4,7 @@ import { Board, type ToolType } from "../components/canvas/Board";
 import { Toolbar } from "../components/toolbar/Toolbar";
 import { PresencePanel } from "../components/sidebar/PresencePanel";
 import { AICommandInput } from "../components/sidebar/AICommandInput";
+import { TextStylePanel } from "../components/sidebar/TextStylePanel";
 import { useBoard } from "../hooks/useBoard";
 import { usePresence } from "../hooks/usePresence";
 import { useCanvas } from "../hooks/useCanvas";
@@ -12,8 +13,14 @@ import { useAIAgent } from "../hooks/useAIAgent";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useAuth } from "../components/auth/AuthProvider";
 import { HelpPanel } from "../components/ui/HelpPanel";
-import { createBoard, getBoardMetadata, addBoardToUser } from "../services/board";
+import { joinBoard, touchBoard } from "../services/board";
 import { DEFAULT_STICKY_COLOR } from "../utils/colors";
+import {
+  isTextCapableObjectType,
+  resolveObjectTextSize,
+  clampTextSizeForType,
+  getAutoContrastingTextColor,
+} from "../utils/text-style";
 
 interface BoardPageProps {
   boardId: string;
@@ -22,12 +29,28 @@ interface BoardPageProps {
 
 export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const { user, displayName } = useAuth();
-  const userId = user?.uid || "";
+  const userId = user?.id || "";
 
   const [activeTool, setActiveTool] = useState<ToolType>("select");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_STICKY_COLOR);
-  const [initialized, setInitialized] = useState(false);
+  const [joined, setJoined] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Ensure user is a member of this board BEFORE loading data.
+  // RLS policies require board_members entry for SELECT access.
+  useEffect(() => {
+    if (!boardId || !userId) return;
+    let cancelled = false;
+
+    joinBoard(boardId, userId)
+      .then(() => touchBoard(boardId))
+      .catch((err) => console.error("Failed to join board:", err))
+      .finally(() => {
+        if (!cancelled) setJoined(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [boardId, userId]);
 
   const {
     objects,
@@ -35,15 +58,26 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     createObject,
     updateObject,
     deleteObject,
+    deleteFrameCascade,
     createConnector,
     deleteConnector,
     restoreObject,
+    restoreObjects,
     restoreConnector,
     loading,
-  } = useBoard(boardId);
-  const { users, updateCursor, setEditingObject, setDraftText, isObjectLocked, getDraftTextForObject } =
-    usePresence(boardId, userId, displayName);
-  const canvas = useCanvas();
+  } = useBoard(joined ? boardId : "");
+  const {
+    users,
+    remoteDragPositions,
+    updateCursor,
+    setEditingObject,
+    setDraftText,
+    broadcastObjectDrag,
+    endObjectDrag,
+    isObjectLocked,
+    getDraftTextForObject,
+  } = usePresence(boardId, userId, displayName);
+  const canvas = useCanvas(boardId);
   const selection = useSelection();
   const aiAgent = useAIAgent(boardId, canvas.stageRef, selection.selectedIds);
   const undoRedo = useUndoRedo(
@@ -54,6 +88,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     deleteConnector,
     restoreObject,
     restoreConnector,
+    restoreObjects,
   );
 
   // Clipboard for copy/paste
@@ -76,24 +111,12 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       boardId,
       createObject,
       objects,
+      connectors,
     };
     return () => { delete (window as any).__COLLABBOARD__; };
-  }, [boardId, createObject, objects]);
+  }, [boardId, createObject, objects, connectors]);
 
-  // Initialize board metadata if it doesn't exist
-  useEffect(() => {
-    if (!boardId || !userId || initialized) return;
-
-    getBoardMetadata(boardId).then(async (metadata) => {
-      if (!metadata) {
-        await createBoard(boardId, "Untitled Board", userId, displayName || "Anonymous");
-      } else {
-        // Board exists — make sure it's in user's board list (e.g., joined via link)
-        await addBoardToUser(userId, boardId);
-      }
-      setInitialized(true);
-    });
-  }, [boardId, userId, initialized]);
+  // (join handled above, before useBoard initialization)
 
   // Keyboard shortcuts for tools + undo/redo + copy/paste/duplicate
   useEffect(() => {
@@ -159,6 +182,8 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
             height: obj.height,
             color: obj.color,
             text: obj.text,
+            textSize: obj.textSize,
+            textColor: obj.textColor,
             rotation: obj.rotation,
             zIndex: obj.zIndex,
             createdBy: userId,
@@ -208,6 +233,8 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
             height: obj.height,
             color: obj.color,
             text: obj.text,
+            textSize: obj.textSize,
+            textColor: obj.textColor,
             rotation: obj.rotation,
             zIndex: obj.zIndex,
             createdBy: userId,
@@ -228,6 +255,24 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         }
 
         sel.selectMultiple(Object.values(idMap));
+        return;
+      }
+
+      // Text size shortcuts: Cmd/Ctrl+Shift+.</>
+      if (ctrl && e.shiftKey && (e.key === "." || e.key === ">" || e.key === "," || e.key === "<")) {
+        e.preventDefault();
+        const delta = e.key === "." || e.key === ">" ? 2 : -2;
+        const sel = selectionRef.current;
+        const objs = objectsRef.current;
+
+        sel.selectedIds.forEach((id) => {
+          const obj = objs[id];
+          if (!obj || !isTextCapableObjectType(obj.type)) return;
+          const base = resolveObjectTextSize(obj);
+          const next = clampTextSizeForType(obj.type, base + delta);
+          updateObject(id, { textSize: next });
+        });
+
         return;
       }
 
@@ -280,12 +325,67 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     [selection.selectedIds, updateObject]
   );
 
-  if (loading) {
+  const selectedObjects = Array.from(selection.selectedIds)
+    .map((id) => objects[id])
+    .filter(Boolean) as BoardObject[];
+
+  const textStyleTargets = selectedObjects.filter((obj) =>
+    isTextCapableObjectType(obj.type)
+  );
+
+  const canEditSelectedText = textStyleTargets.length > 0;
+
+  const selectedTextSizes = textStyleTargets.map((obj) => resolveObjectTextSize(obj));
+  const selectedTextSize =
+    selectedTextSizes.length > 0 &&
+    selectedTextSizes.every((s) => s === selectedTextSizes[0])
+      ? selectedTextSizes[0]
+      : null;
+
+  const selectedResolvedTextColors = textStyleTargets.map((obj) => {
+    if (obj.textColor) return obj.textColor;
+    if (obj.type === "frame") return "#374151";
+    return getAutoContrastingTextColor(obj.color);
+  });
+
+  const selectedTextColor =
+    selectedResolvedTextColors.length > 0
+      ? selectedResolvedTextColors[0]
+      : "#111827";
+
+  const handleAdjustSelectedTextSize = useCallback(
+    (delta: number) => {
+      selection.selectedIds.forEach((id) => {
+        const obj = objects[id];
+        if (!obj || !isTextCapableObjectType(obj.type)) return;
+
+        const base = resolveObjectTextSize(obj);
+        const next = clampTextSizeForType(obj.type, base + delta);
+        updateObject(id, { textSize: next });
+      });
+    },
+    [selection.selectedIds, objects, updateObject]
+  );
+
+  const handleChangeSelectedTextColor = useCallback(
+    (color: string) => {
+      selection.selectedIds.forEach((id) => {
+        const obj = objects[id];
+        if (!obj || !isTextCapableObjectType(obj.type)) return;
+        updateObject(id, { textColor: color });
+      });
+    },
+    [selection.selectedIds, objects, updateObject]
+  );
+
+  if (!joined || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex items-center gap-3">
           <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
-          <span className="text-gray-600 font-medium">Loading board...</span>
+          <span className="text-gray-600 font-medium">
+            {!joined ? "Joining board..." : "Loading board..."}
+          </span>
         </div>
       </div>
     );
@@ -307,6 +407,17 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         onColorChange={setActiveColor}
         onChangeSelectedColor={handleChangeSelectedColor}
       />
+
+      {/* Left-side text style popup */}
+      {activeTool === "select" && canEditSelectedText && (
+        <TextStylePanel
+          textSize={selectedTextSize}
+          textColor={selectedTextColor}
+          onIncreaseTextSize={() => handleAdjustSelectedTextSize(2)}
+          onDecreaseTextSize={() => handleAdjustSelectedTextSize(-2)}
+          onChangeTextColor={handleChangeSelectedTextColor}
+        />
+      )}
 
       {/* Presence panel */}
       <PresencePanel
@@ -353,9 +464,13 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         onCreateObject={createObject}
         onUpdateObject={updateObject}
         onDeleteObject={deleteObject}
+        onDeleteFrame={deleteFrameCascade}
         onCreateConnector={createConnector}
         onDeleteConnector={deleteConnector}
         onCursorMove={handleCursorMove}
+        remoteDragPositions={remoteDragPositions}
+        onObjectDragBroadcast={broadcastObjectDrag}
+        onObjectDragEndBroadcast={endObjectDrag}
         onSetEditingObject={setEditingObject}
         onDraftTextChange={setDraftText}
         getDraftTextForObject={getDraftTextForObject}

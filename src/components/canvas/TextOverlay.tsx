@@ -1,6 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { BoardObject } from "../../types/board";
 import { calculateFontSize } from "../../utils/text-fit";
+import {
+  getAutoContrastingTextColor,
+  getFrameHeaderHeight,
+  resolveObjectTextSize,
+} from "../../utils/text-style";
 
 interface TextOverlayProps {
   object: BoardObject;
@@ -64,11 +69,14 @@ export function TextOverlay({
     }
 
     if (object.type === "frame") {
+      const headerHeight = getFrameHeaderHeight(object);
+      const innerHeight = Math.max(20, headerHeight - 8);
+      const offsetY = Math.max(2, (headerHeight - innerHeight) / 2);
       return {
         offsetX: PADDING,
-        offsetY: 8, // title bar position
+        offsetY,
         innerWidth: object.width - PADDING * 2,
-        innerHeight: 24, // title area only
+        innerHeight,
         padding: PADDING,
       };
     }
@@ -80,33 +88,30 @@ export function TextOverlay({
       innerHeight: object.height - PADDING * 2,
       padding: PADDING,
     };
-  }, [object.type, object.width, object.height]);
+  }, [object]);
 
-  // Auto-fit font size
-  const fontSize = useMemo(
-    () =>
-      calculateFontSize(
-        text || "A",
-        layout.innerWidth,
-        layout.innerHeight,
-        0,
-        object.type === "frame" ? 14 : 9,
-        object.type === "frame" ? 14 : 32
-      ),
-    [text, layout.innerWidth, layout.innerHeight, object.type]
-  );
+  // Auto-fit font size unless the object has an explicit text size override.
+  const fontSize = useMemo(() => {
+    if (typeof object.textSize === "number") {
+      return resolveObjectTextSize(object);
+    }
 
-  // Determine text color based on background brightness
+    return calculateFontSize(
+      text || "A",
+      layout.innerWidth,
+      layout.innerHeight,
+      0,
+      object.type === "frame" ? 10 : 9,
+      object.type === "frame" ? 22 : 32
+    );
+  }, [text, layout.innerWidth, layout.innerHeight, object]);
+
+  // Determine text color (explicit override > auto contrast)
   const textColor = useMemo(() => {
+    if (object.textColor) return object.textColor;
     if (object.type === "frame") return "#374151";
-    const hex = object.color.replace("#", "");
-    if (hex.length < 6) return "#1F2937";
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? "#1F2937" : "#FFFFFF";
-  }, [object.color, object.type]);
+    return getAutoContrastingTextColor(object.color);
+  }, [object.color, object.type, object.textColor]);
 
   // Screen position
   const screenX = object.x * scale + stageX;

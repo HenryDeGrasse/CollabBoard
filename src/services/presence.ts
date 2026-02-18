@@ -1,111 +1,214 @@
-import {
-  ref,
-  set,
-  update,
-  onValue,
-  onDisconnect,
-  serverTimestamp,
-  off,
-} from "firebase/database";
-import { db } from "./firebase";
-import type { UserPresence, CursorPosition } from "../types/presence";
+import { supabase } from "./supabase";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
-export function setUserPresence(
+export interface PresenceState {
+  displayName: string;
+  cursorColor: string;
+  cursor: { x: number; y: number } | null;
+  editingObjectId: string | null;
+  draftText?: string;
+}
+
+const CURSOR_COLORS = [
+  "#EF4444", "#3B82F6", "#22C55E", "#F97316",
+  "#A855F7", "#EC4899", "#14B8A6", "#F59E0B",
+];
+
+let colorIndex = 0;
+
+export function getNextCursorColor(): string {
+  return CURSOR_COLORS[colorIndex++ % CURSOR_COLORS.length];
+}
+
+/**
+ * Create a Realtime Presence channel for a board.
+ * Presence is used for online list + edit locks.
+ * Cursor movement is sent via broadcast for lower latency.
+ */
+export function createPresenceChannel(
   boardId: string,
   userId: string,
   displayName: string,
-  cursorColor: string
+  cursorColor: string,
+  onSync: (state: Record<string, PresenceState[]>) => void,
+  onCursor?: (userId: string, x: number, y: number) => void,
+  onObjectDrag?: (
+    userId: string,
+    objectId: string,
+    position: { x: number; y: number },
+    parentFrameId?: string | null,
+    ended?: boolean,
+    width?: number,
+    height?: number
+  ) => void
 ) {
-  const presenceRef = ref(db, `presence/${boardId}/${userId}`);
-  const presence: UserPresence = {
+  const channel = supabase.channel(`board-presence:${boardId}`, {
+    config: { presence: { key: userId } },
+  });
+
+  // Track WebSocket readiness — only send broadcasts when connected.
+  // Prevents costly REST fallback that tanks FPS.
+  let channelReady = false;
+
+  const localPresence: PresenceState = {
     displayName,
     cursorColor,
     cursor: null,
-    online: true,
-    lastSeen: Date.now(),
     editingObjectId: null,
   };
 
-  set(presenceRef, presence);
+  const trackPresence = async () => {
+    try {
+      await channel.track(localPresence);
+    } catch {
+      // Best effort; channel may be reconnecting.
+    }
+  };
 
-  // Register onDisconnect handlers
-  const disconnectRef = onDisconnect(presenceRef);
-  disconnectRef.update({
-    online: false,
-    cursor: null,
-    editingObjectId: null,
-    lastSeen: serverTimestamp(),
+  // Fire-and-forget broadcast — only when WebSocket is ready.
+  // Cursors and drag previews are ephemeral; safe to drop when disconnected.
+  const broadcastIfReady = (event: string, payload: Record<string, unknown>) => {
+    if (!channelReady) return;
+    channel.send({ type: "broadcast", event, payload }).catch(() => {});
+  };
+
+  // Listen for presence sync
+  channel.on("presence", { event: "sync" }, () => {
+    const state = channel.presenceState<PresenceState>();
+    onSync(state);
   });
 
-  return presenceRef;
-}
-
-export function updateCursorPosition(
-  boardId: string,
-  userId: string,
-  cursor: CursorPosition
-) {
-  const cursorRef = ref(db, `presence/${boardId}/${userId}/cursor`);
-  return set(cursorRef, cursor);
-}
-
-export function setEditingObject(
-  boardId: string,
-  userId: string,
-  objectId: string | null
-) {
-  const editRef = ref(db, `presence/${boardId}/${userId}/editingObjectId`);
-  set(editRef, objectId);
-  // Clear draft text when done editing
-  if (objectId === null) {
-    const draftRef = ref(db, `presence/${boardId}/${userId}/draftText`);
-    set(draftRef, null);
-  }
-}
-
-export function setDraftText(
-  boardId: string,
-  userId: string,
-  text: string
-) {
-  const draftRef = ref(db, `presence/${boardId}/${userId}/draftText`);
-  return set(draftRef, text);
-}
-
-export function updateLastSeen(boardId: string, userId: string) {
-  const lastSeenRef = ref(db, `presence/${boardId}/${userId}/lastSeen`);
-  return set(lastSeenRef, serverTimestamp());
-}
-
-export function setOffline(boardId: string, userId: string) {
-  const presenceRef = ref(db, `presence/${boardId}/${userId}`);
-  return update(presenceRef, {
-    online: false,
-    cursor: null,
-    editingObjectId: null,
-  });
-}
-
-export function subscribeToPresence(
-  boardId: string,
-  callback: (users: Record<string, UserPresence>) => void
-) {
-  const presenceRef = ref(db, `presence/${boardId}`);
-
-  const unsub = onValue(presenceRef, (snapshot) => {
-    const val = snapshot.val() as Record<string, UserPresence> | null;
-    callback(val || {});
+  // Low-latency cursor updates via broadcast
+  channel.on("broadcast", { event: "cursor" }, (message) => {
+    const payload = message.payload as { userId?: string; x?: number; y?: number };
+    if (!payload?.userId || payload.userId === userId) return;
+    if (typeof payload.x !== "number" || typeof payload.y !== "number") return;
+    onCursor?.(payload.userId, payload.x, payload.y);
   });
 
-  return () => {
-    off(presenceRef);
-    void unsub;
+  // Low-latency object drag previews for collaborators
+  channel.on("broadcast", { event: "object_drag" }, (message) => {
+    const payload = message.payload as {
+      userId?: string;
+      objectId?: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      parentFrameId?: string | null;
+    };
+    if (!payload?.userId || payload.userId === userId) return;
+    if (!payload.objectId || typeof payload.x !== "number" || typeof payload.y !== "number") return;
+    onObjectDrag?.(
+      payload.userId,
+      payload.objectId,
+      { x: payload.x, y: payload.y },
+      payload.parentFrameId,
+      false,
+      typeof payload.width === "number" ? payload.width : undefined,
+      typeof payload.height === "number" ? payload.height : undefined
+    );
+  });
+
+  channel.on("broadcast", { event: "object_drag_end" }, (message) => {
+    const payload = message.payload as { userId?: string; objectId?: string };
+    if (!payload?.userId || payload.userId === userId) return;
+    if (!payload.objectId) return;
+    onObjectDrag?.(payload.userId, payload.objectId, { x: 0, y: 0 }, undefined, true);
+  });
+
+  // Subscribe and track initial presence when connected
+  channel.subscribe(async (status) => {
+    channelReady = status === "SUBSCRIBED";
+    if (status === "SUBSCRIBED") {
+      await trackPresence();
+    }
+  });
+
+  return {
+    channel,
+
+    updateCursor: (x: number, y: number) => {
+      localPresence.cursor = { x, y };
+      broadcastIfReady("cursor", { userId, x, y });
+    },
+
+    setEditingObject: (objectId: string | null) => {
+      localPresence.editingObjectId = objectId;
+      if (objectId === null) {
+        localPresence.draftText = undefined;
+      }
+      trackPresence();
+    },
+
+    setDraftText: (objectId: string, text: string) => {
+      localPresence.editingObjectId = objectId;
+      localPresence.draftText = text;
+      trackPresence();
+    },
+
+    updateObjectDrag: (
+      objectId: string,
+      x: number,
+      y: number,
+      parentFrameId?: string | null,
+      width?: number,
+      height?: number
+    ) => {
+      broadcastIfReady("object_drag", { userId, objectId, x, y, parentFrameId, width, height });
+    },
+
+    endObjectDrag: (objectId: string) => {
+      broadcastIfReady("object_drag_end", { userId, objectId });
+    },
+
+    unsubscribe: () => {
+      channel.untrack();
+      supabase.removeChannel(channel);
+    },
   };
 }
 
-export function subscribeToConnectionState(callback: (connected: boolean) => void) {
-  const connectedRef = ref(db, ".info/connected");
-  onValue(connectedRef, (snapshot) => {
-    callback(snapshot.val() === true);
-  });
+/**
+ * Create Realtime channels for board data changes (objects + connectors).
+ *
+ * Uses **separate** channels per table to prevent Supabase Realtime from
+ * cross-firing events when multiple `postgres_changes` handlers share a
+ * single channel (known issue with the JS client multiplexing).
+ */
+export function createBoardRealtimeChannels(
+  boardId: string,
+  onObjectChange: (eventType: "INSERT" | "UPDATE" | "DELETE", row: any) => void,
+  onConnectorChange: (eventType: "INSERT" | "UPDATE" | "DELETE", row: any) => void
+): RealtimeChannel[] {
+  const objectsChannel = supabase.channel(`board-objects:${boardId}`);
+  const connectorsChannel = supabase.channel(`board-connectors:${boardId}`);
+
+  objectsChannel
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "objects", filter: `board_id=eq.${boardId}` },
+      (payload) => {
+        onObjectChange(
+          payload.eventType as "INSERT" | "UPDATE" | "DELETE",
+          payload.eventType === "DELETE" ? payload.old : payload.new
+        );
+      }
+    )
+    .subscribe();
+
+  connectorsChannel
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "connectors", filter: `board_id=eq.${boardId}` },
+      (payload) => {
+        onConnectorChange(
+          payload.eventType as "INSERT" | "UPDATE" | "DELETE",
+          payload.eventType === "DELETE" ? payload.old : payload.new
+        );
+      }
+    )
+    .subscribe();
+
+  return [objectsChannel, connectorsChannel];
 }

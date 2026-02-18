@@ -1,4 +1,4 @@
-import { getAdminDb } from "./firebaseAdmin";
+import { getSupabaseAdmin } from "./supabaseAdmin";
 
 export interface Viewport {
   minX: number;
@@ -33,23 +33,31 @@ export async function getBoardStateForAI(
   viewport: Viewport,
   selectedIds: string[]
 ): Promise<CompactObject[]> {
-  const db = getAdminDb();
-  const snap = await db.ref(`boards/${boardId}/objects`).once("value");
-  const raw = snap.val();
-  if (!raw) return [];
+  const supabase = getSupabaseAdmin();
 
-  const allObjects: CompactObject[] = Object.values(raw).map((obj: any) => ({
-    id: obj.id,
-    type: obj.type,
-    x: obj.x ?? 0,
-    y: obj.y ?? 0,
-    width: obj.width ?? 0,
-    height: obj.height ?? 0,
-    color: obj.color ?? "",
-    text: obj.text,
-    rotation: obj.rotation ?? 0,
-    zIndex: obj.zIndex ?? 0,
-    parentFrameId: obj.parentFrameId ?? null,
+  const { data: rows, error } = await supabase
+    .from("objects")
+    .select(
+      "id, type, x, y, width, height, color, text, rotation, z_index, parent_frame_id"
+    )
+    .eq("board_id", boardId)
+    .order("z_index", { ascending: false })
+    .limit(300);
+
+  if (error || !rows) return [];
+
+  const allObjects: CompactObject[] = rows.map((r: any) => ({
+    id: r.id,
+    type: r.type,
+    x: r.x ?? 0,
+    y: r.y ?? 0,
+    width: r.width ?? 0,
+    height: r.height ?? 0,
+    color: r.color ?? "",
+    text: r.text ?? "",
+    rotation: r.rotation ?? 0,
+    zIndex: r.z_index ?? 0,
+    parentFrameId: r.parent_frame_id ?? null,
   }));
 
   // Expand viewport by 400px margin
@@ -98,20 +106,24 @@ export async function getBoardStateForAI(
 }
 
 /**
- * Load connectors for the board (for AI context when needed).
+ * Load connectors for the board.
  */
 export async function getConnectorsForAI(
   boardId: string
 ): Promise<Array<{ id: string; fromId: string; toId: string; style: string }>> {
-  const db = getAdminDb();
-  const snap = await db.ref(`boards/${boardId}/connectors`).once("value");
-  const raw = snap.val();
-  if (!raw) return [];
+  const supabase = getSupabaseAdmin();
 
-  return Object.values(raw).map((c: any) => ({
-    id: c.id,
-    fromId: c.fromId,
-    toId: c.toId,
-    style: c.style,
+  const { data: rows, error } = await supabase
+    .from("connectors")
+    .select("id, from_id, to_id, style")
+    .eq("board_id", boardId);
+
+  if (error || !rows) return [];
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    fromId: r.from_id,
+    toId: r.to_id,
+    style: r.style,
   }));
 }

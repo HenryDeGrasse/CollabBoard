@@ -1,8 +1,12 @@
-import { useMemo, useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import { Group, Rect, Circle, Line, Text } from "react-konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
 import { calculateFontSize } from "../../utils/text-fit";
+import {
+  getAutoContrastingTextColor,
+  resolveObjectTextSize,
+} from "../../utils/text-style";
 
 interface ShapeProps {
   object: BoardObject;
@@ -19,7 +23,7 @@ interface ShapeProps {
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
 }
 
-export function Shape({
+export const Shape = React.memo(function Shape({
   object,
   isSelected,
   isEditing,
@@ -46,8 +50,12 @@ export function Shape({
   const PADDING = 10;
   const isCircle = object.type === "circle";
 
-  // Auto-fit font size for text inside shapes
+  // Auto-fit text size unless user explicitly overrides it.
   const fontSize = useMemo(() => {
+    if (typeof object.textSize === "number") {
+      return resolveObjectTextSize(object);
+    }
+
     if (!object.text) return 14;
     if (isCircle) {
       const r = Math.min(object.width, object.height) / 2;
@@ -55,18 +63,19 @@ export function Shape({
       return calculateFontSize(object.text, side, side, 8, 9, 28);
     }
     return calculateFontSize(object.text, object.width, object.height, PADDING, 9, 28);
-  }, [object.text, object.width, object.height, isCircle]);
+  }, [
+    object.type,
+    object.text,
+    object.width,
+    object.height,
+    object.textSize,
+    isCircle,
+  ]);
 
-  // Determine if text should be light or dark based on background
   const textColor = useMemo(() => {
-    const hex = object.color.replace("#", "");
-    if (hex.length < 6) return "#1F2937";
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? "#1F2937" : "#FFFFFF";
-  }, [object.color]);
+    if (object.textColor) return object.textColor;
+    return getAutoContrastingTextColor(object.color);
+  }, [object.color, object.textColor]);
 
   const renderShape = () => {
     switch (object.type) {
@@ -215,4 +224,4 @@ export function Shape({
       )}
     </Group>
   );
-}
+});

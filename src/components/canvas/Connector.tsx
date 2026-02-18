@@ -1,13 +1,14 @@
+import React from "react";
 import { Group, Arrow, Line, Rect } from "react-konva";
 import type { Connector as ConnectorType } from "../../types/board";
 import type { BoardObject } from "../../types/board";
 
 interface ConnectorProps {
   connector: ConnectorType;
-  objects: Record<string, BoardObject>;
+  fromObj: BoardObject;
+  toObj: BoardObject;
   isSelected: boolean;
   onSelect: (id: string) => void;
-  positionOverrides?: Record<string, { x: number; y: number }>;
 }
 
 // Calculate the intersection point of a line from center to target with the object's edge
@@ -52,29 +53,18 @@ function getEdgePoint(
   };
 }
 
-export function ConnectorLine({ connector, objects, isSelected, onSelect, positionOverrides }: ConnectorProps) {
-  const fromObj = objects[connector.fromId];
-  const toObj = objects[connector.toId];
-
-  if (!fromObj || !toObj) return null;
-
-  // Use live drag positions if available, otherwise fall back to stored positions
-  const fromPos = positionOverrides?.[connector.fromId];
-  const toPos = positionOverrides?.[connector.toId];
-  const effectiveFrom = fromPos ? { ...fromObj, x: fromPos.x, y: fromPos.y } : fromObj;
-  const effectiveTo = toPos ? { ...toObj, x: toPos.x, y: toPos.y } : toObj;
-
+export const ConnectorLine = React.memo(function ConnectorLine({ connector, fromObj, toObj, isSelected, onSelect }: ConnectorProps) {
   const fromCenter = {
-    x: effectiveFrom.x + effectiveFrom.width / 2,
-    y: effectiveFrom.y + effectiveFrom.height / 2,
+    x: fromObj.x + fromObj.width / 2,
+    y: fromObj.y + fromObj.height / 2,
   };
   const toCenter = {
-    x: effectiveTo.x + effectiveTo.width / 2,
-    y: effectiveTo.y + effectiveTo.height / 2,
+    x: toObj.x + toObj.width / 2,
+    y: toObj.y + toObj.height / 2,
   };
 
-  const fromEdge = getEdgePoint(effectiveFrom, toCenter.x, toCenter.y);
-  const toEdge = getEdgePoint(effectiveTo, fromCenter.x, fromCenter.y);
+  const fromEdge = getEdgePoint(fromObj, toCenter.x, toCenter.y);
+  const toEdge = getEdgePoint(toObj, fromCenter.x, fromCenter.y);
 
   const points = [fromEdge.x, fromEdge.y, toEdge.x, toEdge.y];
 
@@ -146,4 +136,4 @@ export function ConnectorLine({ connector, objects, isSelected, onSelect, positi
       )}
     </Group>
   );
-}
+});

@@ -7,6 +7,8 @@ import {
   constrainObjectOutsideFrames,
   getRectOverlapRatio,
   shouldPopOutFromFrame,
+  constrainChildrenInFrame,
+  minFrameSizeForChildren,
 } from "../../utils/frame-containment";
 import type { BoardObject } from "../../types/board";
 
@@ -149,5 +151,138 @@ describe("constrainObjectOutsideFrames", () => {
 
     // No push if this frame is currently allowed.
     expect(constrained).toEqual({ x: 120, y: 140 });
+  });
+});
+
+describe("constrainChildrenInFrame", () => {
+  const TITLE = 32;
+  const PAD = 6;
+
+  it("returns empty when all children are inside", () => {
+    const frame = { x: 0, y: 0, width: 400, height: 400 };
+    const children = [
+      { id: "a", x: 20, y: 50, width: 100, height: 100 },
+    ];
+    expect(constrainChildrenInFrame(frame, children, TITLE, PAD)).toEqual({});
+  });
+
+  it("pushes child inward when left edge contracts past it", () => {
+    // Frame shrunk from left — new x is 100, child was at x=50
+    const frame = { x: 100, y: 0, width: 300, height: 400 };
+    const children = [
+      { id: "a", x: 50, y: 50, width: 80, height: 80 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(result.a).toBeDefined();
+    expect(result.a.x).toBe(100 + PAD); // pushed to content left
+    expect(result.a.y).toBe(50); // y unchanged
+  });
+
+  it("pushes child inward when right edge contracts past it", () => {
+    const frame = { x: 0, y: 0, width: 200, height: 400 };
+    // Child right edge is at 250, frame right is 200
+    const children = [
+      { id: "a", x: 150, y: 50, width: 100, height: 80 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(result.a).toBeDefined();
+    expect(result.a.x).toBe(200 - PAD - 100); // pushed to content right - child width
+  });
+
+  it("pushes child inward when top edge contracts past it", () => {
+    const frame = { x: 0, y: 100, width: 400, height: 300 };
+    // Child y=110 is above content top (frame.y + title + pad = 100+32+6 = 138)
+    const children = [
+      { id: "a", x: 50, y: 110, width: 80, height: 80 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(result.a).toBeDefined();
+    expect(result.a.y).toBe(100 + TITLE + PAD);
+  });
+
+  it("pushes child inward when bottom edge contracts past it", () => {
+    const frame = { x: 0, y: 0, width: 400, height: 200 };
+    // Child bottom edge is at 270, frame bottom - pad = 194
+    const children = [
+      { id: "a", x: 50, y: 190, width: 80, height: 80 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(result.a).toBeDefined();
+    expect(result.a.y).toBe(200 - PAD - 80);
+  });
+
+  it("pins child to top-left if larger than content area", () => {
+    // Frame is 150x120, content area is only 150-12=138 wide, 120-32-12=76 tall
+    const frame = { x: 0, y: 0, width: 150, height: 120 };
+    const children = [
+      { id: "big", x: -10, y: -10, width: 200, height: 200 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(result.big).toBeDefined();
+    expect(result.big.x).toBe(PAD); // pinned to content left
+    expect(result.big.y).toBe(TITLE + PAD); // pinned to content top
+  });
+
+  it("handles simultaneous push on two edges (corner resize)", () => {
+    const frame = { x: 50, y: 50, width: 200, height: 200 };
+    // Child in top-left corner, partially outside both left and top
+    const children = [
+      { id: "a", x: 40, y: 60, width: 80, height: 80 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(result.a).toBeDefined();
+    expect(result.a.x).toBe(50 + PAD); // pushed from left
+    expect(result.a.y).toBe(50 + TITLE + PAD); // pushed from top
+  });
+
+  it("does not move children already safely inside", () => {
+    const frame = { x: 0, y: 0, width: 400, height: 400 };
+    const children = [
+      { id: "a", x: 100, y: 100, width: 80, height: 80 },
+      { id: "b", x: 200, y: 200, width: 60, height: 60 },
+    ];
+    const result = constrainChildrenInFrame(frame, children, TITLE, PAD);
+    expect(Object.keys(result)).toHaveLength(0);
+  });
+});
+
+describe("minFrameSizeForChildren", () => {
+  const TITLE = 32;
+  const PAD = 6;
+
+  it("returns base minimums when there are no children", () => {
+    const result = minFrameSizeForChildren([], TITLE, PAD, 200, 150);
+    expect(result).toEqual({ minWidth: 200, minHeight: 150 });
+  });
+
+  it("returns base minimums when children are smaller", () => {
+    const children = [{ width: 80, height: 60 }];
+    const result = minFrameSizeForChildren(children, TITLE, PAD, 200, 150);
+    // 80 + 12 = 92 < 200, 60 + 32 + 12 = 104 < 150
+    expect(result).toEqual({ minWidth: 200, minHeight: 150 });
+  });
+
+  it("increases minimum when a child is wider than base min", () => {
+    const children = [{ width: 250, height: 60 }];
+    const result = minFrameSizeForChildren(children, TITLE, PAD, 200, 150);
+    expect(result.minWidth).toBe(250 + PAD * 2); // 262
+    expect(result.minHeight).toBe(150); // base still larger
+  });
+
+  it("increases minimum when a child is taller than base min", () => {
+    const children = [{ width: 80, height: 200 }];
+    const result = minFrameSizeForChildren(children, TITLE, PAD, 200, 150);
+    expect(result.minWidth).toBe(200); // base still larger
+    expect(result.minHeight).toBe(200 + TITLE + PAD * 2); // 244
+  });
+
+  it("picks the largest child for each axis", () => {
+    const children = [
+      { width: 300, height: 50 },
+      { width: 100, height: 250 },
+    ];
+    const result = minFrameSizeForChildren(children, TITLE, PAD, 200, 150);
+    expect(result.minWidth).toBe(300 + PAD * 2); // 312
+    expect(result.minHeight).toBe(250 + TITLE + PAD * 2); // 294
   });
 });

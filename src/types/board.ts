@@ -9,6 +9,8 @@ export interface BoardObject {
   height: number;
   color: string;
   text?: string;
+  textSize?: number | null;
+  textColor?: string | null;
   rotation: number;
   zIndex: number;
   createdBy: string;
@@ -29,11 +31,4 @@ export interface Connector {
   points?: number[];
 }
 
-export interface BoardMetadata {
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-  ownerId: string;
-  ownerName: string;
-  deleted?: boolean;
-}
+// BoardMetadata is now defined in services/board.ts

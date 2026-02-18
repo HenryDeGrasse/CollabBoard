@@ -80,9 +80,51 @@ All bug fixes and new features MUST follow TDD:
 - Only undoes YOUR actions (multiplayer-safe, like Google Docs/Figma)
 - Tracks: create, delete, move, update, batch actions
 
+## Dev Environment Management
+
+### After Every Change
+After completing code changes, **always restart the dev environment** so the user can test manually:
+
+1. **Rebuild**: `npm run build` to verify TypeScript + Vite compilation
+2. **Run tests**: `npm test` to verify all tests pass
+3. **Restart API dev server**: The API server runs at `localhost:3000` via `npx tsx api/_dev-server.mjs` in a tmux session (`vercel-api`). After changing any `api/` files, restart it:
+   ```bash
+   SOCKET="${TMPDIR:-/tmp}/claude-tmux-sockets/claude.sock"
+   tmux -S "$SOCKET" send-keys -t vercel-api:1.1 C-c
+   sleep 1
+   tmux -S "$SOCKET" send-keys -t vercel-api:1.1 -- 'cd /Users/henrydegrasse/Development/GauntletAi/CollabBoard && npx tsx api/_dev-server.mjs' Enter
+   ```
+4. **Vite dev server** runs on `localhost:5173` in tmux session `collabboard-dev` — usually does NOT need restart (HMR handles frontend changes)
+
+### Long-Running Processes
+**NEVER run long-running processes directly in bash** — they block the agent. Always delegate to tmux:
+- Use the tmux skill for starting/restarting servers
+- Socket: `${TMPDIR:-/tmp}/claude-tmux-sockets/claude.sock`
+- Sessions: `collabboard-dev` (vite), `vercel-api` (API server)
+- Windows are numbered starting at `1` (use `:1.1` not `:0.0`)
+
 ## Architecture Decisions
 
 - **Frame tool in toolbar** — F shortcut, spatial containment, no nesting
 - **Arrow tool in toolbar** — more useful for MVP demos than frame tool
 - **AI agent deployment deferred to last** — requires Firebase Blaze plan + OpenAI API key
 - **Test files excluded from production build** — `tsconfig.app.json` excludes `src/test`
+
+## AI Agent Architecture
+
+### Tool Pipeline
+`src/hooks/useAIAgent.ts` → `src/services/ai-agent.ts` → `api/ai-agent.ts` → `api/_lib/ai/agent.ts` (orchestrator) → `api/_lib/ai/tools.ts` (tool implementations)
+
+### Key Files
+- **Tool schemas**: `api/_lib/ai/toolSchemas.ts` — OpenAI function calling definitions
+- **Tool implementations**: `api/_lib/ai/tools.ts` — server-side execution
+- **Orchestrator**: `api/_lib/ai/agent.ts` — system prompt, dispatch, guardrails
+- **Grid layout**: `api/_lib/framePlacement.ts` — `arrangeChildrenInGrid()`, `placeObjectInFrame()`
+- **Free placement**: `api/_lib/placement.ts` — `resolvePlacement()` spiral overlap avoidance
+- **Board state**: `api/_lib/boardState.ts` — `getBoardStateForAI()` loads up to 200 objects
+
+### Bulk Tools (prefer these for 3+ objects)
+- **`bulkCreate`** — creates any mix of stickies, shapes, frames in one call. Color can be hex, "random", or omitted.
+- **`bulkDelete`** — mode "all" (wipe board), "by_type" (delete all stickies/shapes/frames), or "by_ids" (specific objects)
+- **`arrangeObjects`** — arrange objects into grid/row/column layout
+- **`rearrangeFrame`** — tidy frame children into grid

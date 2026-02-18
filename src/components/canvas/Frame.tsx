@@ -1,7 +1,11 @@
-import { useMemo, useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import { Group, Rect, Text, Line } from "react-konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
+import {
+  getFrameHeaderHeight,
+  getFrameTitleFontSize,
+} from "../../utils/text-style";
 
 interface FrameProps {
   object: BoardObject;
@@ -14,12 +18,11 @@ interface FrameProps {
   onDragEnd: (id: string, x: number, y: number) => void;
 }
 
-const TITLE_HEIGHT = 32;
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
 const CORNER_RADIUS = 8;
 
-export function Frame({
+export const Frame = React.memo(function Frame({
   object,
   isSelected,
   isEditing,
@@ -34,10 +37,15 @@ export function Frame({
   const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
   const borderWidth = isSelected ? 2.5 : 2;
 
-  // Title font size
-  const titleFontSize = useMemo(() => {
-    return Math.min(14, Math.max(10, object.width / 20));
-  }, [object.width]);
+  const titleFontSize = useMemo(
+    () => getFrameTitleFontSize(object),
+    [object.width, object.textSize]
+  );
+  const titleHeight = useMemo(
+    () => getFrameHeaderHeight(object),
+    [object.width, object.textSize]
+  );
+  const titleColor = object.textColor || "#475569";
 
   return (
     <Group
@@ -71,17 +79,15 @@ export function Frame({
         x={0}
         y={0}
         width={object.width}
-        height={TITLE_HEIGHT}
+        height={titleHeight}
         fill="rgba(241, 245, 249, 0.95)"
         cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
         listening={false}
       />
 
-
-
       {/* Title bar bottom border */}
       <Line
-        points={[0, TITLE_HEIGHT, object.width, TITLE_HEIGHT]}
+        points={[0, titleHeight, object.width, titleHeight]}
         stroke={borderColor}
         strokeWidth={1}
         opacity={0.5}
@@ -91,7 +97,7 @@ export function Frame({
       {/* Frame icon */}
       <Text
         x={10}
-        y={TITLE_HEIGHT / 2 - 6}
+        y={titleHeight / 2 - 6}
         text="⊞"
         fontSize={12}
         fill="#94A3B8"
@@ -102,13 +108,13 @@ export function Frame({
       {!isEditing && (
         <Text
           x={26}
-          y={TITLE_HEIGHT / 2 - titleFontSize / 2}
+          y={titleHeight / 2 - titleFontSize / 2}
           width={object.width - 80}
           text={object.text || "Frame"}
           fontSize={titleFontSize}
           fontFamily="Inter, system-ui, sans-serif"
           fontStyle="bold"
-          fill="#475569"
+          fill={titleColor}
           ellipsis
           wrap="none"
           listening={false}
@@ -120,7 +126,7 @@ export function Frame({
         <>
           <Rect
             x={object.width - 40}
-            y={TITLE_HEIGHT / 2 - 9}
+            y={titleHeight / 2 - 9}
             width={30}
             height={18}
             fill="#E2E8F0"
@@ -129,7 +135,7 @@ export function Frame({
           />
           <Text
             x={object.width - 40}
-            y={TITLE_HEIGHT / 2 - 6}
+            y={titleHeight / 2 - 6}
             width={30}
             text={String(containedCount)}
             fontSize={10}
@@ -160,11 +166,9 @@ export function Frame({
         cornerRadius={1}
         listening={false}
       />
-
-
     </Group>
   );
-}
+});
 
 // ─── Frame Overlay (renders on top of all objects) ─────────────
 
@@ -178,14 +182,47 @@ interface FrameOverlayProps {
   onDoubleClick: (id: string) => void;
   onDragStart: (id: string) => void;
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
+  onResizePreview?: (id: string, updates: Partial<BoardObject>) => void;
+  onResizePreviewEnd?: (id: string) => void;
+  onFrameResizeStart?: (id: string) => void;
+  minFrameWidth?: number;
+  minFrameHeight?: number;
 }
 
-export function FrameOverlay({ object, isSelected, isEditing, containedCount, isSelectMode, onSelect, onDoubleClick, onDragStart, onUpdateObject }: FrameOverlayProps) {
-  const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+export const FrameOverlay = React.memo(function FrameOverlay({
+  object,
+  isSelected,
+  isEditing,
+  containedCount,
+  isSelectMode,
+  onSelect,
+  onDoubleClick,
+  onDragStart,
+  onUpdateObject,
+  onResizePreview,
+  onResizePreviewEnd,
+  onFrameResizeStart,
+  minFrameWidth,
+  minFrameHeight,
+}: FrameOverlayProps) {
+  const originalRef = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  const titleFontSize = getFrameTitleFontSize(object);
+  const titleHeight = getFrameHeaderHeight(object);
+  const titleColor = object.textColor || "#475569";
+
+  const effectiveMinWidth = minFrameWidth ?? MIN_WIDTH;
+  const effectiveMinHeight = Math.max(
+    minFrameHeight ?? MIN_HEIGHT,
+    titleHeight + 40
+  );
   const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
   const borderWidth = isSelected ? 2.5 : 2;
-
-  const titleFontSize = Math.min(14, Math.max(10, object.width / 20));
 
   return (
     <Group x={object.x} y={object.y} listening={true}>
@@ -206,7 +243,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
         x={0}
         y={0}
         width={object.width}
-        height={TITLE_HEIGHT}
+        height={titleHeight}
         fill="rgba(241, 245, 249, 0.98)"
         cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
         listening={false}
@@ -214,7 +251,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
 
       {/* Header bottom border */}
       <Line
-        points={[0, TITLE_HEIGHT, object.width, TITLE_HEIGHT]}
+        points={[0, titleHeight, object.width, titleHeight]}
         stroke={borderColor}
         strokeWidth={1}
         opacity={0.5}
@@ -224,7 +261,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
       {/* Frame icon */}
       <Text
         x={10}
-        y={TITLE_HEIGHT / 2 - 6}
+        y={titleHeight / 2 - 6}
         text="⊞"
         fontSize={12}
         fill="#94A3B8"
@@ -235,13 +272,13 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
       {!isEditing && (
         <Text
           x={26}
-          y={TITLE_HEIGHT / 2 - titleFontSize / 2}
+          y={titleHeight / 2 - titleFontSize / 2}
           width={object.width - 80}
           text={object.text || "Frame"}
           fontSize={titleFontSize}
           fontFamily="Inter, system-ui, sans-serif"
           fontStyle="bold"
-          fill="#475569"
+          fill={titleColor}
           ellipsis
           wrap="none"
           listening={false}
@@ -253,7 +290,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
         <>
           <Rect
             x={object.width - 40}
-            y={TITLE_HEIGHT / 2 - 9}
+            y={titleHeight / 2 - 9}
             width={30}
             height={18}
             fill="#E2E8F0"
@@ -262,7 +299,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
           />
           <Text
             x={object.width - 40}
-            y={TITLE_HEIGHT / 2 - 6}
+            y={titleHeight / 2 - 6}
             width={30}
             text={String(containedCount)}
             fontSize={10}
@@ -279,7 +316,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
         x={0}
         y={0}
         width={object.width}
-        height={TITLE_HEIGHT}
+        height={titleHeight}
         fill="rgba(0,0,0,0)"
         listening={isSelectMode}
         onClick={(e) => {
@@ -318,6 +355,7 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
               width: object.width,
               height: object.height,
             };
+            onFrameResizeStart?.(object.id);
           }}
           onResizeMove={(handle: ResizeHandle, px: number, py: number) => {
             if (!originalRef.current) return;
@@ -326,17 +364,20 @@ export function FrameOverlay({ object, isSelected, isEditing, containedCount, is
               handle,
               px,
               py,
-              MIN_WIDTH,
-              MIN_HEIGHT,
+              effectiveMinWidth,
+              effectiveMinHeight,
               false
             );
             onUpdateObject(object.id, result);
+            onResizePreview?.(object.id, result);
           }}
           onResizeEnd={() => {
             originalRef.current = null;
+            onResizePreviewEnd?.(object.id);
           }}
         />
       )}
     </Group>
   );
-}
+});
+

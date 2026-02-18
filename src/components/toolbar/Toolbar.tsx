@@ -32,6 +32,8 @@ const tools: { id: ToolType; label: string; icon: React.ReactNode; shortcut: str
   { id: "frame", label: "Frame", icon: <Frame size={18} />, shortcut: "F" },
 ];
 
+
+
 function ColorDropdown({
   activeColor,
   onColorChange,
@@ -118,15 +120,21 @@ export function Toolbar({
         <button
           key={tool.id}
           onClick={() => onToolChange(tool.id)}
-          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-sm font-medium transition ${
+          className={`group h-10 flex items-center rounded-lg transition-colors duration-150 ${
             activeTool === tool.id
               ? "bg-indigo-50 text-indigo-600"
               : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
           }`}
           title={`${tool.label} (${tool.shortcut})`}
+          aria-label={`${tool.label} (${tool.shortcut})`}
         >
-          {tool.icon}
-          <span className="hidden lg:inline text-xs">{tool.label}</span>
+          <span className="w-10 h-10 flex items-center justify-center shrink-0">
+            {tool.icon}
+          </span>
+          {/* Label reveals to exactly its own text width via max-width transition */}
+          <span className="text-xs whitespace-nowrap overflow-hidden max-w-0 group-hover:max-w-[160px] transition-[max-width,padding-right] duration-300 ease-in-out pr-0 group-hover:pr-3">
+            {tool.label}
+          </span>
         </button>
       ))}
 
@@ -143,7 +151,7 @@ export function Toolbar({
         </>
       )}
 
-      {/* Color change for selected objects */}
+      {/* Style controls for selected objects */}
       {selectedCount > 0 && activeTool === "select" && (
         <>
           <div className="w-px h-6 bg-gray-200 mx-1" />
@@ -151,8 +159,9 @@ export function Toolbar({
             activeColor={selectedColor}
             onColorChange={onChangeSelectedColor}
             colors={allColors}
-            label="Change color"
+            label="Fill color"
           />
+
           <span className="text-[10px] text-gray-400 px-1">{selectedCount} selected</span>
         </>
       )}

@@ -1,95 +1,88 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import {
-  onAuthStateChanged,
-  signInAnonymously,
-  signInWithPopup,
-  GoogleAuthProvider,
-  updateProfile,
-  type User,
-} from "firebase/auth";
-import { ref, set } from "firebase/database";
-import { auth, db } from "../../services/firebase";
+import type { User, Session } from "@supabase/supabase-js";
+import { supabase } from "../../services/supabase";
 
 interface AuthContextType {
   user: User | null;
-  loading: boolean;
+  session: Session | null;
   displayName: string;
-  signInAsGuest: (name: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  loading: boolean;
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  session: null,
+  displayName: "",
+  loading: true,
+  signOut: async () => {},
+});
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-
-      if (firebaseUser) {
-        const name = firebaseUser.displayName || "Anonymous";
-        setDisplayName(name);
-
-        // Keep user profile mirrored in RTDB
-        await set(ref(db, `users/${firebaseUser.uid}`), {
-          displayName: name,
-          email: firebaseUser.email,
-          photoURL: firebaseUser.photoURL,
-          authMethod: firebaseUser.isAnonymous ? "anonymous" : "google",
-        });
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      if (s?.user) {
+        loadDisplayName(s.user);
       }
-
       setLoading(false);
     });
 
-    return unsub;
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      setUser(s?.user ?? null);
+      if (s?.user) {
+        loadDisplayName(s.user);
+      } else {
+        setDisplayName("");
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const signInAsGuest = async (name: string) => {
-    const result = await signInAnonymously(auth);
-    await updateProfile(result.user, { displayName: name });
-    await set(ref(db, `users/${result.user.uid}`), {
-      displayName: name,
-      email: null,
-      photoURL: null,
-      authMethod: "anonymous",
-    });
-    setDisplayName(name);
-  };
+  async function loadDisplayName(u: User) {
+    // Try metadata first (set during sign-up)
+    const metaName = u.user_metadata?.display_name || u.user_metadata?.full_name;
+    if (metaName) {
+      setDisplayName(metaName);
+      return;
+    }
 
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  };
+    // Try profiles table
+    const { data } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", u.id)
+      .single();
 
-  const handleSignOut = async () => {
-    await auth.signOut();
-    setUser(null);
-    setDisplayName("");
-  };
+    if (data?.display_name) {
+      setDisplayName(data.display_name);
+    } else {
+      setDisplayName("Anonymous");
+    }
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+  }
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        displayName,
-        signInAsGuest,
-        signInWithGoogle,
-        signOut: handleSignOut,
-      }}
-    >
+    <AuthContext.Provider value={{ user, session, displayName, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }

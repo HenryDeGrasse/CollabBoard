@@ -131,6 +131,78 @@ export function snapToFrame(
   return { x: newX, y: newY };
 }
 
+/**
+ * Push children inward so they stay within a frame's content area during resize.
+ *
+ * The content area is the frame minus the title bar and an inner padding margin.
+ * Only children whose positions actually change are returned.
+ * If a child is larger than the content area on an axis it is pinned to the
+ * top-left edge of that axis (combination of "enforce min size" + graceful fallback).
+ */
+export function constrainChildrenInFrame(
+  frameBounds: { x: number; y: number; width: number; height: number },
+  children: readonly { id: string; x: number; y: number; width: number; height: number }[],
+  titleHeight: number,
+  padding: number
+): Record<string, { x: number; y: number }> {
+  const contentLeft = frameBounds.x + padding;
+  const contentTop = frameBounds.y + titleHeight + padding;
+  const contentRight = frameBounds.x + frameBounds.width - padding;
+  const contentBottom = frameBounds.y + frameBounds.height - padding;
+
+  const updates: Record<string, { x: number; y: number }> = {};
+
+  for (const child of children) {
+    let newX = child.x;
+    let newY = child.y;
+
+    // Push from left edge
+    if (newX < contentLeft) newX = contentLeft;
+    // Push from right edge — but if child is wider than content area, pin to left
+    if (newX + child.width > contentRight) {
+      newX = contentRight - child.width;
+      if (newX < contentLeft) newX = contentLeft;
+    }
+
+    // Push from top edge
+    if (newY < contentTop) newY = contentTop;
+    // Push from bottom edge — but if child is taller than content area, pin to top
+    if (newY + child.height > contentBottom) {
+      newY = contentBottom - child.height;
+      if (newY < contentTop) newY = contentTop;
+    }
+
+    if (newX !== child.x || newY !== child.y) {
+      updates[child.id] = { x: newX, y: newY };
+    }
+  }
+
+  return updates;
+}
+
+/**
+ * Compute the minimum frame dimensions that can still contain a set of children.
+ * Accounts for title bar height and inner padding.
+ */
+export function minFrameSizeForChildren(
+  children: readonly { width: number; height: number }[],
+  titleHeight: number,
+  padding: number,
+  baseMinWidth: number,
+  baseMinHeight: number
+): { minWidth: number; minHeight: number } {
+  let maxChildW = 0;
+  let maxChildH = 0;
+  for (const c of children) {
+    if (c.width > maxChildW) maxChildW = c.width;
+    if (c.height > maxChildH) maxChildH = c.height;
+  }
+  return {
+    minWidth: Math.max(baseMinWidth, maxChildW + padding * 2),
+    minHeight: Math.max(baseMinHeight, maxChildH + titleHeight + padding * 2),
+  };
+}
+
 function intersects(a: RectLike, b: RectLike): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }

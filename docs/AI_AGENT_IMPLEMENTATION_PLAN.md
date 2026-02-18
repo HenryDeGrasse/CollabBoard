@@ -1,370 +1,150 @@
 # AI Agent Implementation Plan (Supabase Edge Functions)
 
-**Status:** Active — Migrating to Supabase  
+**Status:** Active — Implementation  
 **Last Updated:** February 16, 2026  
-**Decision:** Supabase Edge Functions for AI backend. Firebase org policies block service account keys AND Blaze billing. Supabase provides free Edge Functions, unrestricted service role keys, and built-in Realtime.  
-**See also:** `docs/SUPABASE_MIGRATION_PRD.md` for full migration plan.
-
----
-
-## Non-Negotiable Requirements
-
-1. **Do not trust userId from the client.** Derive `uid` from the verified Firebase ID token on the server. Ignore any request `userId`.
-
-2. **Server must enforce board authorization.** Because Vercel uses `firebase-admin` (bypasses RTDB rules), the endpoint must check: the board exists AND the caller is allowed to mutate it (membership model via `userBoards/{uid}/{boardId}`).
-
-3. **Viewport awareness uses bounds, not just center.** Send `{minX, minY, maxX, maxY, centerX, centerY, scale}` in canvas coordinates, based on the stage container size (not `window.innerWidth/Height`).
-
-4. **Don't rely on the LLM to "avoid overlapping" by itself.** Add deterministic placement logic server-side: `resolvePlacement()` helper used inside create tools.
-
-5. **Guardrails are required.** Hard caps: max tool calls (25), max objects created (25), clamp sizes/coords, sanitize text length, timeout OpenAI calls.
-
-6. **Add idempotency.** Include a `commandId` (uuid) from the client so retries don't duplicate templates. Store `aiRuns/{boardId}/{commandId}` with status.
-
-7. **Instrument usage for cost analysis.** Store model + token usage + tool calls count + duration for each AI command at `aiLogs/{boardId}/{runId}`.
+**Backend:** Supabase Edge Functions (Deno runtime)  
+**Observability:** LangFuse for tracing + LangSmith for evaluation  
+**Model:** OpenAI GPT-4o (function calling)
 
 ---
 
 ## Architecture
 
-### Request Flow
-
 ```
-Client:
-  → Gets Firebase ID token (anonymous or Google)
-  → Computes viewport bounds in canvas coordinates + selection info
-  → POSTs to /api/ai-agent with Authorization: Bearer <idToken>
+Client (AICommandInput.tsx)
+  → useAIAgent hook computes viewport + selection
+  → sendAICommand() → POST /functions/v1/ai-agent
+    with Authorization: Bearer <supabase_access_token>
 
-Server (/api/ai-agent.ts):
-  → Verify ID token → uid
-  → Authorize uid on boardId
-  → Check idempotency (aiRuns/{boardId}/{commandId})
-  → Load scoped board state (viewport + selected objects + recent)
-  → Call OpenAI with tool schema
-  → Execute tool calls → writes to RTDB
-  → Log usage to aiLogs/{boardId}/{runId}
-  → Return response: message, affected ids, focus bounds
+Supabase Edge Function (ai-agent/index.ts)
+  → Verify JWT → uid
+  → Authorize uid on boardId (query board_members)
+  → Check idempotency (ai_runs table)
+  → Load board state (objects + connectors in viewport)
+  → Call OpenAI GPT-4o with tool schemas
+    → LangFuse trace wraps the entire call chain
+  → Execute tool calls → Supabase DB writes
+  → Log usage to ai_runs
+  → Return response
 
 Realtime:
-  → All clients see the writes via existing RTDB listeners immediately
+  → All clients see DB writes via existing postgres_changes channels
 ```
 
 ---
 
-## Types
+## Observability Stack
 
-### Client → Server Payload
+### LangFuse (Primary — Tracing + Cost Analysis)
+- **Purpose:** Trace every AI call chain, measure latency per tool, track token usage/cost
+- **Integration:** LangFuse JS SDK in the Edge Function
+- **What we trace:**
+  - Full generation span (model, prompt, completion, tokens, latency)
+  - Each tool execution as a child span
+  - Board state loading as a span
+  - Total request lifecycle
+- **Dashboard:** trace explorer, cost per user/board, latency percentiles
 
-```typescript
-export type Viewport = {
-  minX: number; minY: number; maxX: number; maxY: number;
-  centerX: number; centerY: number;
-  scale: number;
-};
+### LangSmith (Secondary — Evaluation + Debugging)
+- **Purpose:** Log runs for offline evaluation, prompt versioning, regression detection
+- **Integration:** LangSmith tracing via `LANGCHAIN_TRACING_V2=true`
+- **What we log:** Same OpenAI calls, for prompt iteration and A/B testing
 
-export type AICommandRequest = {
-  commandId: string;        // uuid for idempotency
-  boardId: string;
-  command: string;
-  viewport: Viewport;
-  selectedObjectIds: string[];
-  pointer?: { x: number; y: number }; // optional canvas coords of cursor
-};
-```
+### Environment Variables
 
-### Server → Client Response
-
-```typescript
-export type AICommandResponse = {
-  success: boolean;
-  message: string;
-  objectsCreated: string[];
-  objectsUpdated: string[];
-  objectsDeleted: string[];
-  focus?: { minX: number; minY: number; maxX: number; maxY: number };
-  runId: string;
-};
-```
-
-### Viewport Computation (Client)
-
-```typescript
-const stage = stageRef.current;
-const rect = stage.container().getBoundingClientRect();
-const sx = stage.scaleX();
-const sy = stage.scaleY();
-
-const minX = (-stage.x()) / sx;
-const minY = (-stage.y()) / sy;
-const maxX = (-stage.x() + rect.width) / sx;
-const maxY = (-stage.y() + rect.height) / sy;
-
-const viewport: Viewport = {
-  minX, minY, maxX, maxY,
-  centerX: (minX + maxX) / 2,
-  centerY: (minY + maxY) / 2,
-  scale: sx,
-};
-```
+| Variable | Purpose |
+|----------|---------|
+| `OPENAI_API_KEY` | OpenAI API access |
+| `LANGFUSE_SECRET_KEY` | LangFuse server auth |
+| `LANGFUSE_PUBLIC_KEY` | LangFuse project identifier |
+| `LANGFUSE_BASEURL` | LangFuse API endpoint (default: `https://cloud.langfuse.com`) |
+| `LANGSMITH_API_KEY` | LangSmith tracing |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side DB access (bypasses RLS) |
 
 ---
 
-## Server File Structure (Vercel)
+## Non-Negotiable Requirements
 
-```
-api/
-  ai-agent.ts                    # POST handler: verify, authorize, orchestrate, respond
-  _lib/
-    firebaseAdmin.ts             # firebase-admin singleton init
-    auth.ts                      # verifyIdToken → uid
-    boardState.ts                # getBoardStateForAI(boardId, viewport, selectedIds)
-    placement.ts                 # resolvePlacement(desiredX, desiredY, w, h, viewport, objects)
-    ai/
-      agent.ts                   # OpenAI tool loop (orchestration)
-      tools.ts                   # Tool implementations (RTDB writes)
-      toolSchemas.ts             # OpenAI function definitions
-```
-
-### Environment Variables (Vercel)
-
-- `OPENAI_API_KEY`
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_CLIENT_EMAIL`
-- `FIREBASE_PRIVATE_KEY` (replace `\\n` with real newlines in code)
-- `FIREBASE_DATABASE_URL`
-
-### Dependencies (install in root package.json)
-
-- `firebase-admin`
-- `openai`
+1. **Server-side auth only.** Verify Supabase JWT, derive `uid`. Never trust client `userId`.
+2. **Board authorization.** Check `board_members` table before any mutation.
+3. **Viewport-aware placement.** Deterministic `resolvePlacement()` server-side.
+4. **Guardrails.** Max 25 tool calls, max 25 objects, clamp sizes/coords, sanitize text.
+5. **Idempotency.** `commandId` UUID from client prevents duplicate runs.
+6. **Observability.** Every AI call traced in LangFuse with token counts + latency.
 
 ---
 
-## Authentication + Authorization
+## Tool Schema (9 tools)
 
-### Verify Token
-
-```typescript
-import { getAuth } from "firebase-admin/auth";
-const decoded = await getAuth().verifyIdToken(idToken);
-const uid = decoded.uid;
-```
-
-### Board Authorization: `assertCanWriteBoard(uid, boardId)`
-
-1. Check `boards/{boardId}/metadata` exists → 404 if not
-2. Check `userBoards/{uid}/{boardId}` exists → 403 if not (membership required)
-3. Only then proceed with tool execution
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `create_sticky_note` | `text, x, y, color` | Creates sticky note |
+| `create_shape` | `type, x, y, width, height, color` | Creates rectangle/circle |
+| `create_frame` | `title, x, y, width, height` | Creates named frame |
+| `create_connector` | `fromId, toId, style` | Creates arrow/line between objects |
+| `move_object` | `objectId, x, y` | Moves object |
+| `resize_object` | `objectId, width, height` | Resizes object |
+| `update_text` | `objectId, newText` | Updates text |
+| `change_color` | `objectId, color` | Changes fill color |
+| `get_board_state` | *(none)* | Returns current objects for context |
 
 ---
 
-## Board State Context Strategy
-
-### `getBoardStateForAI(boardId, viewport, selectedIds)`
-
-- **Always include** selected objects (by ID)
-- **Include** all objects intersecting viewport expanded by margin (+400px each side)
-- **Optionally include** recently modified (last N = 50–100 by updatedAt)
-- **Include** connectors referencing any included objects
-- **Exclude** presence data (not needed for AI)
-
-Return compact normalized list:
-```json
-[{"id","type","x","y","width","height","color","text","rotation","zIndex","parentFrameId"}]
-```
-
----
-
-## Placement: Make "On Screen" Reliable
-
-### `resolvePlacement(desiredX, desiredY, w, h, viewport, existingObjects)`
-
-1. Start at `(desiredX, desiredY)` — usually viewport center
-2. Spiral/grid search outward in steps (e.g., 40px) within radius (e.g., 1200px)
-3. Choose first non-overlapping rectangle (no intersection with existing objects)
-4. Clamp into reasonable range near viewport
-
-**Used inside create tools** so even if the model picks a bad spot, we correct it. This avoids adding a tool while making placement consistent.
-
----
-
-## Tool Schema (PRD Minimum)
-
-### Required Tools (9)
-
-| Tool | Description |
-|------|-------------|
-| `createStickyNote(text, x, y, color)` | Creates sticky note, returns objectId |
-| `createShape(type, x, y, width, height, color)` | Creates rectangle/circle/line |
-| `createFrame(title, x, y, width, height)` | Creates named frame container |
-| `createConnector(fromId, toId, style)` | Creates arrow/line between objects |
-| `moveObject(objectId, x, y)` | Moves object to new position |
-| `resizeObject(objectId, width, height)` | Resizes object |
-| `updateText(objectId, newText)` | Updates text content |
-| `changeColor(objectId, color)` | Changes fill color |
-| `getBoardState()` | Returns current board objects for context |
-
-### Optional Tools (add after required commands work)
-
-| Tool | Description |
-|------|-------------|
-| `deleteObject(objectId)` | Deletes an object (guarded) |
-| `deleteConnector(connectorId)` | Deletes a connector |
-
----
-
-## OpenAI Orchestration
-
-### Guardrails
+## Guardrails
 
 | Guardrail | Value |
 |-----------|-------|
-| Max iterations | 4–6 |
-| Max total tool calls | 25 |
-| Max objects created per command | 25 |
+| Max iterations | 6 |
+| Max tool calls | 25 |
+| Max objects created | 25 |
 | Min object size | 50×50 |
 | Max object size | 2000×2000 |
 | Max text length | 500 chars |
 | Coordinate clamp | ±50000 |
-| OpenAI timeout | 25 seconds |
-
-### Model Selection
-
-- **Default:** `gpt-4o-mini` (fast, cheap)
-- **Complex templates:** `gpt-4o` when command matches template keywords (SWOT, retro, journey map, kanban, etc.) or requires many steps
-- **Heuristic:** keyword match on command string
-
-### Idempotency
-
-- Save `aiRuns/{boardId}/{commandId}` with `{ status: "started" | "completed", response, startedAt }`
-- If same `commandId` repeats, return prior result instead of re-running
-- Clean up runs older than 1 hour (optional)
-
-### Usage Logging
-
-Save to `aiLogs/{boardId}/{runId}`:
-```json
-{
-  "uid": "...",
-  "model": "gpt-4o-mini",
-  "inputTokens": 1234,
-  "outputTokens": 567,
-  "totalTokens": 1801,
-  "toolCallsCount": 8,
-  "objectsCreated": 4,
-  "objectsUpdated": 0,
-  "durationMs": 2340,
-  "command": "Create a SWOT analysis",
-  "timestamp": 1234567890
-}
-```
+| OpenAI timeout | 30 seconds |
+| Rate limit | 10 commands/user/minute |
 
 ---
 
-## Client UX
+## Implementation Order
 
-### Flow
-
-1. User types command → hits Send (or Enter)
-2. Panel shows "Thinking..." spinner with command echoed
-3. AI executes server-side → Firebase writes happen → objects appear via existing listeners
-4. Panel shows success: message + counts
-5. **Auto-focus result:**
-   - Wait until `objectsCreated` IDs exist in local `objects` state
-   - Compute bounding box of created objects
-   - Smooth-pan stage to center that box (or use `focus` bounds from response)
-   - Select created objects
-
-### Skip
-
-- Streaming per tool call (not needed)
-- Rich conversation history (nice-to-have, not required)
-
----
-
-## Required Commands (6+ from PRD)
-
-### Creation (3)
-
-| Command | Expected Behavior |
-|---------|-------------------|
-| "Add a yellow sticky note that says 'User Research'" | Creates 1 sticky near viewport center |
-| "Create a blue rectangle" | Creates 1 rectangle near viewport center |
-| "Add a frame called 'Sprint Planning'" | Creates 1 frame near viewport center |
-
-### Manipulation (3)
-
-| Command | Expected Behavior |
-|---------|-------------------|
-| "Move all the pink sticky notes to the right side" | getBoardState → filter → moveObject each |
-| "Change the sticky note color to green" | getBoardState → identify → changeColor |
-| "Resize the frame to fit its contents" | getBoardState → calculate bounds → resizeObject |
-
-### Layout (2)
-
-| Command | Expected Behavior |
-|---------|-------------------|
-| "Arrange these sticky notes in a grid" | getBoardState → calculate grid → moveObject each |
-| "Space these elements evenly" | getBoardState → calculate spacing → moveObject each |
-
-### Complex Templates (3)
-
-| Command | Expected Behavior |
-|---------|-------------------|
-| "Create a SWOT analysis template" | 4 frames (quadrant) + 4 labeled stickies |
-| "Build a user journey map with 5 stages" | 5 frames + 5 stickies + 4 connectors |
-| "Set up a retrospective board" | 3 frames + 3 placeholder stickies |
-
----
-
-## Implementation Order (Fastest Path)
-
-| Step | Task | Notes |
-|------|------|-------|
-| **1** | Create `/api/ai-agent.ts`: verify token, authorize, stub response | Endpoint exists and returns 200 |
-| **2** | Wire client `fetch("/api/ai-agent")` + send commandId, viewport, selectedObjectIds | Client can call endpoint |
-| **3** | Port tool implementations to `/api/_lib/ai/tools.ts` (RTDB writes) | Tools write to Firebase |
-| **4** | Implement board state loader (scoped to viewport + selection) | AI gets context |
-| **5** | Implement placement resolver, enforce inside create tools | Objects appear on screen |
-| **6** | Implement OpenAI tool loop (limits, validation, logging) | AI commands execute |
-| **7** | Make 6+ required commands pass + 1 complex template (SWOT or retro) | PRD compliance |
-| **8** | Add client auto-pan/auto-select | UX: user sees results |
-| **9** | Add idempotency + rate limiting | Production safety |
-| **10** | Optional: delete tools, richer UI history | Polish |
+| Step | Task |
+|------|------|
+| 1 | Add env vars (OpenAI, LangFuse, LangSmith, Supabase service role) |
+| 2 | Create Edge Function `ai-agent` with auth + validation |
+| 3 | Implement board state loader (scoped to viewport) |
+| 4 | Implement placement resolver |
+| 5 | Implement tool schemas + tool executor |
+| 6 | Implement OpenAI tool loop with LangFuse tracing |
+| 7 | Wire client → Edge Function URL |
+| 8 | Test 6+ required commands |
+| 9 | Add auto-pan/auto-select on response |
 
 ---
 
 ## System Prompt
 
 ```
-You are an AI assistant that manipulates a collaborative whiteboard. You have tools for creating and manipulating board objects.
+You are an AI assistant for a collaborative whiteboard called CollabBoard.
+You manipulate the board using the provided tools. Always use tools — never respond with text only.
 
-Current board state and the user's viewport are provided as context. Use them to:
-- Understand existing objects when the user references them
-- Place new objects within or near the user's current view
+The user's visible viewport in canvas coordinates:
+  Top-left: ({minX}, {minY}), Bottom-right: ({maxX}, {maxY})
+  Center: ({centerX}, {centerY}), Zoom: {scale}x
+
+{boardStateContext}
+
+{selectedContext}
+
+Guidelines:
+- Place new objects within the user's viewport, near the center
+- Use consistent spacing: 200px between stickies, 280px between frames
 - Avoid overlapping existing objects
+- For templates (SWOT, retro, kanban, journey map), create a well-organized layout
+- Use create_frame for grouping related items
+- Connect related items with create_connector
 
-The user's viewport in canvas coordinates:
-  Top-left: ({minX}, {minY})
-  Bottom-right: ({maxX}, {maxY})
-  Center: ({centerX}, {centerY})
-  Zoom: {scale}x
-
-{selectedObjectIds.length > 0 ? "Selected objects: " + selectedObjectIds.join(", ") : "No objects selected."}
-
-For complex commands (SWOT, retro, journey map), plan tool calls to create a well-organized layout centered near ({centerX}, {centerY}). Use consistent spacing (220px between objects, 300px between frames).
-
-Available colors: yellow (#FBBF24), pink (#F472B6), blue (#3B82F6), green (#22C55E), orange (#F97316), purple (#A855F7), red (#EF4444), gray (#9CA3AF), white (#FFFFFF).
-
-Always respond with tool calls. Do not respond with text-only messages.
+Available colors: yellow (#FBBF24), pink (#F472B6), blue (#60A5FA), green (#34D399),
+orange (#FB923C), purple (#C084FC), red (#F87171), gray (#9CA3AF), white (#F8FAFC).
 ```
-
----
-
-## Environment Setup Checklist
-
-- [ ] `npm install firebase-admin openai` in root
-- [ ] Generate Firebase service account key from Firebase Console
-- [ ] Add to Vercel env vars: `OPENAI_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_DATABASE_URL`
-- [ ] Test endpoint locally with `vercel dev`
-- [ ] Verify token flow works with anonymous + Google auth

@@ -1,20 +1,13 @@
 # Dependencies
 node_modules/
-functions/node_modules/
 
 # Build
 dist/
-functions/lib/
 
 # Environment
 .env
 .env.local
 .env.*.local
-
-# Firebase
-.firebase/
-firebase-debug.log
-firebase-debug.*.log
 
 # IDE
 .vscode/
@@ -39,3 +32,7 @@ npm-debug.log*
 test-results/
 playwright-report/
 blob-report/
+
+# Local dev servers
+api/_dev-server.mjs
+tmp-*.png

@@ -20,14 +20,25 @@ export async function createUserSession(
     timeout: 10_000,
   });
 
-  // Fill in display name and click Continue as Guest
+  // Fill in display name and click Join (guest login)
   await page.fill('input[placeholder="Enter your name"]', displayName);
-  await page.click('button:has-text("Continue as Guest")');
+  await page.click('button:has-text("Join")');
 
-  // Wait for auth to complete — the home page shows "Create New Board"
-  await page.waitForSelector('button:has-text("Create New Board"), canvas', {
-    timeout: 15_000,
-  });
+  // Wait for login page to disappear. If it doesn't, surface auth error text.
+  try {
+    await page.waitForFunction(
+      () => !document.querySelector('input[placeholder="Enter your name"]'),
+      undefined,
+      { timeout: 15_000 }
+    );
+  } catch {
+    const authError = await page
+      .locator("p.text-red-600")
+      .first()
+      .textContent()
+      .catch(() => null);
+    throw new Error(`Guest login did not complete${authError ? `: ${authError}` : ""}`);
+  }
 
   // Navigate to the specific board
   await page.goto(`/board/${boardId}`);

@@ -1,8 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 import { LoginPage } from "./components/auth/LoginPage";
 import { HomePage } from "./pages/HomePage";
-import { BoardPage } from "./pages/BoardPage";
+
+// Lazy-load BoardPage so Konva/react-konva are not downloaded on the home page
+const BoardPage = lazy(() =>
+  import("./pages/BoardPage").then((m) => ({ default: m.BoardPage }))
+);
 
 type Route =
   | { page: "home" }
@@ -45,24 +49,24 @@ function AppContent() {
   }
 
   if (!user) {
-    return (
-      <LoginPage
-        onSuccess={() => {
-          // After login, check if we should go to a board directly
-          const currentRoute = parseRoute();
-          setRoute(currentRoute);
-        }}
-      />
-    );
+    return <LoginPage />;
   }
 
   switch (route.page) {
     case "board":
       return (
-        <BoardPage
-          boardId={route.boardId}
-          onNavigateHome={() => navigateTo({ page: "home" })}
-        />
+        <Suspense
+          fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+              <div className="animate-spin w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full" />
+            </div>
+          }
+        >
+          <BoardPage
+            boardId={route.boardId}
+            onNavigateHome={() => navigateTo({ page: "home" })}
+          />
+        </Suspense>
       );
     case "home":
     default:

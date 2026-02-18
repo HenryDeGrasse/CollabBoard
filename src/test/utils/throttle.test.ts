@@ -70,4 +70,18 @@ describe("throttle utility", () => {
     expect(fn).toHaveBeenCalledTimes(2);
     expect(fn).toHaveBeenLastCalledWith("c");
   });
+
+  it("can cancel a pending trailing call", () => {
+    const fn = vi.fn();
+    const throttled = throttle(fn, 100);
+
+    throttled("a"); // immediate
+    throttled("b"); // trailing pending
+    throttled.cancel();
+
+    vi.advanceTimersByTime(100);
+
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith("a");
+  });
 });

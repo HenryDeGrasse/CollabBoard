@@ -1,71 +1,133 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LoginPage } from "../../components/auth/LoginPage";
 
-const mockSignInAsGuest = vi.fn();
-const mockSignInWithGoogle = vi.fn();
+// Mock supabase
+const mockSignInAnonymously = vi.fn().mockResolvedValue({ error: null });
+const mockSignUp = vi.fn().mockResolvedValue({ error: null });
+const mockSignInWithOAuth = vi.fn().mockResolvedValue({ error: null });
 
-vi.mock("../../components/auth/AuthProvider", () => ({
-  useAuth: () => ({
-    signInAsGuest: mockSignInAsGuest,
-    signInWithGoogle: mockSignInWithGoogle,
-  }),
+vi.mock("../../services/supabase", () => ({
+  supabase: {
+    auth: {
+      signInAnonymously: (...args: any[]) => mockSignInAnonymously(...args),
+      signUp: (...args: any[]) => mockSignUp(...args),
+      signInWithOAuth: (...args: any[]) => mockSignInWithOAuth(...args),
+    },
+  },
 }));
 
 describe("LoginPage integration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSignInAnonymously.mockResolvedValue({ error: null });
+    mockSignUp.mockResolvedValue({ error: null });
   });
 
   it("shows validation error when guest login name is empty", async () => {
     const user = userEvent.setup();
-    const onSuccess = vi.fn();
-    render(<LoginPage onSuccess={onSuccess} />);
+    render(<LoginPage />);
 
-    await user.click(screen.getByRole("button", { name: /continue as guest/i }));
-
+    await user.click(screen.getByRole("button", { name: /join/i }));
     expect(screen.getByText(/please enter a display name/i)).toBeInTheDocument();
-    expect(mockSignInAsGuest).not.toHaveBeenCalled();
-    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mockSignInAnonymously).not.toHaveBeenCalled();
+    expect(mockSignUp).not.toHaveBeenCalled();
   });
 
-  it("signs in as guest and calls onSuccess", async () => {
+  it("tries signInAnonymously first with display name", async () => {
     const user = userEvent.setup();
-    mockSignInAsGuest.mockResolvedValueOnce(undefined);
-    const onSuccess = vi.fn();
-    render(<LoginPage onSuccess={onSuccess} />);
+    render(<LoginPage />);
 
-    await user.type(screen.getByLabelText(/display name/i), "Henry");
-    await user.click(screen.getByRole("button", { name: /continue as guest/i }));
+    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /join/i }));
 
-    expect(mockSignInAsGuest).toHaveBeenCalledWith("Henry");
-    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(mockSignInAnonymously).toHaveBeenCalledWith({
+      options: { data: { display_name: "TestUser" } },
+    });
   });
 
-  it("shows Google sign-in error message when auth fails", async () => {
+  it("falls back to signUp only when anonymous sign-in is disabled", async () => {
+    // Simulate anonymous_provider_disabled error
+    mockSignInAnonymously.mockResolvedValue({
+      error: { message: "Anonymous sign-ins are disabled", code: "anonymous_provider_disabled" },
+    });
+
     const user = userEvent.setup();
-    mockSignInWithGoogle.mockRejectedValueOnce(new Error("Popup blocked"));
-    const onSuccess = vi.fn();
-    render(<LoginPage onSuccess={onSuccess} />);
+    render(<LoginPage />);
+
+    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /join/i }));
+
+    // Should fall back to signUp with generated email
+    await waitFor(() => {
+      expect(mockSignUp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: expect.stringContaining("@collabboard-app.com"),
+          password: expect.any(String),
+          options: expect.objectContaining({
+            data: { display_name: "TestUser" },
+          }),
+        })
+      );
+    });
+  });
+
+  it("does not fallback to signUp for non-disabled anonymous errors", async () => {
+    mockSignInAnonymously.mockResolvedValue({
+      error: { message: "too many requests", code: "over_request_rate_limit" },
+    });
+
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /join/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/too many requests/i)).toBeInTheDocument();
+    });
+    expect(mockSignUp).not.toHaveBeenCalled();
+  });
+
+  it("shows error when both anonymous and fallback sign-up fail", async () => {
+    mockSignInAnonymously.mockResolvedValue({
+      error: { message: "Anonymous sign-ins are disabled" },
+    });
+    mockSignUp.mockResolvedValue({
+      error: { message: "Signup disabled" },
+    });
+
+    const user = userEvent.setup();
+    render(<LoginPage />);
+
+    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /join/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/signup disabled/i)).toBeInTheDocument();
+    });
+  });
+
+  it("signs in with Google", async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
 
     await user.click(screen.getByRole("button", { name: /sign in with google/i }));
-
-    expect(screen.getByText(/popup blocked/i)).toBeInTheDocument();
-    expect(onSuccess).not.toHaveBeenCalled();
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "google",
+    }));
   });
 
   it("supports Enter key for guest login", async () => {
     const user = userEvent.setup();
-    mockSignInAsGuest.mockResolvedValueOnce(undefined);
-    const onSuccess = vi.fn();
-    render(<LoginPage onSuccess={onSuccess} />);
+    render(<LoginPage />);
 
-    const input = screen.getByLabelText(/display name/i);
-    await user.type(input, "Ava");
-    await user.keyboard("{Enter}");
+    const input = screen.getByPlaceholderText(/enter your name/i);
+    await user.type(input, "TestUser{enter}");
 
-    expect(mockSignInAsGuest).toHaveBeenCalledWith("Ava");
-    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(mockSignInAnonymously).toHaveBeenCalledWith({
+      options: { data: { display_name: "TestUser" } },
+    });
   });
 });

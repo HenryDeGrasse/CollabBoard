@@ -1,226 +1,345 @@
-import {
-  ref,
-  push,
-  set,
-  update,
-  remove,
-  onChildAdded,
-  onChildChanged,
-  onChildRemoved,
-  onValue,
-  serverTimestamp,
-  get,
-  off,
-} from "firebase/database";
-import { db } from "./firebase";
-import type { BoardObject, Connector, BoardMetadata } from "../types/board";
+import { supabase } from "./supabase";
+import type { BoardObject, Connector } from "../types/board";
 
-// ─── Board Metadata ───────────────────────────────────────────
+// ─── Type Mappings (DB snake_case ↔ App camelCase) ────────────
 
-export async function createBoard(boardId: string, title: string, ownerId: string, ownerName: string) {
-  const metadata: BoardMetadata = {
-    title,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    ownerId,
-    ownerName,
+function dbToObject(row: any): BoardObject {
+  return {
+    id: row.id,
+    type: row.type,
+    x: row.x,
+    y: row.y,
+    width: row.width,
+    height: row.height,
+    color: row.color,
+    text: row.text || "",
+    textSize: row.text_size ?? null,
+    textColor: row.text_color ?? null,
+    rotation: row.rotation,
+    zIndex: row.z_index,
+    createdBy: row.created_by,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    parentFrameId: row.parent_frame_id || null,
+    points: row.points || undefined,
+    strokeWidth: row.stroke_width || undefined,
   };
-  await set(ref(db, `boards/${boardId}/metadata`), metadata);
-  // Also index the board under the user's boards list
-  await set(ref(db, `userBoards/${ownerId}/${boardId}`), true);
 }
 
-export async function getBoardMetadata(boardId: string): Promise<BoardMetadata | null> {
-  const snapshot = await get(ref(db, `boards/${boardId}/metadata`));
-  return snapshot.val();
+function objectToDb(obj: Partial<BoardObject> & { boardId?: string }) {
+  const row: Record<string, any> = {};
+  if (obj.boardId !== undefined) row.board_id = obj.boardId;
+  if (obj.type !== undefined) row.type = obj.type;
+  if (obj.x !== undefined) row.x = obj.x;
+  if (obj.y !== undefined) row.y = obj.y;
+  if (obj.width !== undefined) row.width = obj.width;
+  if (obj.height !== undefined) row.height = obj.height;
+  if (obj.color !== undefined) row.color = obj.color;
+  if (obj.text !== undefined) row.text = obj.text;
+  if (obj.textSize !== undefined) row.text_size = obj.textSize;
+  if (obj.textColor !== undefined) row.text_color = obj.textColor;
+  if (obj.rotation !== undefined) row.rotation = obj.rotation;
+  if (obj.zIndex !== undefined) row.z_index = obj.zIndex;
+  if (obj.createdBy !== undefined) row.created_by = obj.createdBy;
+  if (obj.parentFrameId !== undefined) row.parent_frame_id = obj.parentFrameId;
+  if (obj.points !== undefined) row.points = obj.points;
+  if (obj.strokeWidth !== undefined) row.stroke_width = obj.strokeWidth;
+  return row;
 }
 
-export async function updateBoardMetadata(boardId: string, updates: Partial<BoardMetadata>) {
-  return update(ref(db, `boards/${boardId}/metadata`), { ...updates, updatedAt: Date.now() });
+function dbToConnector(row: any): Connector {
+  return {
+    id: row.id,
+    fromId: row.from_id,
+    toId: row.to_id,
+    style: row.style,
+  };
 }
 
-export async function softDeleteBoard(boardId: string) {
-  return update(ref(db, `boards/${boardId}/metadata`), { deleted: true, updatedAt: Date.now() });
+// ─── Board CRUD ───────────────────────────────────────────────
+
+export interface BoardMetadata {
+  id: string;
+  title: string;
+  ownerId: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
 }
 
-/**
- * Get all board IDs for a user
- */
-export async function getUserBoardIds(userId: string): Promise<string[]> {
-  const snapshot = await get(ref(db, `userBoards/${userId}`));
-  if (!snapshot.exists()) return [];
-  return Object.keys(snapshot.val());
+export async function createBoard(title: string, ownerId: string): Promise<string> {
+  // Generate board ID client-side so INSERT does not require SELECT/RETURNING.
+  // This avoids RLS failures when the board is not yet visible via membership policy.
+  const boardId = crypto.randomUUID();
+
+  const { error: boardError } = await supabase
+    .from("boards")
+    .insert({ id: boardId, title, owner_id: ownerId });
+
+  if (boardError) throw boardError;
+
+  // Add owner as member
+  const { error: memberError } = await supabase.from("board_members").insert({
+    board_id: boardId,
+    user_id: ownerId,
+    role: "owner",
+  });
+
+  if (memberError) throw memberError;
+
+  return boardId;
 }
 
-/**
- * Get metadata for multiple boards at once
- */
-export async function getBoardsMetadata(boardIds: string[]): Promise<Record<string, BoardMetadata>> {
-  const results: Record<string, BoardMetadata> = {};
-  await Promise.all(
-    boardIds.map(async (id) => {
-      const meta = await getBoardMetadata(id);
-      if (meta && !meta.deleted) {
-        results[id] = meta;
-      }
+export async function getUserBoards(userId: string): Promise<BoardMetadata[]> {
+  const { data, error } = await supabase
+    .from("board_members")
+    .select("board_id, boards(id, title, owner_id, created_at, updated_at, deleted_at)")
+    .eq("user_id", userId);
+
+  if (error) throw error;
+  if (!data) return [];
+
+  return data
+    .map((row: any) => {
+      const b = row.boards;
+      if (!b || b.deleted_at) return null;
+      return {
+        id: b.id,
+        title: b.title,
+        ownerId: b.owner_id,
+        createdAt: new Date(b.created_at).getTime(),
+        updatedAt: new Date(b.updated_at).getTime(),
+        deletedAt: b.deleted_at ? new Date(b.deleted_at).getTime() : null,
+      };
     })
-  );
-  return results;
+    .filter(Boolean) as BoardMetadata[];
 }
 
-/**
- * Subscribe to real-time updates for a user's board list
- */
-export function subscribeToUserBoards(
-  userId: string,
-  onUpdate: (boardIds: string[]) => void
-) {
-  const userBoardsRef = ref(db, `userBoards/${userId}`);
-  onValue(userBoardsRef, (snapshot) => {
-    if (snapshot.exists()) {
-      onUpdate(Object.keys(snapshot.val()));
-    } else {
-      onUpdate([]);
-    }
-  });
-  return () => off(userBoardsRef);
+export async function updateBoardMetadata(
+  boardId: string,
+  updates: Partial<{ title: string }>
+): Promise<void> {
+  const { error } = await supabase
+    .from("boards")
+    .update(updates)
+    .eq("id", boardId);
+  if (error) throw error;
 }
 
-/**
- * Add a board to a user's board list (for joining shared boards)
- */
-export function addBoardToUser(userId: string, boardId: string) {
-  return set(ref(db, `userBoards/${userId}/${boardId}`), true);
+export async function softDeleteBoard(boardId: string): Promise<void> {
+  const { error } = await supabase
+    .from("boards")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", boardId);
+  if (error) throw error;
 }
 
-/**
- * Touch updatedAt for a board (call on object changes)
- */
-export function touchBoard(boardId: string) {
-  return update(ref(db, `boards/${boardId}/metadata`), { updatedAt: Date.now() });
-}
+export async function joinBoard(boardId: string, userId: string): Promise<void> {
+  // Avoid duplicate insert attempts by checking whether this user is already a member.
+  // board_members SELECT policy allows users to read their own memberships.
+  const { data: existingMembership, error: existingError } = await supabase
+    .from("board_members")
+    .select("board_id")
+    .eq("board_id", boardId)
+    .eq("user_id", userId)
+    .maybeSingle();
 
-// ─── Board Objects ────────────────────────────────────────────
-
-// Remove undefined values that Firebase rejects
-function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
-  const clean = { ...obj };
-  for (const key of Object.keys(clean)) {
-    if (clean[key] === undefined) {
-      delete clean[key];
-    }
+  if (existingError) {
+    throw existingError;
   }
-  return clean;
+
+  if (existingMembership) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("board_members")
+    .insert({ board_id: boardId, user_id: userId, role: "editor" });
+
+  if (error) {
+    const code = (error as { code?: string }).code;
+
+    // Already a member (race between tabs)
+    if (code === "23505") {
+      return;
+    }
+
+    // FK violation: board_id does not exist
+    if (code === "23503") {
+      throw new Error("Board not found");
+    }
+
+    throw error;
+  }
 }
 
-export function createObject(boardId: string, obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">): string {
-  const objectsRef = ref(db, `boards/${boardId}/objects`);
-  const newRef = push(objectsRef);
-  const id = newRef.key!;
-  const fullObj = stripUndefined({
-    ...obj,
-    id,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  });
-  set(newRef, fullObj);
-  return id;
+export async function touchBoard(boardId: string): Promise<void> {
+  await supabase
+    .from("boards")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", boardId);
 }
 
-export function updateObject(boardId: string, objectId: string, updates: Partial<BoardObject>) {
-  const objectRef = ref(db, `boards/${boardId}/objects/${objectId}`);
-  return update(objectRef, {
-    ...updates,
-    updatedAt: serverTimestamp(),
-  });
+// ─── Object CRUD ──────────────────────────────────────────────
+
+export async function fetchBoardObjects(boardId: string): Promise<Record<string, BoardObject>> {
+  const { data, error } = await supabase
+    .from("objects")
+    .select("*")
+    .eq("board_id", boardId);
+
+  if (error) throw error;
+  const result: Record<string, BoardObject> = {};
+  for (const row of data || []) {
+    result[row.id] = dbToObject(row);
+  }
+  return result;
 }
 
-export function deleteObject(boardId: string, objectId: string) {
-  return remove(ref(db, `boards/${boardId}/objects/${objectId}`));
-}
-
-// Restore a previously deleted object (preserves original ID)
-export function restoreObject(boardId: string, obj: BoardObject) {
-  const objectRef = ref(db, `boards/${boardId}/objects/${obj.id}`);
-  return set(objectRef, { ...obj, updatedAt: Date.now() });
-}
-
-// ─── Connectors ───────────────────────────────────────────────
-
-export function createConnector(boardId: string, conn: Omit<Connector, "id">): string {
-  const connectorsRef = ref(db, `boards/${boardId}/connectors`);
-  const newRef = push(connectorsRef);
-  const id = newRef.key!;
-  set(newRef, { ...conn, id });
-  return id;
-}
-
-// Restore a previously deleted connector (preserves original ID)
-export function restoreConnector(boardId: string, conn: Connector) {
-  const connectorRef = ref(db, `boards/${boardId}/connectors/${conn.id}`);
-  return set(connectorRef, conn);
-}
-
-export function deleteConnector(boardId: string, connectorId: string) {
-  return remove(ref(db, `boards/${boardId}/connectors/${connectorId}`));
-}
-
-// ─── Real-time Listeners ──────────────────────────────────────
-
-export function subscribeToObjects(
+export async function createObject(
   boardId: string,
-  onAdd: (obj: BoardObject) => void,
-  onChange: (obj: BoardObject) => void,
-  onRemove: (id: string) => void
-) {
-  const objectsRef = ref(db, `boards/${boardId}/objects`);
+  obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">
+): Promise<string> {
+  const row = objectToDb({ ...obj, boardId } as any);
+  row.board_id = boardId;
 
-  const unsubAdd = onChildAdded(objectsRef, (snapshot) => {
-    const obj = snapshot.val() as BoardObject;
-    if (obj) onAdd(obj);
-  });
+  const { data, error } = await supabase
+    .from("objects")
+    .insert(row)
+    .select("id")
+    .single();
 
-  const unsubChange = onChildChanged(objectsRef, (snapshot) => {
-    const obj = snapshot.val() as BoardObject;
-    if (obj) onChange(obj);
-  });
-
-  const unsubRemove = onChildRemoved(objectsRef, (snapshot) => {
-    onRemove(snapshot.key!);
-  });
-
-  return () => {
-    off(objectsRef);
-    // Unsubscribe references kept for cleanup
-    void unsubAdd;
-    void unsubChange;
-    void unsubRemove;
-  };
+  if (error) throw error;
+  return data.id;
 }
 
-export function subscribeToConnectors(
+export async function updateObject(
   boardId: string,
-  onAdd: (conn: Connector) => void,
-  onChange: (conn: Connector) => void,
-  onRemove: (id: string) => void
-) {
-  const connectorsRef = ref(db, `boards/${boardId}/connectors`);
+  objectId: string,
+  updates: Partial<BoardObject>
+): Promise<void> {
+  const row = objectToDb(updates);
+  const { error } = await supabase
+    .from("objects")
+    .update(row)
+    .eq("id", objectId)
+    .eq("board_id", boardId);
+  if (error) throw error;
+}
 
-  onChildAdded(connectorsRef, (snapshot) => {
-    const conn = snapshot.val() as Connector;
-    if (conn) onAdd(conn);
+export async function deleteObject(boardId: string, objectId: string): Promise<void> {
+  const { error } = await supabase
+    .from("objects")
+    .delete()
+    .eq("id", objectId)
+    .eq("board_id", boardId);
+  if (error) throw error;
+}
+
+/**
+ * Restore multiple objects in FK-safe order (frames before children).
+ * Used by undo to restore a frame and its contained objects.
+ */
+export async function restoreObjects(boardId: string, objects: BoardObject[]): Promise<void> {
+  // Sort: frames/unparented first, children second
+  const sorted = [...objects].sort((a, b) => {
+    const aChild = a.parentFrameId ? 1 : 0;
+    const bChild = b.parentFrameId ? 1 : 0;
+    return aChild - bChild;
   });
 
-  onChildChanged(connectorsRef, (snapshot) => {
-    const conn = snapshot.val() as Connector;
-    if (conn) onChange(conn);
+  // Upsert sequentially to respect FK ordering.
+  // Upsert (not insert) so rapid undo/redo doesn't fail if a prior
+  // delete hasn't committed yet.
+  for (const obj of sorted) {
+    const row = objectToDb({ ...obj, boardId } as any);
+    row.board_id = boardId;
+    row.id = obj.id;
+    const { error } = await supabase.from("objects").upsert(row);
+    if (error) throw error;
+  }
+}
+
+/**
+ * Delete a frame and all contained objects atomically.
+ * Uses a Postgres RPC so collaborators observe a single consistent cascade.
+ */
+export async function deleteFrameCascade(boardId: string, frameId: string): Promise<void> {
+  const { error } = await supabase.rpc("delete_frame_cascade", {
+    p_board_id: boardId,
+    p_frame_id: frameId,
   });
 
-  onChildRemoved(connectorsRef, (snapshot) => {
-    onRemove(snapshot.key!);
-  });
+  if (error) throw error;
+}
 
-  return () => {
-    off(connectorsRef);
-  };
+// ─── Connector CRUD ───────────────────────────────────────────
+
+export async function fetchBoardConnectors(boardId: string): Promise<Record<string, Connector>> {
+  const { data, error } = await supabase
+    .from("connectors")
+    .select("*")
+    .eq("board_id", boardId);
+
+  if (error) throw error;
+  const result: Record<string, Connector> = {};
+  for (const row of data || []) {
+    result[row.id] = dbToConnector(row);
+  }
+  return result;
+}
+
+export async function createConnector(
+  boardId: string,
+  conn: Omit<Connector, "id">
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("connectors")
+    .insert({
+      board_id: boardId,
+      from_id: conn.fromId,
+      to_id: conn.toId,
+      style: conn.style,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
+/**
+ * Re-insert an object preserving its original ID (for undo).
+ * Uses upsert so it's idempotent if the prior delete hasn't committed yet.
+ */
+export async function restoreObject(boardId: string, obj: BoardObject): Promise<void> {
+  const row = objectToDb({ ...obj, boardId } as any);
+  row.board_id = boardId;
+  row.id = obj.id;
+  const { error } = await supabase.from("objects").upsert(row);
+  if (error) throw error;
+}
+
+/**
+ * Re-insert a connector preserving its original ID (for undo).
+ * Uses upsert so it's idempotent if the prior delete hasn't committed yet.
+ */
+export async function restoreConnector(boardId: string, conn: Connector): Promise<void> {
+  const { error } = await supabase.from("connectors").upsert({
+    id: conn.id,
+    board_id: boardId,
+    from_id: conn.fromId,
+    to_id: conn.toId,
+    style: conn.style,
+  });
+  if (error) throw error;
+}
+
+export async function deleteConnector(boardId: string, connectorId: string): Promise<void> {
+  const { error } = await supabase
+    .from("connectors")
+    .delete()
+    .eq("id", connectorId)
+    .eq("board_id", boardId);
+  if (error) throw error;
 }

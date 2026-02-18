@@ -1,25 +1,50 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import type { UserPresence } from "../types/presence";
-import {
-  setUserPresence,
-  updateCursorPosition,
-  setEditingObject as setEditingObj,
-  setDraftText as setDraftTextService,
-  updateLastSeen,
-  setOffline,
-  subscribeToPresence,
-  subscribeToConnectionState,
-} from "../services/presence";
-import { throttle } from "../utils/throttle";
-import { getRandomCursorColor } from "../utils/colors";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { createPresenceChannel, getNextCursorColor, type PresenceState } from "../services/presence";
+import { throttle, type ThrottledFunction } from "../utils/throttle";
+
+export interface RemoteUser {
+  id: string;
+  displayName: string;
+  cursorColor: string;
+  cursor: { x: number; y: number } | null;
+  online: boolean;
+  lastSeen: number;
+  editingObjectId: string | null;
+  draftText?: string;
+}
+
+export interface RemoteDragPosition {
+  objectId: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  parentFrameId?: string | null;
+  userId: string;
+  updatedAt: number;
+}
 
 export interface UsePresenceReturn {
-  users: Record<string, UserPresence>;
+  users: Record<string, RemoteUser>;
+  remoteDragPositions: Record<string, RemoteDragPosition>;
   updateCursor: (x: number, y: number) => void;
   setEditingObject: (objectId: string | null) => void;
-  setDraftText: (text: string) => void;
-  isObjectLocked: (objectId: string) => { locked: boolean; lockedBy?: string; lockedByColor?: string };
-  getDraftTextForObject: (objectId: string) => { text: string; userName: string } | null;
+  setDraftText: (objectId: string, text: string) => void;
+  broadcastObjectDrag: (
+    objectId: string,
+    x: number,
+    y: number,
+    parentFrameId?: string | null,
+    width?: number,
+    height?: number
+  ) => void;
+  endObjectDrag: (objectId: string) => void;
+  isObjectLocked: (objectId: string) => {
+    locked: boolean;
+    lockedBy?: string;
+    lockedByColor?: string;
+  };
+  getDraftTextForObject: (objectId: string) => { text: string; color: string } | null;
   myColor: string;
 }
 
@@ -28,84 +53,208 @@ export function usePresence(
   userId: string,
   displayName: string
 ): UsePresenceReturn {
-  const [users, setUsers] = useState<Record<string, UserPresence>>({});
-  const subscribedRef = useRef(false);
-  const lastSeenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const colorRef = useRef<string>("");
+  const [users, setUsers] = useState<Record<string, RemoteUser>>({});
+  const [remoteDragPositions, setRemoteDragPositions] = useState<Record<string, RemoteDragPosition>>({});
+  const channelRef = useRef<ReturnType<typeof createPresenceChannel> | null>(null);
+  const colorRef = useRef(getNextCursorColor());
+  const dragBroadcastersRef = useRef<
+    Record<
+      string,
+      ThrottledFunction<
+        (
+          x: number,
+          y: number,
+          parentFrameId?: string | null,
+          width?: number,
+          height?: number
+        ) => void
+      >
+    >
+  >({});
 
-  // Assign a cursor color based on userId
   useEffect(() => {
-    if (!colorRef.current && userId) {
-      const colorIndex = Math.abs(userId.split("").reduce((a, c) => a + c.charCodeAt(0), 0));
-      colorRef.current = getRandomCursorColor(colorIndex);
-    }
-  }, [userId]);
+    if (!boardId || !userId) return;
 
-  useEffect(() => {
-    if (subscribedRef.current || !boardId || !userId) return;
-    subscribedRef.current = true;
+    setRemoteDragPositions({});
 
-    // Set initial presence
-    setUserPresence(boardId, userId, displayName, colorRef.current);
+    const channel = createPresenceChannel(
+      boardId,
+      userId,
+      displayName,
+      colorRef.current,
+      (state) => {
+        setUsers((prev) => {
+          const now = Date.now();
+          const next: Record<string, RemoteUser> = {};
 
-    // Subscribe to all presence
-    const unsubPresence = subscribeToPresence(boardId, (presenceData) => {
-      setUsers(presenceData);
-    });
+          for (const [key, presences] of Object.entries(state)) {
+            const p = presences[0] as PresenceState;
+            if (!p) continue;
 
-    // Listen for reconnection
-    subscribeToConnectionState((connected) => {
-      if (connected) {
-        setUserPresence(boardId, userId, displayName, colorRef.current);
+            next[key] = {
+              id: key,
+              displayName: p.displayName,
+              cursorColor: p.cursorColor,
+              // Preserve latest cursor from broadcast if presence cursor is null.
+              cursor: p.cursor ?? prev[key]?.cursor ?? null,
+              online: true,
+              lastSeen: now,
+              editingObjectId: p.editingObjectId,
+              draftText: p.draftText,
+            };
+          }
+
+          return next;
+        });
+      },
+      (remoteUserId, x, y) => {
+        setUsers((prev) => {
+          const existing = prev[remoteUserId];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [remoteUserId]: {
+              ...existing,
+              cursor: { x, y },
+              lastSeen: Date.now(),
+            },
+          };
+        });
+      },
+      (remoteUserId, objectId, position, parentFrameId, ended, width, height) => {
+        setRemoteDragPositions((prev) => {
+          if (ended) {
+            if (!prev[objectId]) return prev;
+            const next = { ...prev };
+            delete next[objectId];
+            return next;
+          }
+
+          return {
+            ...prev,
+            [objectId]: {
+              objectId,
+              x: position.x,
+              y: position.y,
+              ...(typeof width === "number" ? { width } : {}),
+              ...(typeof height === "number" ? { height } : {}),
+              parentFrameId,
+              userId: remoteUserId,
+              updatedAt: Date.now(),
+            },
+          };
+        });
       }
-    });
+    );
 
-    // Update lastSeen every 60 seconds
-    lastSeenIntervalRef.current = setInterval(() => {
-      updateLastSeen(boardId, userId);
-    }, 60000);
+    channelRef.current = channel;
 
     return () => {
-      unsubPresence();
-      setOffline(boardId, userId);
-      if (lastSeenIntervalRef.current) {
-        clearInterval(lastSeenIntervalRef.current);
-      }
-      subscribedRef.current = false;
+      channel.unsubscribe();
+      channelRef.current = null;
+      Object.values(dragBroadcastersRef.current).forEach((sender) => sender.cancel());
+      dragBroadcastersRef.current = {};
+      setRemoteDragPositions({});
     };
   }, [boardId, userId, displayName]);
 
-  // Throttled cursor update (40ms = ~25 updates/sec)
-  const throttledCursorUpdate = useMemo(
-    () =>
-      throttle((x: number, y: number) => {
-        updateCursorPosition(boardId, userId, { x, y });
-      }, 40),
-    [boardId, userId]
-  );
+  // Clean up stale remote drag previews (e.g. disconnect without drag_end).
+  // Timeout is generous (6 s) because a heartbeat keeps active drags alive;
+  // this only fires for genuine disconnects / crashes.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setRemoteDragPositions((prev) => {
+        let changed = false;
+        const next: Record<string, RemoteDragPosition> = {};
+        for (const [id, pos] of Object.entries(prev)) {
+          if (now - pos.updatedAt <= 6000) {
+            next[id] = pos;
+          } else {
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
 
+    return () => clearInterval(interval);
+  }, []);
+
+  // Throttled cursor update (target: 30-50ms)
   const updateCursor = useCallback(
-    (x: number, y: number) => {
-      throttledCursorUpdate(x, y);
-    },
-    [throttledCursorUpdate]
+    throttle((x: number, y: number) => {
+      channelRef.current?.updateCursor(x, y);
+    }, 30),
+    []
   );
 
   const setEditingObject = useCallback(
     (objectId: string | null) => {
-      setEditingObj(boardId, userId, objectId);
+      channelRef.current?.setEditingObject(objectId);
     },
-    [boardId, userId]
+    []
   );
+
+  const setDraftText = useCallback(
+    throttle((objectId: string, text: string) => {
+      channelRef.current?.setDraftText(objectId, text);
+    }, 250),
+    []
+  );
+
+  const getDragBroadcaster = useCallback((objectId: string) => {
+    let sender = dragBroadcastersRef.current[objectId];
+    if (!sender) {
+      sender = throttle(
+        (
+          x: number,
+          y: number,
+          parentFrameId?: string | null,
+          width?: number,
+          height?: number
+        ) => {
+          channelRef.current?.updateObjectDrag(objectId, x, y, parentFrameId, width, height);
+        },
+        30
+      );
+      dragBroadcastersRef.current[objectId] = sender;
+    }
+    return sender;
+  }, []);
+
+  const broadcastObjectDrag = useCallback(
+    (
+      objectId: string,
+      x: number,
+      y: number,
+      parentFrameId?: string | null,
+      width?: number,
+      height?: number
+    ) => {
+      const sender = getDragBroadcaster(objectId);
+      sender(x, y, parentFrameId, width, height);
+    },
+    [getDragBroadcaster]
+  );
+
+  const endObjectDrag = useCallback((objectId: string) => {
+    const sender = dragBroadcastersRef.current[objectId];
+    if (sender) {
+      sender.cancel();
+      delete dragBroadcastersRef.current[objectId];
+    }
+    channelRef.current?.endObjectDrag(objectId);
+  }, []);
 
   const isObjectLocked = useCallback(
     (objectId: string) => {
-      for (const [uid, presence] of Object.entries(users)) {
-        if (uid !== userId && presence.editingObjectId === objectId && presence.online) {
+      for (const [uid, user] of Object.entries(users)) {
+        if (uid !== userId && user.editingObjectId === objectId) {
           return {
             locked: true,
-            lockedBy: presence.displayName,
-            lockedByColor: presence.cursorColor,
+            lockedBy: user.displayName,
+            lockedByColor: user.cursorColor,
           };
         }
       }
@@ -114,27 +263,11 @@ export function usePresence(
     [users, userId]
   );
 
-  // Throttled draft text broadcast (every 2 seconds)
-  const throttledDraftText = useMemo(
-    () =>
-      throttle((text: string) => {
-        setDraftTextService(boardId, userId, text);
-      }, 2000),
-    [boardId, userId]
-  );
-
-  const setDraftText = useCallback(
-    (text: string) => {
-      throttledDraftText(text);
-    },
-    [throttledDraftText]
-  );
-
   const getDraftTextForObject = useCallback(
-    (objectId: string): { text: string; userName: string } | null => {
-      for (const [uid, presence] of Object.entries(users)) {
-        if (uid !== userId && presence.editingObjectId === objectId && presence.online && presence.draftText) {
-          return { text: presence.draftText, userName: presence.displayName };
+    (objectId: string) => {
+      for (const [uid, user] of Object.entries(users)) {
+        if (uid !== userId && user.editingObjectId === objectId && user.draftText) {
+          return { text: user.draftText, color: user.cursorColor };
         }
       }
       return null;
@@ -144,9 +277,12 @@ export function usePresence(
 
   return {
     users,
+    remoteDragPositions,
     updateCursor,
     setEditingObject,
     setDraftText,
+    broadcastObjectDrag,
+    endObjectDrag,
     isObjectLocked,
     getDraftTextForObject,
     myColor: colorRef.current,

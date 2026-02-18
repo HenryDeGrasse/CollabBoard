@@ -64,7 +64,7 @@ describe("Toolbar integration", () => {
 
     expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
 
-    await user.click(screen.getByTitle("Change color"));
+    await user.click(screen.getByTitle("Fill color"));
     await user.click(screen.getByTitle("#22C55E"));
 
     expect(onChangeSelectedColor).toHaveBeenCalledWith("#22C55E");
