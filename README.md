@@ -1,85 +1,80 @@
-# 🎨 CollabBoard — Real-time Collaborative Whiteboard
+# CollabBoard — Real-time Collaborative Whiteboard
 
 **🌐 Live Demo: [collab-board-ochre-gamma.vercel.app](https://collab-board-ochre-gamma.vercel.app)**
 
-Loom Video: https://www.loom.com/share/24cd82d468d24d06aa0ead8466fe77ee
-
-A real-time collaborative whiteboard that enables multiple users to brainstorm, map ideas, and run workshops simultaneously on an infinite canvas. Built for speed, collaboration, and ease of use.
+A real-time collaborative whiteboard for brainstorming, diagramming, and running workshops simultaneously on an infinite canvas. Built with React + Konva + Supabase.
 
 ---
 
 ## ✨ Features
 
 ### 🎯 Core Tools
-- **Sticky Notes** — Square notes with auto-fit text, resize, drag, and color customization
-- **Shapes** — Rectangles (free resize) and circles (aspect-locked) with text and colors
-- **Lines** — Straight line segments for annotations and diagrams
-- **Connectors/Arrows** — Smart arrows that connect objects with edge clipping and follow during drag
-- **Frames** — Named containers with clipping, drag-in/drag-out with hysteresis (55% enter / 45% exit), and object count badges
+- **Sticky Notes** — Color-customizable notes with auto-fit text, resize, and drag
+- **Shapes** — Rectangles and circles with editable text and fill colors
+- **Lines** — Straight line segments for annotations
+- **Connectors/Arrows** — Smart arrows that attach to objects and follow during drag
+- **Frames** — Named containers with clipping, drag-in/out hysteresis, and object-count badges
+- **Text** — Freestanding text blocks at any size
 
 ### 🖼️ Canvas & Interaction
-- **Infinite Canvas** — Pan with `Space + Drag` or `Right-click + Drag`, zoom with scroll (10%–400%)
-- **60 FPS Performance** — Stress-tested with 1000+ objects across 5 concurrent users
+- **Infinite Canvas** — Pan with `Space + Drag` or right-click drag; zoom 10–400%
+- **60 FPS Local Rendering** — Drag state flushed via `requestAnimationFrame`; network broadcast throttled separately
+- **Viewport Persistence** — Zoom/pan position saved per board and restored on return
 - **Multi-select** — Drag-to-select rectangle with intersection detection
-- **Drag Preview** — Live visual feedback when dragging objects into/out of frames
-- **Smart Layering** — Cross-frame connectors and lines render on top, frames clip contained objects
-- **Subtle Borders** — All objects have light borders for better overlap visibility
+- **Object Rotation** — Drag the rotation handle above any selection; `Shift` snaps to 15° increments
+- **Frame Resize → Push Children** — Resizing a frame pushes contained objects inward (Figma/Miro style)
+- **Smart Layering** — Connectors and lines render above frames; frames clip contained objects
+
+### 🎨 Text & Style
+- **Tier-1 Text Controls** — Font size (A− / A+) and text color picker for all text-bearing objects
+- **Auto-fit Text** — Text automatically scales to fit the object bounds
+- **Luminance-aware Color** — Text color auto-switches dark/light based on fill for readability
 
 ### ⌨️ Keyboard Shortcuts
-- **Tools**: `V` (Select), `S` (Sticky), `R` (Rectangle), `C` (Circle), `A` (Arrow), `L` (Line), `F` (Frame)
-- **Actions**: `Delete/Backspace` (delete), `Escape` (deselect/cancel)
-- **Edit**: `Ctrl/⌘ + Z` (undo), `Ctrl/⌘ + Shift + Z` or `Ctrl/⌘ + Y` (redo)
-- **Clipboard**: `Ctrl/⌘ + C` (copy), `Ctrl/⌘ + V` (paste), `Ctrl/⌘ + D` (duplicate)
-- **Help**: `?` (toggle shortcuts panel)
-- Platform-aware: Shows `⌘` on Mac, `Ctrl` on Windows/Linux
+- **Tools**: `V` Select · `S` Sticky · `R` Rect · `C` Circle · `A` Arrow · `L` Line · `F` Frame
+- **Edit**: `⌘/Ctrl+Z` undo · `⌘/Ctrl+⇧+Z` redo · `⌘/Ctrl+C/V/D` copy/paste/duplicate
+- **Canvas**: `Delete/Backspace` delete · `Escape` deselect · `?` toggle shortcuts panel
+- Platform-aware: shows `⌘` on Mac, `Ctrl` on Windows/Linux
 
 ### 👥 Multiplayer
-- **Live Cursors** — See other users' cursors with name labels and color-coded presence
-- **Real-time Sync** — All changes propagate to all users within <100ms
-- **Edit Locking** — Visual indicators and cursor changes when another user is editing an object
-- **Live Draft Preview** — See other users' text as they type (italic, color-coded, 2s throttle)
-- **Presence Panel** — Online users list with colored dots, share link button
-- **Disconnect Handling** — Graceful cleanup via Firebase `onDisconnect()`
+- **Live Cursors** — Adaptive micro-interpolation matches broadcast interval; snaps on first appearance
+- **Real-time Sync** — All object changes propagate within <100ms via Supabase Realtime
+- **Edit Locking** — Visual lock indicator when another user is editing an object
+- **Live Draft Preview** — See collaborators' text as they type (italic, color-coded)
+- **Presence Panel** — Online users list with share link and board ID copy
 
-### 🗂️ Dashboard & Board Management
-- **My Boards** — Create, view, search, and soft-delete your boards
-- **Shared with Me** — See boards others have shared with you
-- **Grid/List View** — Toggle between card grid and compact list
-- **Search** — Filter boards by title in real-time
-- **Join by ID** — Enter a board ID to access shared boards
-- **Auto-add on Join** — Boards automatically added to your dashboard when accessed
-- **Last Modified Tracking** — See when each board was last updated
-
-### 🎨 Smart Editing
-- **Double-click to Edit** — Edit text on any object with HTML textarea overlay
-- **Auto-fit Text** — Sticky notes and shapes automatically resize text to fit
-- **Luminance-based Text Color** — Text automatically switches to dark/light for readability
-- **Undo/Redo** — Per-user local command stack (max 30 depth, own actions only)
-- **Copy/Paste/Duplicate** — Full clipboard support including connectors between copied objects
+### 🗂️ Dashboard
+- **My Boards / Shared with Me** — Create, search, soft-delete, and join boards
+- **Board Thumbnails** — Auto-captured JPEG preview on navigate-away; displayed as card artwork
+- **Grid / List View** — Toggle between card grid and compact list
+- **Join by ID** — Enter any board ID to open a shared board
 
 ### 🤖 AI Agent
-- **Natural Language Commands UI** — Floating prompt box and assistant panel
-- **Coming Soon** — Backend integration with OpenAI GPT-4o for object creation, layout, and templating
-- **Placeholder Active** — Returns friendly messages while Vercel Serverless Functions integration is finalized
+- **Natural Language Commands** — Type commands like "create a SWOT analysis" or "add 3 sticky notes"
+- **Intent Router** — Heuristic router selects model, tools, and context scope per command
+- **Board Digest** — Compact board summary (~95% token reduction vs. full JSON)
+- **Template Engine** — Pre-built layouts (SWOT, Kanban, etc.) with fail-fast rollback
+- **Plan → Validate → Execute** — Structured pipeline with progress streaming and idempotency
+- **Bulk Tools** — `bulkCreate` and `bulkDelete` for efficient multi-object operations
 
 ### 🔐 Authentication
-- **Anonymous Guest** — Enter a display name to start immediately
-- **Google Sign-in** — Persistent identity and board ownership
+- **Email / Password** — Full sign-up and sign-in via Supabase Auth
+- **Google OAuth** — One-click sign-in with persistent identity
+- **Guest Access** — Enter a display name to join immediately (anonymous auth)
 
 ---
 
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
+|---|---|
 | Frontend | React 18 + TypeScript (strict) + Vite |
 | Styling | Tailwind CSS |
 | Canvas | Konva.js via react-konva |
-| Real-time DB | Firebase Realtime Database |
-| Auth | Firebase Auth (Anonymous + Google) |
-| AI Backend | Vercel Serverless Functions + OpenAI GPT-4o (planned) |
+| Database & Auth | Supabase (Postgres + Row Level Security + Realtime) |
+| API / AI Backend | Vercel Serverless Functions + OpenAI GPT-4o |
 | Hosting | Vercel |
-| Testing | Vitest (153 unit/integration tests) + Playwright (7 E2E tests) |
+| Testing | Vitest (229 unit/integration tests) |
 
 ---
 
@@ -87,49 +82,106 @@ A real-time collaborative whiteboard that enables multiple users to brainstorm, 
 
 ### Prerequisites
 - Node.js 18+
-- Firebase project with Realtime Database and Authentication enabled
-- Firebase CLI: `npm install -g firebase-tools`
+- [OrbStack](https://orbstack.dev/) or Docker Desktop (for local Supabase)
+- A [Supabase](https://supabase.com) account (for production)
+- An [OpenAI](https://platform.openai.com) API key (for the AI agent)
 
-### Setup
+### 1 — Clone and install
 
-1. **Clone and install:**
 ```bash
 git clone https://github.com/HenryDeGrasse/CollabBoard.git
 cd CollabBoard
 npm install
 ```
 
-2. **Configure Firebase:**
+### 2 — Start local Supabase
+
 ```bash
-cp .env.example .env
-```
-Edit `.env` with your Firebase config:
-```
-VITE_FIREBASE_API_KEY=your-key
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_DATABASE_URL=https://your-project-default-rtdb.firebaseio.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
-VITE_FIREBASE_APP_ID=your-app-id
+npx supabase start
 ```
 
-3. **Enable Firebase services:**
-   - Go to Firebase Console → Authentication → Sign-in methods
-   - Enable **Anonymous** and **Google** providers
-   - Go to Realtime Database → Create database (us-central1)
-   - Deploy security rules: `firebase deploy --only database`
+This boots a full local Supabase stack via Docker (Postgres, Auth, Realtime, Studio) and automatically applies all database migrations. First run pulls ~1GB of images; subsequent starts are instant.
 
-4. **Run locally:**
+### 3 — Create `.env.local`
+
+Copy the credentials printed by `supabase start` (or run `npx supabase status -o json`):
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local`:
+
+```env
+# Local Supabase (overrides .env for local dev — never committed)
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=<anon key from supabase status>
+
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=<service_role key from supabase status>
+
+OPENAI_API_KEY=sk-your-openai-key
+```
+
+### 4 — Run the dev server
+
 ```bash
 npm run dev
 ```
-Open http://localhost:5173
 
-5. **Run with Firebase Emulator (for testing):**
+Open http://localhost:5173. All data writes go to your local Supabase — production is untouched.
+
+---
+
+## 🗄️ Local Development Environment
+
+CollabBoard uses **two separate databases** — local for development, cloud for production:
+
+```
+npm run dev   ──▶  localhost:54321     (Docker via OrbStack — isolated)
+Vercel prod   ──▶  <project>.supabase.co  (production cloud)
+```
+
+### How the two-file convention works
+
+| File | Purpose | Committed? |
+|---|---|---|
+| `.env` | Production credentials (fallback) | No (gitignored) |
+| `.env.local` | Local dev credentials (overrides `.env`) | No (gitignored) |
+| `.env.example` | Documented template with placeholders | Yes |
+
+Vite loads `.env.local` first, then `.env`. When `.env.local` exists, local dev always hits the local Supabase. Vercel reads from its own dashboard env vars — it never touches either file.
+
+### Local Supabase commands
+
+| Command | What it does |
+|---|---|
+| `npx supabase start` | Boot local stack (Postgres + Auth + Realtime + Studio) |
+| `npx supabase stop` | Shut down all containers |
+| `npx supabase db reset` | Wipe database and re-run all migrations from scratch |
+| `npx supabase status` | Show URLs and keys |
+| `npx supabase status -o json` | Machine-readable output (useful for scripting) |
+| `npx supabase migration new <name>` | Create a new migration file |
+| `npx supabase db push` | Push local migrations to linked production project |
+
+**Local Studio UI:** http://127.0.0.1:54323 — browse tables, write SQL, inspect auth users.  
+**Local email/inbox:** http://127.0.0.1:54324 — catch all emails sent by local Auth.
+
+### Running a new migration
+
 ```bash
-npm run emulators        # In one terminal
-npm run dev:emulator     # In another terminal
+# 1. Create the migration file
+npx supabase migration new my_change
+
+# 2. Write SQL in supabase/migrations/<timestamp>_my_change.sql
+
+# 3. Apply locally (reset re-runs all migrations)
+npx supabase db reset
+
+# 4. Test thoroughly
+
+# 5. Push to production (requires approval — see AGENTS.md)
+npx supabase db push
 ```
 
 ---
@@ -139,21 +191,25 @@ npm run dev:emulator     # In another terminal
 ```
 src/
 ├── components/
-│   ├── canvas/          # Board, StickyNote, Shape, Connector, Frame, LineTool, RemoteCursor, ResizeHandles
-│   ├── toolbar/         # Toolbar, ColorPicker
-│   ├── sidebar/         # PresencePanel, AICommandInput
-│   ├── ui/              # Button, HelpPanel
-│   └── auth/            # AuthProvider, LoginPage
-├── hooks/               # useBoard, usePresence, useCanvas, useSelection, useAIAgent, useUndoRedo
-├── services/            # firebase, board, presence, ai-agent
-├── types/               # board, presence, ai
-├── utils/               # colors, geometry, throttle, ids, text-fit, selection, frame-containment
-├── test/                # 153 Vitest unit + integration tests
-└── pages/               # HomePage (dashboard), BoardPage (whiteboard)
-e2e/                     # 7 Playwright E2E tests + stress test (1000 objects, 5 users)
-docs/                    # PRDs, TODO, planning artifacts
-firebase.json            # Firebase config + emulator settings
-database.rules.json      # Security rules
+│   ├── canvas/       # Board, StickyNote, Shape, Connector, Frame, RotationHandle, RemoteCursor
+│   ├── toolbar/      # Toolbar, ColorPicker
+│   ├── sidebar/      # PresencePanel, TextStylePanel, AICommandInput
+│   ├── ui/           # HelpPanel
+│   └── auth/         # AuthProvider, LoginPage
+├── hooks/            # useBoard, usePresence, useCanvas, useSelection, useAIAgent
+│                     # useUndoRedo, useCursorInterpolation
+├── services/         # supabase, board, presence, ai-agent
+├── types/            # board, presence, ai
+├── utils/            # colors, geometry, throttle, ids, text-fit, text-style
+│                     # selection, frame-containment, frame-placement, frame-create
+├── test/             # 229 Vitest unit + integration tests (25 files)
+└── pages/            # HomePage (dashboard), BoardPage (canvas)
+api/
+├── ai-agent.ts       # Vercel serverless entry point
+└── _lib/ai/          # agent, router, digest, planner, templates, tools, errors
+supabase/
+└── migrations/       # 001–006 SQL migrations (applied in order)
+docs/                 # PRDs, planning artifacts
 ```
 
 ---
@@ -161,176 +217,137 @@ database.rules.json      # Security rules
 ## 🏗️ Architecture
 
 ```
-Client (React + Konva) ←→ Firebase Realtime DB ←→ Security Rules
-                                 ↓
-                          /boards/{boardId}/
-                          ├── /objects/{objectId}
-                          ├── /connectors/{connectorId}
-                          ├── /cursors/{userId}
-                          ├── /presence/{userId}
-                          └── /metadata
-                                 ↓
-                          /userBoards/{userId}/{boardId}
+┌─────────────────────────────────────┐
+│  React + Konva (Browser)            │
+│  useBoard → Supabase Realtime       │
+│  usePresence → cursor broadcast     │
+│  useAIAgent → /api/ai-agent         │
+└──────────┬──────────────────────────┘
+           │ HTTPS / WebSocket
+┌──────────▼──────────────────────────┐
+│  Supabase                           │
+│  ├── Postgres (boards, objects)     │
+│  ├── Row Level Security (RLS)       │
+│  ├── Realtime (broadcast channels)  │
+│  └── Auth (email, Google, anon)     │
+└──────────────────────────────────────┘
+           │ Vercel Serverless
+┌──────────▼──────────────────────────┐
+│  /api/ai-agent                      │
+│  ├── Intent router                  │
+│  ├── Board digest (compact context) │
+│  ├── OpenAI GPT-4o                  │
+│  └── Tool executor (bulk CRUD)      │
+└──────────────────────────────────────┘
 ```
 
 ### Performance & Sync Strategy
-- **Direct SDK writes** for <100ms latency on object changes
-- **Throttled cursor sync** at 40ms intervals (~25 updates/sec)
-- **Throttled drag sync** at 80ms with final write on drag end
-- **Throttled draft text** at 2s intervals (reduces write amplification)
-- **Last-write-wins** conflict resolution (Firebase default)
-- **Local undo/redo** (no remote propagation)
+- **Unthrottled local rendering** — drag positions flush via `requestAnimationFrame` for 60fps+ visual feedback
+- **Throttled network broadcast** — collaborator updates sent at 50ms intervals (20 updates/sec)
+- **Cursor interpolation** — adaptive linear lerp matches measured broadcast interval; rAF loop sleeps when cursors are stationary
+- **Drag heartbeat** — re-broadcasts every 600ms while dragging to prevent jump-back on collaborators' screens
+- **Last-write-wins** conflict resolution
 
-### Frame Containment Model
-- **Explicit membership** via `parentFrameId` field on objects
-- **Drag-in threshold**: 55% overlap to enter a frame
-- **Drag-out threshold**: 45% overlap to exit (hysteresis prevents jitter)
-- **Live preview**: Objects show clipped in-frame preview during drag
-- **Cursor-based override**: Objects can overlap frames when cursor is inside
-- **Boundary collision**: Objects push against frame edges unless cursor is inside
+### AI Agent Pipeline
+```
+useAIAgent.ts
+  → /api/ai-agent (Vercel)
+    → routeCommand()     — selects model, tools, context scope
+    → buildDigest()      — compact board summary (not full JSON)
+    → plan()             — structured action plan
+    → validate()         — pre-flight checks
+    → execute()          — bulk CRUD via Supabase service role
+```
 
 ---
 
 ## ✅ Testing
 
-### Unit & Integration Tests (153 tests)
 ```bash
-npm test                  # Run all tests once
-npm run test:watch        # Watch mode
+npm test              # Run all 229 tests once
+npm run test:watch    # Watch mode
 ```
 
-**Test coverage:**
-- 18 test files
+**25 test files covering:**
+- Hooks: `useCanvas`, `useSelection`, `useUndoRedo`, `usePresence`, `useBoard`
 - Components: `computeResize`, `frame-interaction`, `help-panel`
-- Hooks: `useCanvas`, `useSelection`, `useUndoRedo`
-- Services: `board`
-- Utils: `colors`, `frame-containment`, `geometry`, `ids`, `selection`, `text-fit`, `throttle`
+- Services: `board`, `rls-policies`
+- Utils: `colors`, `frame-containment`, `frame-create`, `frame-placement`, `geometry`
+         `ids`, `selection`, `text-fit`, `throttle`, `ai-router`
 - Integration: `ai-command-input`, `home-page`, `login-page`, `toolbar`
 - Types: `board`
-
-### E2E Tests (7 tests + 1 stress test)
-```bash
-npm run test:e2e          # Run against emulators
-npm run test:e2e:prod     # Run against production
-npm run test:stress       # 1000 objects, 5 browsers
-```
-
-**E2E scenarios:**
-- Two users editing simultaneously
-- Refresh persistence
-- Rapid object creation (20 objects/sec)
-- Network disconnect recovery
-- Five concurrent users
-- Stress test: 1000 objects, 5 users, 60 FPS average
 
 ---
 
 ## 🚦 Quality Gates
 
-**Husky hooks enforce:**
-- **Pre-commit**: `npm test` (153 tests must pass)
-- **Pre-push**: `npm test` + `npm run build` (both must pass)
+Husky hooks run on every commit and push:
 
-**Never push broken code** — hooks block commits/pushes on failure.
+- **Pre-commit**: all 229 tests must pass
+- **Pre-push**: tests + production build must both pass
 
 ---
 
 ## 📦 Deployment
 
-### Vercel (Frontend)
-Automatic deployment on push to `main` branch (if GitHub connected):
+### Vercel (Frontend + API functions)
+
+Automatic on push to `main` (if GitHub connected). Manual:
+
 ```bash
-git push origin main
+vercel --prod
 ```
 
-Manual deployment:
+> ⛔ **Must get explicit approval before running `git push` or `vercel --prod`** — see `AGENTS.md`.
+
+**Environment variables** (set in Vercel dashboard — not from `.env` files):
+
+| Variable | Where used |
+|---|---|
+| `VITE_SUPABASE_URL` | Client-side (browser) |
+| `VITE_SUPABASE_ANON_KEY` | Client-side (browser) |
+| `SUPABASE_URL` | Server-side (API functions) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side (API functions) |
+| `OPENAI_API_KEY` | Server-side (AI agent) |
+
+### Supabase (Database migrations)
+
+Apply new migrations to production:
+
 ```bash
-npx vercel --prod
+npx supabase link --project-ref <project-ref>   # one-time link
+npx supabase db push                             # push pending migrations
 ```
-
-**Environment Variables** (set in Vercel dashboard):
-- `VITE_FIREBASE_API_KEY`
-- `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_DATABASE_URL`
-- `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
-
-### Firebase (Database + Auth)
-```bash
-firebase deploy --only database    # Deploy security rules
-```
-
----
-
-## 📊 Performance
-
-**Stress Test Results:**
-- **1000 objects** across 5 concurrent browser sessions
-- **60.4 FPS** average (well above 60 FPS target)
-- **Real-time sync** maintained across all sessions
-- **No degradation** with complex multi-user interactions
 
 ---
 
 ## 🔑 Key Design Decisions
 
-- **Space+drag for pan, regular drag for selection** — Avoids conflict between pan and multi-select (Figma/Miro pattern)
-- **Frame explicit membership over spatial auto-absorb** — Objects have `parentFrameId` field; membership determined by center point during drag end
-- **Resize via stage-level mouse tracking** — Eliminates flicker
-- **Luminance-based text color** — `(0.299*R + 0.587*G + 0.114*B)/255 > 0.5` threshold
-- **Selection uses intersection not containment** — Any overlap selects
-- **Connector selection via line-segment-rect intersection** — Geometric algorithm for accurate arrow selection
-- **Undo only reverts own actions** — Standard collaborative app approach (max 30 depth)
-- **Test files excluded from production build** — `tsconfig.app.json` excludes `src/test`
-- **TDD mandatory** — `.pi/AGENTS.md` enforces Red→Green→Refactor for all changes
-- **Firebase Emulator default for tests** — `USE_EMULATORS=true` by default
-- **Cross-frame connectors and lines always visible** — Render on top of frames to avoid clipping
+| Decision | Rationale |
+|---|---|
+| Local Supabase for dev | Isolates test data from production; free; `db reset` gives a clean slate |
+| `.env.local` overrides `.env` | Matches Vite's load order; production keys never touched during dev |
+| rAF for local drag state | Accumulates positions in refs, flushes once per frame — no throttle on local rendering |
+| Frame resize pushes children inward | Idempotent clamping to frame content bounds; matches Figma/Miro behavior |
+| Compact board digest for AI | ~95% token reduction vs. full JSON; heuristic router adds zero extra LLM calls |
+| Fail-fast + rollback for templates | On any DB error during template creation, immediately delete partially-created objects |
+| Cursor interpolation adaptive duration | Measured broadcast interval clamped [8ms, 80ms]; rAF loop sleeps when all cursors settled |
+| Drag heartbeat broadcast (600ms) | Prevents collaborator jump-back when the dragging user holds still |
+| Board thumbnails in localStorage | Instant, no DB migration; per-device tradeoff acceptable for MVP |
+| Undo reverts own actions only | Standard collaborative app approach (depth 30) |
 
 ---
 
 ## 🗺️ Roadmap
 
-See `docs/TODO.md` for the full backlog. Key upcoming features:
-
-- **AI Agent Integration** — Vercel Serverless Functions + OpenAI for natural language commands
+- **DB Environment Branching** — Supabase branch-per-PR for isolated migration testing
 - **Access Control** — Public/private boards, share by link or email
-- **Teams & Organizations** — Multi-user workspaces
-- **Export/Import** — JSON export, image export (PNG/SVG)
-- **Templates** — Pre-built layouts for common use cases
-- **Comments & Annotations** — Threaded discussions on objects
+- **Export** — PNG/SVG image export, JSON board export
+- **Board Versioning** — Named snapshots with restore
+- **AI Drawing Intent** — Natural language object placement and diagramming
 
 ---
 
 ## 📄 License
 
-MIT License — see LICENSE file for details.
-
----
-
-## 🤝 Contributing
-
-This is a personal project built for learning and demonstration. Contributions are welcome:
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit with descriptive messages
-4. Ensure all tests pass (`npm test`)
-5. Push and open a PR
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- [Konva.js](https://konvajs.org/) for canvas rendering
-- [Firebase](https://firebase.google.com/) for real-time sync
-- [Tailwind CSS](https://tailwindcss.com/) for styling
-- [Vite](https://vitejs.dev/) for blazing fast builds
-- [Vitest](https://vitest.dev/) + [Playwright](https://playwright.dev/) for testing
-
----
-
-**Questions or feedback?** Open an issue or reach out!
+MIT — see LICENSE for details.
