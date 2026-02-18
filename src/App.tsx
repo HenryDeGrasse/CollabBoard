@@ -34,6 +34,22 @@ function AppContent() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // After Google OAuth the browser lands on the app origin ("/").
+  // If the user was on a /board/<id> link before being redirected to login,
+  // LoginPage saves that path. We restore it here once the user is logged in.
+  useEffect(() => {
+    if (!user) return;
+    const returnTo = localStorage.getItem("collabboard_oauth_return_to");
+    if (!returnTo) return;
+    localStorage.removeItem("collabboard_oauth_return_to");
+    const boardMatch = returnTo.match(/^\/board\/([a-zA-Z0-9-]+)$/);
+    if (boardMatch) {
+      const boardId = boardMatch[1];
+      window.history.pushState(null, "", `/board/${boardId}`);
+      setRoute({ page: "board", boardId });
+    }
+  }, [user]);
+
   const navigateTo = (newRoute: Route) => {
     const path = newRoute.page === "board" ? `/board/${newRoute.boardId}` : "/";
     window.history.pushState(null, "", path);

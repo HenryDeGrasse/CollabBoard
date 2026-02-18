@@ -93,6 +93,14 @@ export function LoginPage() {
   const handleGoogleLogin = async () => {
     setError(""); setInfo(""); setLoading(true);
     try {
+      // Remember where the user was trying to go (e.g. /board/<id> from a shared link).
+      // After the OAuth redirect back to the app origin, App.tsx reads this and
+      // navigates the user to their intended destination.
+      const intendedPath = window.location.pathname;
+      if (intendedPath && intendedPath !== "/") {
+        localStorage.setItem("collabboard_oauth_return_to", intendedPath);
+      }
+
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: window.location.origin },

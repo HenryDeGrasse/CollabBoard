@@ -77,7 +77,7 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 | Database & Auth | Supabase (Postgres + Row Level Security + Realtime) |
 | API / AI Backend | Vercel Serverless Functions + OpenAI GPT-4o |
 | Hosting | Vercel |
-| Testing | Vitest (272 unit/integration tests) + Playwright E2E |
+| Testing | Vitest (278 unit/integration tests) + Playwright E2E |
 
 ---
 
@@ -227,7 +227,7 @@ src/
 ├── types/            # board, presence, ai
 ├── utils/            # colors, geometry, throttle, ids, text-fit, text-style,
 │                     # text-overlay-layout, selection, frame-containment, frame-placement
-├── test/             # 272 Vitest tests across 30 files
+├── test/             # 272 Vitest tests across 31 files
 └── pages/            # HomePage (dashboard), BoardPage (canvas)
 api/
 ├── ai-agent.ts       # Main AI entrypoint
@@ -294,7 +294,7 @@ useAIAgent.ts
 ## ✅ Testing
 
 ```bash
-npm test              # Run all 272 tests once
+npm test              # Run all 278 tests once
 npm run test:watch    # Watch mode
 npm run test:e2e      # Playwright end-to-end suite
 ```
@@ -317,7 +317,7 @@ Detailed mapping: see [`docs/regression-test-matrix.md`](docs/regression-test-ma
 
 Husky hooks run on every commit and push:
 
-- **Pre-commit**: all 272 Vitest tests must pass
+- **Pre-commit**: all 278 Vitest tests must pass
 - **Pre-push**: tests + production build must both pass
 
 ---

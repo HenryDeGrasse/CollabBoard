@@ -180,4 +180,57 @@ describe("LoginPage integration", () => {
     await user.click(signInLink);
     expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
   });
+
+  it("saves intended board path to localStorage before Google OAuth redirect", async () => {
+    const user = userEvent.setup();
+
+    // Simulate landing on a shared board link
+    const originalPathname = window.location.pathname;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, pathname: "/board/test-board-abc123" },
+      writable: true,
+    });
+
+    const localStorageSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    render(<LoginPage />);
+    await user.click(screen.getByRole("button", { name: /sign in with google/i }));
+
+    expect(localStorageSpy).toHaveBeenCalledWith(
+      "collabboard_oauth_return_to",
+      "/board/test-board-abc123"
+    );
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google" })
+    );
+
+    // Cleanup
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, pathname: originalPathname },
+      writable: true,
+    });
+    localStorageSpy.mockRestore();
+  });
+
+  it("does not save path to localStorage when Google OAuth is from the home page", async () => {
+    const user = userEvent.setup();
+
+    // Home page — pathname is "/"
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, pathname: "/" },
+      writable: true,
+    });
+
+    const localStorageSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    render(<LoginPage />);
+    await user.click(screen.getByRole("button", { name: /sign in with google/i }));
+
+    expect(localStorageSpy).not.toHaveBeenCalledWith(
+      "collabboard_oauth_return_to",
+      expect.anything()
+    );
+
+    localStorageSpy.mockRestore();
+  });
 });
