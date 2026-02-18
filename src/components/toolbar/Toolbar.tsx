@@ -15,11 +15,15 @@ import { getStickyColorArray, getShapeColorArray } from "../../utils/colors";
 interface ToolbarProps {
   activeTool: ToolType;
   activeColor: string;
+  activeStrokeWidth: number;
   selectedCount: number;
   selectedColor: string;
+  selectedStrokeWidth: number | null;
   onToolChange: (tool: ToolType) => void;
   onColorChange: (color: string) => void;
+  onStrokeWidthChange: (w: number) => void;
   onChangeSelectedColor: (color: string) => void;
+  onChangeSelectedStrokeWidth: (w: number) => void;
 }
 
 const tools: { id: ToolType; label: string; icon: React.ReactNode; shortcut: string }[] = [
@@ -99,14 +103,79 @@ function ColorDropdown({
   );
 }
 
+const STROKE_WIDTHS = [1, 2, 3, 5, 8];
+
+function StrokeWidthPicker({
+  value,
+  onChange,
+  label,
+}: {
+  value: number;
+  onChange: (w: number) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition"
+        title={label}
+      >
+        {/* Stroke preview */}
+        <div className="w-5 h-5 flex items-center justify-center">
+          <div className="rounded-full bg-gray-600" style={{ width: 16, height: Math.max(2, value) }} />
+        </div>
+        <ChevronDown size={12} className="text-gray-400" />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-[60] min-w-[100px]">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wider px-1 mb-1.5">{label}</p>
+          <div className="space-y-1">
+            {STROKE_WIDTHS.map((w) => (
+              <button
+                key={w}
+                onClick={() => { onChange(w); setOpen(false); }}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 transition ${
+                  value === w ? "bg-emerald-50" : ""
+                }`}
+              >
+                <div className="w-8 flex items-center justify-center">
+                  <div className="rounded-full bg-gray-700" style={{ width: 24, height: Math.max(1, w) }} />
+                </div>
+                <span className="text-xs text-gray-500">{w}px</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Toolbar({
   activeTool,
   activeColor,
+  activeStrokeWidth,
   selectedCount,
   selectedColor,
+  selectedStrokeWidth,
   onToolChange,
   onColorChange,
+  onStrokeWidthChange,
   onChangeSelectedColor,
+  onChangeSelectedStrokeWidth,
 }: ToolbarProps) {
   const showCreationColor =
     activeTool === "sticky" || activeTool === "rectangle" || activeTool === "circle" || activeTool === "line";
@@ -150,6 +219,15 @@ export function Toolbar({
         </>
       )}
 
+      {/* Stroke width for line tool */}
+      {activeTool === "line" && (
+        <StrokeWidthPicker
+          value={activeStrokeWidth}
+          onChange={onStrokeWidthChange}
+          label="Stroke width"
+        />
+      )}
+
       {/* Style controls for selected objects */}
       {selectedCount > 0 && activeTool === "select" && (
         <>
@@ -160,6 +238,15 @@ export function Toolbar({
             colors={allColors}
             label="Fill color"
           />
+
+          {/* Stroke width for selected lines */}
+          {selectedStrokeWidth !== null && (
+            <StrokeWidthPicker
+              value={selectedStrokeWidth}
+              onChange={onChangeSelectedStrokeWidth}
+              label="Stroke width"
+            />
+          )}
 
           <span className="text-[10px] text-gray-400 px-1">{selectedCount} selected</span>
         </>

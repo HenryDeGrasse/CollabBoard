@@ -141,6 +141,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
 
   const [activeTool, setActiveTool] = useState<ToolType>("select");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_STICKY_COLOR);
+  const [activeStrokeWidth, setActiveStrokeWidth] = useState<number>(3);
   const [isRotating, setIsRotating] = useState(false);
 
   const [joined, setJoined] = useState(false);
@@ -485,6 +486,24 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
 
   const canEditSelectedText = textStyleTargets.length > 0;
 
+  // Selected lines' stroke width
+  const selectedLines = selectedObjects.filter((o) => o.type === "line");
+  const selectedStrokeWidth =
+    selectedLines.length > 0 &&
+    selectedLines.every((o) => (o.strokeWidth ?? 3) === (selectedLines[0].strokeWidth ?? 3))
+      ? (selectedLines[0].strokeWidth ?? 3)
+      : null;
+
+  const handleChangeSelectedStrokeWidth = useCallback(
+    (w: number) => {
+      selection.selectedIds.forEach((id) => {
+        const obj = objects[id];
+        if (obj?.type === "line") updateObject(id, { strokeWidth: w });
+      });
+    },
+    [selection.selectedIds, objects, updateObject]
+  );
+
   const selectedTextSizes = textStyleTargets.map((obj) => resolveObjectTextSize(obj));
   const selectedTextSize =
     selectedTextSizes.length > 0 &&
@@ -547,15 +566,19 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       <Toolbar
         activeTool={activeTool}
         activeColor={activeColor}
+        activeStrokeWidth={activeStrokeWidth}
         selectedCount={selection.selectedIds.size}
         selectedColor={
           selection.selectedIds.size > 0
             ? (objects[Array.from(selection.selectedIds)[0]]?.color || "")
             : ""
         }
+        selectedStrokeWidth={selectedStrokeWidth}
         onToolChange={setActiveTool}
         onColorChange={setActiveColor}
+        onStrokeWidthChange={setActiveStrokeWidth}
         onChangeSelectedColor={handleChangeSelectedColor}
+        onChangeSelectedStrokeWidth={handleChangeSelectedStrokeWidth}
       />
 
       {/* Left-side text style popup — only during text editing */}
@@ -626,6 +649,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         selectedIds={selection.selectedIds}
         activeTool={activeTool}
         activeColor={activeColor}
+        activeStrokeWidth={activeStrokeWidth}
         onSelect={selection.select}
         onClearSelection={selection.clearSelection}
         onCreateObject={createObject}

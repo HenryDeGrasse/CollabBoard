@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { Stage, Layer, Arrow, Line, Rect, Group } from "react-konva";
+import { Stage, Layer, Arrow, Line, Rect, Group, Ellipse } from "react-konva";
 import Konva from "konva";
 import { StickyNote } from "./StickyNote";
 import { Shape } from "./Shape";
@@ -61,6 +61,7 @@ interface BoardProps {
   >;
   activeTool: ToolType;
   activeColor: string;
+  activeStrokeWidth: number;
   onSelect: (id: string, multi?: boolean) => void;
   onClearSelection: () => void;
   onCreateObject: (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => string;
@@ -98,6 +99,7 @@ export function Board({
   remoteDragPositions,
   activeTool,
   activeColor,
+  activeStrokeWidth,
   onSelect,
   onClearSelection,
   onCreateObject,
@@ -228,6 +230,14 @@ export function Board({
 
   // Frame drawing state (drag-to-create)
   const [frameDraw, setFrameDraw] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+  } | null>(null);
+
+  // Shape drawing state (drag-to-create for rectangle / circle)
+  const [shapeDraw, setShapeDraw] = useState<{
     startX: number;
     startY: number;
     endX: number;
@@ -761,6 +771,13 @@ export function Board({
         );
       }
 
+      // Shape drawing preview (rectangle / circle drag-to-create)
+      if (shapeDraw && (activeTool === "rectangle" || activeTool === "circle")) {
+        setShapeDraw((prev) =>
+          prev ? { ...prev, endX: canvasPoint.x, endY: canvasPoint.y } : null
+        );
+      }
+
       // Frame manual drag (from overlay header)
       if (frameManualDrag) {
         const { frameId, startMouseX, startMouseY, startFrameX, startFrameY } = frameManualDrag;
@@ -819,6 +836,7 @@ export function Board({
       arrowDraw,
       lineDraw,
       frameDraw,
+      shapeDraw,
       frameManualDrag,
       onObjectDragBroadcast,
       scheduleDragStateUpdate,
@@ -913,7 +931,7 @@ export function Board({
               canvasPoint.x - x,
               canvasPoint.y - y,
             ],
-            strokeWidth: 3,
+            strokeWidth: activeStrokeWidth,
           });
           setLineDraw(null);
           // Push undo after Firebase assigns the object
@@ -963,47 +981,8 @@ export function Board({
           parentFrameId: parentFrame?.id ?? null,
         });
         onResetTool(newId);
-      } else if (activeTool === "rectangle") {
-        const x = canvasPoint.x - 75;
-        const y = canvasPoint.y - 50;
-        const width = 150;
-        const height = 100;
-        const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
-        const newId = createAndTrack({
-          type: "rectangle",
-          x,
-          y,
-          width,
-          height,
-          color: activeColor,
-          text: "",
-          rotation: 0,
-          zIndex: maxZIndex + 1,
-          createdBy: currentUserId,
-          parentFrameId: parentFrame?.id ?? null,
-        });
-        onResetTool(newId);
-      } else if (activeTool === "circle") {
-        const x = canvasPoint.x - 50;
-        const y = canvasPoint.y - 50;
-        const width = 100;
-        const height = 100;
-        const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
-        const newId = createAndTrack({
-          type: "circle",
-          x,
-          y,
-          width,
-          height,
-          color: activeColor,
-          text: "",
-          rotation: 0,
-          zIndex: maxZIndex + 1,
-          createdBy: currentUserId,
-          parentFrameId: parentFrame?.id ?? null,
-        });
-        onResetTool(newId);
       }
+      // Rectangle and circle are now created via drag (handleMouseUp) — no click-create here
     },
     [
       activeTool,
@@ -1643,6 +1622,17 @@ export function Board({
         return;
       }
 
+      // Rectangle / circle: start drag-to-create
+      if (activeTool === "rectangle" || activeTool === "circle") {
+        setShapeDraw({
+          startX: canvasPoint.x,
+          startY: canvasPoint.y,
+          endX: canvasPoint.x,
+          endY: canvasPoint.y,
+        });
+        return;
+      }
+
       if (activeTool === "arrow" && arrowDraw) {
         setArrowDraw(null);
         return;
@@ -1691,6 +1681,57 @@ export function Board({
       }, 100);
 
       setFrameDraw(null);
+      onResetTool(newId);
+      return;
+    }
+
+    // Rectangle / circle: finalize drag-to-create
+    if ((activeTool === "rectangle" || activeTool === "circle") && shapeDraw) {
+      const SHAPE_CLICK_THRESHOLD = 5;
+      const dx = Math.abs(shapeDraw.endX - shapeDraw.startX);
+      const dy = Math.abs(shapeDraw.endY - shapeDraw.startY);
+      const isClick = dx < SHAPE_CLICK_THRESHOLD && dy < SHAPE_CLICK_THRESHOLD;
+
+      let x: number, y: number, w: number, h: number;
+      if (isClick) {
+        // Click: place default-sized shape centered on cursor
+        if (activeTool === "rectangle") {
+          w = 150; h = 100;
+        } else {
+          w = 100; h = 100;
+        }
+        x = shapeDraw.startX - w / 2;
+        y = shapeDraw.startY - h / 2;
+      } else {
+        x = Math.min(shapeDraw.startX, shapeDraw.endX);
+        y = Math.min(shapeDraw.startY, shapeDraw.endY);
+        w = Math.max(20, dx);
+        h = Math.max(20, dy);
+      }
+
+      const maxZ = Math.max(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
+      const parentFrame = getFrameAtPoint(x + w / 2, y + h / 2);
+      const newId = onCreateObject({
+        type: activeTool,
+        x, y,
+        width: w,
+        height: h,
+        color: activeColor,
+        text: "",
+        rotation: 0,
+        zIndex: maxZ + 1,
+        createdBy: currentUserId,
+        parentFrameId: parentFrame?.id ?? null,
+      });
+
+      setTimeout(() => {
+        const created = objectsRef.current[newId];
+        if (created) {
+          onPushUndo({ type: "create_object", objectId: newId, object: created });
+        }
+      }, 100);
+
+      setShapeDraw(null);
       onResetTool(newId);
       return;
     }
@@ -1771,6 +1812,8 @@ export function Board({
   }, [
     activeTool,
     frameDraw,
+    shapeDraw,
+    activeColor,
     currentUserId,
     selectionRect,
     onCreateObject,
@@ -1852,6 +1895,7 @@ export function Board({
         setArrowDraw(null);
         setLineDraw(null);
         setFrameDraw(null);
+        setShapeDraw(null);
         if (editingObjectId) {
           setEditingObjectId(null);
           onSetEditingObject(null);
@@ -2056,6 +2100,35 @@ export function Board({
               strokeWidth={2}
               dash={[8, 4]}
               cornerRadius={8}
+              listening={false}
+            />
+          )}
+
+          {/* Shape drag-to-create preview */}
+          {shapeDraw && activeTool === "rectangle" && (
+            <Rect
+              x={Math.min(shapeDraw.startX, shapeDraw.endX)}
+              y={Math.min(shapeDraw.startY, shapeDraw.endY)}
+              width={Math.max(1, Math.abs(shapeDraw.endX - shapeDraw.startX))}
+              height={Math.max(1, Math.abs(shapeDraw.endY - shapeDraw.startY))}
+              fill={activeColor + "66"}
+              stroke={activeColor}
+              strokeWidth={2}
+              dash={[6, 3]}
+              cornerRadius={4}
+              listening={false}
+            />
+          )}
+          {shapeDraw && activeTool === "circle" && (
+            <Ellipse
+              x={(shapeDraw.startX + shapeDraw.endX) / 2}
+              y={(shapeDraw.startY + shapeDraw.endY) / 2}
+              radiusX={Math.max(1, Math.abs(shapeDraw.endX - shapeDraw.startX) / 2)}
+              radiusY={Math.max(1, Math.abs(shapeDraw.endY - shapeDraw.startY) / 2)}
+              fill={activeColor + "66"}
+              stroke={activeColor}
+              strokeWidth={2}
+              dash={[6, 3]}
               listening={false}
             />
           )}

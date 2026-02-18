@@ -154,10 +154,12 @@ export const Shape = React.memo(function Shape({
       case "line":
         return (
           <Line
-            points={[0, 0, object.width, object.height]}
+            points={object.points ?? [0, 0, object.width, object.height]}
             stroke={object.color}
-            strokeWidth={3}
+            strokeWidth={object.strokeWidth ?? 3}
             hitStrokeWidth={15}
+            lineCap="round"
+            lineJoin="round"
           />
         );
       default:
