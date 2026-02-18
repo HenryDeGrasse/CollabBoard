@@ -10,11 +10,11 @@
  */
 
 import OpenAI from "openai";
-import { getSupabaseAdmin } from "../supabaseAdmin";
-import * as tools from "./tools";
-import { buildBoardDigest } from "./digest";
-import type { CompactObject, Viewport } from "../boardState";
-import type { ToolContext } from "./tools";
+import { getSupabaseAdmin } from "../supabaseAdmin.js";
+import * as tools from "./tools.js";
+import { buildBoardDigest } from "./digest.js";
+import type { CompactObject, Viewport } from "../boardState.js";
+import type { ToolContext } from "./tools.js";
 
 // ─── Plan Schema ──────────────────────────────────────────────
 
@@ -240,7 +240,7 @@ export async function executePlan(
     const frameCount = plan.newFrames.length;
 
     if (frameCount > 0) {
-      const { calculateFrameSize: calcSize } = await import("../framePlacement");
+      const { calculateFrameSize: calcSize } = await import("../framePlacement.js");
 
       // Estimate child count per frame for sizing
       const childCounts: Record<string, number> = {};

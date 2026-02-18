@@ -8,8 +8,8 @@
  * The router decides what to include; this module formats it.
  */
 
-import type { CompactObject, Viewport } from "../boardState";
-import type { Scope } from "./router";
+import type { CompactObject, Viewport } from "../boardState.js";
+import type { Scope } from "./router.js";
 
 export interface DigestOptions {
   /** Which objects are selected */

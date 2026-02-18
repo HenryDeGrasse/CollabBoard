@@ -1,4 +1,4 @@
-import type { CompactObject } from "./boardState";
+import type { CompactObject } from "./boardState.js";
 
 // ─── Constants ────────────────────────────────────────────────
 

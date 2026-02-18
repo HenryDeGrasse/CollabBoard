@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "../supabaseAdmin";
+import { getSupabaseAdmin } from "../supabaseAdmin.js";
 import {
   resolvePlacement,
   clampValue,
@@ -7,14 +7,14 @@ import {
   COORD_MIN,
   COORD_MAX,
   TEXT_MAX_LENGTH,
-} from "../placement";
+} from "../placement.js";
 import {
   placeObjectInFrame,
   calculateFrameSize,
   arrangeChildrenInGrid,
   computeFrameExpansionForChildren,
-} from "../framePlacement";
-import type { CompactObject, Viewport } from "../boardState";
+} from "../framePlacement.js";
+import type { CompactObject, Viewport } from "../boardState.js";
 
 interface ToolResult {
   success: boolean;
@@ -1101,7 +1101,7 @@ export async function rearrangeFrame(
     }
 
     // Compute tidy grid positions
-    const positions = arrangeChildrenInGrid(frame, children);
+    const positions: Record<string, { x: number; y: number }> = arrangeChildrenInGrid(frame, children);
 
     // Expand frame if needed to fit all children + reserve slot
     const expansion = computeFrameExpansionForChildren(frame, children.length);

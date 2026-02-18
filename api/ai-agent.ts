@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { verifyToken, assertCanWriteBoard, AuthError } from "./_lib/auth";
-import { getSupabaseAdmin } from "./_lib/supabaseAdmin";
-import { executeAICommand } from "./_lib/ai/agent";
+import { verifyToken, assertCanWriteBoard, AuthError } from "./_lib/auth.js";
+import { getSupabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { executeAICommand } from "./_lib/ai/agent.js";
 
 // ─── Rate Limiting (in-memory, per cold start) ───────────────
 

@@ -7,10 +7,10 @@
  */
 
 import OpenAI from "openai";
-import { getSupabaseAdmin } from "../supabaseAdmin";
-import { calculateFrameSize } from "../framePlacement";
-import type { CompactObject, Viewport } from "../boardState";
-import type { ToolContext } from "./tools";
+import { getSupabaseAdmin } from "../supabaseAdmin.js";
+import { calculateFrameSize } from "../framePlacement.js";
+import type { CompactObject, Viewport } from "../boardState.js";
+import type { ToolContext } from "./tools.js";
 
 // ─── Template Specs ───────────────────────────────────────────
 

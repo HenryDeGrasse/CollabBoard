@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "./supabaseAdmin";
+import { getSupabaseAdmin } from "./supabaseAdmin.js";
 
 export interface Viewport {
   minX: number;

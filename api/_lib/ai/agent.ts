@@ -3,22 +3,22 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { TOOL_DEFINITIONS } from "./toolSchemas";
-import * as tools from "./tools";
+import { TOOL_DEFINITIONS } from "./toolSchemas.js";
+import * as tools from "./tools.js";
 import {
   getBoardStateForAI,
   type Viewport,
   type CompactObject,
-} from "../boardState";
-import { routeCommand, type RouteResult } from "./router";
-import { buildBoardDigest } from "./digest";
+} from "../boardState.js";
+import { routeCommand, type RouteResult } from "./router.js";
+import { buildBoardDigest } from "./digest.js";
 import {
   getTemplate,
   generateTemplateContent,
   executeTemplate,
-} from "./templates";
-import { generatePlan, validatePlan, executePlan } from "./planner";
-import { getSupabaseAdmin } from "../supabaseAdmin";
+} from "./templates.js";
+import { generatePlan, validatePlan, executePlan, type Plan } from "./planner.js";
+import { getSupabaseAdmin } from "../supabaseAdmin.js";
 
 // ─── Guardrails ───────────────────────────────────────────────
 
@@ -220,7 +220,7 @@ async function executePlannerPath(
     await updateProgress("planning", "Analyzing board and creating plan...");
 
     // Phase 3: Generate structured plan (one LLM call, no tools)
-    const plan = await withTimeout(
+    const plan = await withTimeout<Plan>(
       generatePlan(command, boardObjects, viewport, selectedIds, openaiApiKey),
       30_000,
       "Plan generation timed out"

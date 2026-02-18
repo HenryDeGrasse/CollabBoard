@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "./supabaseAdmin";
+import { getSupabaseAdmin } from "./supabaseAdmin.js";
 
 export class AuthError extends Error {
   status: number;

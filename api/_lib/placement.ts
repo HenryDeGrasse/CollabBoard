@@ -1,4 +1,4 @@
-import type { CompactObject, Viewport } from "./boardState";
+import type { CompactObject, Viewport } from "./boardState.js";
 
 /**
  * Find a non-overlapping position for a new object near the desired location.
