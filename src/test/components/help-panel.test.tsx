@@ -77,7 +77,7 @@ describe("HelpPanel", () => {
     fireEvent.click(screen.getByTitle("Keyboard shortcuts (?)"));
 
     expect(screen.getByText("Delete selected objects")).toBeTruthy();
-    expect(screen.getByText("Deselect all / cancel tool")).toBeTruthy();
+    expect(screen.getByText("Return to Select tool")).toBeTruthy();
     expect(screen.getByText("Undo")).toBeTruthy();
     expect(screen.getByText("Redo")).toBeTruthy();
     expect(screen.getByText("Redo (alternate)")).toBeTruthy();

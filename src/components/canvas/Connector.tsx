@@ -105,7 +105,7 @@ export const ConnectorLine = React.memo(function ConnectorLine({ connector, from
     onSelect(connector.id);
   };
 
-  const strokeColor = isSelected ? "#4F46E5" : "#4B5563";
+  const strokeColor = isSelected ? "#0F2044" : "#4B5563";
   const strokeWidth = isSelected ? 3 : 2.5;
 
   if (connector.style === "arrow") {
@@ -124,18 +124,36 @@ export const ConnectorLine = React.memo(function ConnectorLine({ connector, from
           onClick={handleClick}
           onTap={handleClick}
         />
-        {/* Selection midpoint indicator */}
-        {isSelected && (
-          <Rect
-            x={midX - 5}
-            y={midY - 5}
-            width={10}
-            height={10}
-            fill="#4F46E5"
-            cornerRadius={2}
-            listening={false}
-          />
-        )}
+        {/* Midpoint indicator — always visible on hover, solid when selected */}
+        <Rect
+          x={midX - 5}
+          y={midY - 5}
+          width={10}
+          height={10}
+          fill={isSelected ? "#0F2044" : "transparent"}
+          stroke={isSelected ? "#0F2044" : "transparent"}
+          strokeWidth={1}
+          cornerRadius={2}
+          hitStrokeWidth={16}
+          onMouseEnter={(e) => {
+            const c = e.target.getStage()?.container();
+            if (c) c.style.cursor = "pointer";
+            if (!isSelected) {
+              (e.target as any).fill("rgba(15, 32, 68, 0.3)");
+              (e.target as any).stroke("rgba(15, 32, 68, 0.5)");
+            }
+          }}
+          onMouseLeave={(e) => {
+            const c = e.target.getStage()?.container();
+            if (c) c.style.cursor = "default";
+            if (!isSelected) {
+              (e.target as any).fill("transparent");
+              (e.target as any).stroke("transparent");
+            }
+          }}
+          onClick={handleClick}
+          onTap={handleClick}
+        />
       </Group>
     );
   }
@@ -151,17 +169,35 @@ export const ConnectorLine = React.memo(function ConnectorLine({ connector, from
         onClick={handleClick}
         onTap={handleClick}
       />
-      {isSelected && (
-        <Rect
-          x={midX - 5}
-          y={midY - 5}
-          width={10}
-          height={10}
-          fill="#4F46E5"
-          cornerRadius={2}
-          listening={false}
-        />
-      )}
+      <Rect
+        x={midX - 5}
+        y={midY - 5}
+        width={10}
+        height={10}
+        fill={isSelected ? "#0F2044" : "transparent"}
+        stroke={isSelected ? "#0F2044" : "transparent"}
+        strokeWidth={1}
+        cornerRadius={2}
+        hitStrokeWidth={16}
+        onMouseEnter={(e) => {
+          const c = e.target.getStage()?.container();
+          if (c) c.style.cursor = "pointer";
+          if (!isSelected) {
+            (e.target as any).fill("rgba(15, 32, 68, 0.3)");
+            (e.target as any).stroke("rgba(15, 32, 68, 0.5)");
+          }
+        }}
+        onMouseLeave={(e) => {
+          const c = e.target.getStage()?.container();
+          if (c) c.style.cursor = "default";
+          if (!isSelected) {
+            (e.target as any).fill("transparent");
+            (e.target as any).stroke("transparent");
+          }
+        }}
+        onClick={handleClick}
+        onTap={handleClick}
+      />
     </Group>
   );
 });

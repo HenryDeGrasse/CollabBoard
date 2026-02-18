@@ -119,50 +119,60 @@ export function TextOverlay({
   const screenX = object.x * scale + stageX;
   const screenY = object.y * scale + stageY;
 
+  // Estimate text content height to compute vertical offset padding.
+  // lineHeight ≈ fontSize * 1.4; approximate lines from text wrapping.
+  const scaledFontSize = fontSize * scale;
+  const lineH = scaledFontSize * 1.4;
+  const boxW = layout.innerWidth * scale;
+  const boxH = layout.innerHeight * scale;
+  // Rough char-per-line estimate
+  const charsPerLine = Math.max(1, Math.floor(boxW / (scaledFontSize * 0.55)));
+  const lineCount = Math.max(1, Math.ceil((text || "A").length / charsPerLine));
+  const contentH = Math.min(lineCount * lineH, boxH);
+
+  let paddingTop = 0;
+  if (vAlign === "middle") {
+    paddingTop = Math.max(0, (boxH - contentH) / 2);
+  } else if (vAlign === "bottom") {
+    paddingTop = Math.max(0, boxH - contentH);
+  }
+
   return (
-    <div
+    <textarea
+      ref={textareaRef}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onDraftChange?.(e.target.value);
+      }}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      onMouseDown={(e) => e.stopPropagation()}
       style={{
         position: "absolute",
         left: `${screenX + layout.offsetX * scale}px`,
         top: `${screenY + layout.offsetY * scale}px`,
-        width: `${layout.innerWidth * scale}px`,
-        height: `${layout.innerHeight * scale}px`,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: vAlign === "top" ? "flex-start" : vAlign === "bottom" ? "flex-end" : "center",
+        width: `${boxW}px`,
+        height: `${boxH}px`,
+        fontSize: `${scaledFontSize}px`,
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontWeight: object.type === "frame" ? "bold" : "normal",
+        color: textColor,
+        background: "transparent",
+        border: "1px solid rgba(0, 0, 0, 0.25)",
+        borderRadius: `${4 * scale}px`,
+        outline: "none",
+        resize: "none",
+        overflow: "hidden",
+        paddingTop: `${paddingTop}px`,
+        paddingLeft: `${2 * scale}px`,
+        paddingRight: `${2 * scale}px`,
+        paddingBottom: `${2 * scale}px`,
+        lineHeight: "1.4",
+        textAlign: object.type === "frame" ? "left" : "center",
         zIndex: 1000,
-        pointerEvents: "none",
+        boxSizing: "border-box",
       }}
-    >
-      <textarea
-        ref={textareaRef}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          onDraftChange?.(e.target.value);
-        }}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          width: "100%",
-          maxHeight: `${layout.innerHeight * scale}px`,
-          fontSize: `${fontSize * scale}px`,
-          fontFamily: "Inter, system-ui, sans-serif",
-          fontWeight: object.type === "frame" ? "bold" : "normal",
-          color: textColor,
-          background: "transparent",
-          border: "2px solid rgba(16, 185, 129, 0.6)",
-          borderRadius: `${4 * scale}px`,
-          outline: "none",
-          resize: "none",
-          overflow: "hidden",
-          padding: `${2 * scale}px`,
-          lineHeight: "1.4",
-          textAlign: object.type === "frame" ? "left" : "center",
-          pointerEvents: "auto",
-        }}
-      />
-    </div>
+    />
   );
 }

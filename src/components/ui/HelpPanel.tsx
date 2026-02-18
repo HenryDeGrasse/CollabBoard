@@ -16,13 +16,17 @@ export function getShortcuts(mac: boolean) {
     { key: "F", desc: "Frame tool" },
     { section: "Actions" },
     { key: "Delete / Backspace", desc: "Delete selected objects" },
-    { key: "Escape", desc: "Deselect all / cancel tool" },
+    { key: "Escape", desc: "Return to Select tool" },
     { key: `${mod} + Z`, desc: "Undo" },
     { key: `${mod} + Shift + Z`, desc: "Redo" },
     { key: `${mod} + Y`, desc: "Redo (alternate)" },
     { key: `${mod} + C`, desc: "Copy selected" },
     { key: `${mod} + V`, desc: "Paste" },
     { key: `${mod} + D`, desc: "Duplicate selected" },
+    { section: "Creating" },
+    { key: "Click + Drag", desc: "Draw shape / sticky to size" },
+    { key: "Click (no drag)", desc: "Place default-sized object" },
+    { key: "Shift (while rotating)", desc: "Snap rotation to 15°" },
     { section: "Navigation" },
     { key: "Space + Drag", desc: "Pan canvas" },
     { key: "Right-click + Drag", desc: "Pan canvas" },
@@ -31,6 +35,9 @@ export function getShortcuts(mac: boolean) {
     { key: "Double-click", desc: "Edit text on object" },
     { key: "Click away / Escape", desc: "Finish editing" },
     { key: "?", desc: "Toggle this help panel" },
+    { section: "Connectors" },
+    { key: "A then click two objects", desc: "Connect with arrow" },
+    { key: "Click connector midpoint", desc: "Select connector (then Delete)" },
   ] as const;
 }
 
