@@ -31,6 +31,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    // Integration tests occasionally exceed 5s under load when many suites
+    // run in parallel. 15s keeps CI/local runs stable without masking hangs.
+    testTimeout: 15000,
+    hookTimeout: 15000,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     coverage: {
