@@ -65,37 +65,29 @@ export const executeAICommand = traceable(async function executeAICommand(
 ): Promise<AIExecutionResult> {
   const startTime = Date.now();
 
-  // ── Board versioning: capture version at start ──
-  let boardVersionStart: number;
-  try {
-    boardVersionStart = await getBoardVersion(boardId);
-  } catch {
-    boardVersionStart = 0; // graceful fallback if column doesn't exist yet
-  }
+  // ── Parallel: load board state, version, and job check concurrently ──
+  const [boardObjects, boardVersionStart, existingJob] = await Promise.all([
+    getBoardStateForAI(boardId, viewport, selectedIds),
+    getBoardVersion(boardId).catch(() => 0),
+    commandId ? loadJob(boardId, commandId).catch(() => null) : Promise.resolve(null),
+  ]);
 
-  // ── Resumable: check if this is a resumption of a prior job ──
-  if (commandId) {
-    const existingJob = await loadJob(boardId, commandId);
-    if (existingJob && existingJob.status === "completed") {
-      // Already completed — return idempotent result
-      return {
-        success: true,
-        message: "Command already completed (idempotent).",
-        objectsCreated: [],
-        objectsUpdated: [],
-        objectsDeleted: [],
-        model: "cached",
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        toolCallsCount: 0,
-        durationMs: Date.now() - startTime,
-      };
-    }
+  // ── Resumable: short-circuit if already completed ──
+  if (existingJob && existingJob.status === "completed") {
+    return {
+      success: true,
+      message: "Command already completed (idempotent).",
+      objectsCreated: [],
+      objectsUpdated: [],
+      objectsDeleted: [],
+      model: "cached",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      toolCallsCount: 0,
+      durationMs: Date.now() - startTime,
+    };
   }
-
-  // Load board state
-  const boardObjects = await getBoardStateForAI(boardId, viewport, selectedIds);
 
   // Extract existing frame titles for smart template routing
   const existingFrameTitles = boardObjects
@@ -398,12 +390,15 @@ const executeToolLoop = traceable(async function executeToolLoop(
     if (totalToolCalls >= MAX_TOOL_CALLS) break;
     if (objectsCreated.length >= MAX_OBJECTS_CREATED) break;
 
+    // For query intent, don't force tool calls — the model can answer directly
+    const forceTools = iteration === 0 && route.intent !== "query";
+
     const response = await withTimeout(
       openai.chat.completions.create({
         model,
         messages,
         tools: toolDefs,
-        tool_choice: iteration === 0 ? "required" : "auto",
+        tool_choice: forceTools ? "required" : "auto",
       }),
       OPENAI_TIMEOUT_MS,
       "OpenAI call timed out"
@@ -502,6 +497,45 @@ const executeToolLoop = traceable(async function executeToolLoop(
       "executing",
       `Iteration ${iteration + 1}: ${objectsCreated.length} created, ${objectsUpdated.length} updated`
     );
+
+    // ── Early exit: skip the 2nd LLM round-trip for simple intents ──
+    // For create_simple and delete, one iteration is enough if all tools
+    // succeeded. The 2nd call just generates a summary message we can
+    // build programmatically — saves ~1.5s of OpenAI latency.
+    const simpleIntents: string[] = ["create_simple", "delete", "edit_specific", "edit_selected"];
+    if (
+      iteration === 0 &&
+      simpleIntents.includes(route.intent) &&
+      (objectsCreated.length > 0 || objectsDeleted.length > 0)
+    ) {
+      // Check that no tool call failed
+      const allSucceeded = messages
+        .filter((m): m is ChatCompletionMessageParam & { role: "tool" } => m.role === "tool")
+        .every((m) => {
+          try {
+            const parsed = JSON.parse(typeof m.content === "string" ? m.content : "{}");
+            return parsed.success !== false;
+          } catch { return true; }
+        });
+
+      if (allSucceeded) {
+        const durationMs = Date.now() - startTime;
+        return {
+          success: true,
+          message: buildSummary(objectsCreated, objectsUpdated, objectsDeleted),
+          objectsCreated,
+          objectsUpdated,
+          objectsDeleted,
+          focus: computeFocusBounds(objectsCreated, ctx.existingObjects),
+          model,
+          inputTokens,
+          outputTokens,
+          totalTokens: inputTokens + outputTokens,
+          toolCallsCount: totalToolCalls,
+          durationMs,
+        };
+      }
+    }
   }
 
   const durationMs = Date.now() - startTime;
@@ -529,12 +563,16 @@ function buildSystemPrompt(
   boardObjects: CompactObject[],
   route: RouteResult
 ): string {
+  // Query intent: show frame summaries but cap individual objects to save tokens.
+  // The model can use getBoardContext to drill deeper if needed.
+  const maxDetail = route.intent === "query" ? 20 : 50;
+
   const digest = buildBoardDigest(boardObjects, {
     selectedIds,
     viewport,
     scope: route.scope,
     includeFullObjects: route.needsFullContext,
-    maxDetailObjects: 50,
+    maxDetailObjects: maxDetail,
   });
 
   const selectionInfo =
@@ -554,6 +592,7 @@ ${selectionInfo}
 - **Inside frames**: Pass \`parentFrameId\` — omit x/y. Grid layout is automatic.
 - **Free objects**: Omit x/y — auto-placed in a clean grid near viewport center.
 - **Only specify x/y** for frame positioning in templates.
+- **Only place objects inside frames when the user explicitly asks** (e.g. "add to the Strengths frame"). Otherwise create free-standing objects.
 
 ## Colors
 yellow (#FBBF24), pink (#F472B6), blue (#3B82F6), green (#22C55E), orange (#F97316), purple (#A855F7), red (#EF4444), gray (#9CA3AF), white (#FFFFFF)
@@ -566,7 +605,7 @@ Color can be a hex code or "random" for a random palette color.
       prompt += `\n## Template\n1. Create frames with \`expectedChildCount\` + explicit x/y\n2. \`bulkCreate\` stickies with \`parentFrameId\`\n3. Space frames 30px apart\n`;
       break;
     case "create_simple":
-      prompt += `\n## Creating\nUse \`bulkCreate\` for 3+ objects. Individual tools for 1-2.\n`;
+      prompt += `\n## Creating\n**IMPORTANT: Always use \`bulkCreate\` when creating 2+ objects.** Do NOT call createStickyNote/createShape multiple times — use one \`bulkCreate\` call with all items.\nOnly place objects inside frames (via parentFrameId) when the user explicitly asks. Otherwise create free-standing objects.\n`;
       break;
     case "delete":
       prompt += `\n## Deleting\nUse \`bulkDelete\`: mode "all"/"by_type"/"by_ids".\n`;
@@ -575,13 +614,16 @@ Color can be a hex code or "random" for a random palette color.
       prompt += `\n## Editing\nApply changes to selected objects.\n`;
       break;
     case "edit_specific":
-      prompt += `\n## Targeted edits\nPrefer modifying existing objects/frames mentioned by name.\nUse \`getBoardContext\` first to resolve IDs before creating new objects.\n`;
+      prompt += `\n## Targeted edits\nPrefer modifying existing objects/frames mentioned by name.\nFrame IDs are listed in the board state below — use them directly, no need to call getBoardContext first.\n`;
+      break;
+    case "query":
+      prompt += `\n## Answering questions\nAnswer from the board state summary below. Only call \`getBoardContext\` if the user asks about specific object details not in the summary. You may respond with just text (no tool calls needed).\n`;
       break;
     default:
       prompt += `\n## Tools\n- \`bulkCreate\`/\`bulkDelete\` for batch ops\n- \`arrangeObjects\`/\`rearrangeFrame\` for layout\n- \`getBoardContext\` for details\n`;
   }
 
-  prompt += `\nAlways respond with tool calls.\n\n## Board State\n${digest}`;
+  prompt += `\nAlways respond with tool calls unless answering a question.\n\n## Board State\n${digest}`;
   return prompt;
 }
 

@@ -231,7 +231,7 @@ export function routeCommand(
         scope: "board",
         model: "gpt-4o-mini",
         templateId: null,
-        needsFullContext: true,
+        needsFullContext: false, // digest summary is enough; model can call getBoardContext to drill in
         allowedTools: TOOLS_QUERY,
       };
     }
