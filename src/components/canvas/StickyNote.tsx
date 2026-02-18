@@ -83,6 +83,7 @@ export const StickyNote = React.memo(function StickyNote({
       offsetX={object.width / 2}
       offsetY={object.height / 2}
       rotation={object.rotation || 0}
+      listening={interactable || isArrowHover}
       opacity={isArrowHover ? 0.55 : 1}
       draggable={interactable && !isEditing}
       onClick={() => onSelect(object.id)}
@@ -162,7 +163,7 @@ export const StickyNote = React.memo(function StickyNote({
         <>
           <ResizeHandles
             object={object}
-            circleMode={true}
+            cornersOnly={true}
             onResizeStart={() => {
               originalRef.current = { x: object.x, y: object.y, width: object.width, height: object.height };
             }}

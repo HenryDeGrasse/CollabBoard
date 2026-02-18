@@ -190,6 +190,7 @@ export const Shape = React.memo(function Shape({
       offsetX={object.width / 2}
       offsetY={object.height / 2}
       rotation={object.rotation || 0}
+      listening={interactable || isArrowHover}
       opacity={isArrowHover ? 0.55 : 1}
       draggable={interactable && !isEditing}
       onClick={() => onSelect(object.id)}

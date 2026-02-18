@@ -42,7 +42,8 @@ const allHandles: HandleDef[] = [...cornerHandles, ...edgeHandles];
 
 interface ResizeHandlesProps {
   object: BoardObject;
-  circleMode?: boolean; // Only show 4 cardinal handles
+  circleMode?: boolean; // Circle: 4 cardinal edge handles only
+  cornersOnly?: boolean; // Square shapes (sticky): 4 corner handles only
   onResizeStart: () => void;
   onResizeMove: (handle: ResizeHandle, pointerX: number, pointerY: number) => void;
   onResizeEnd: () => void;
@@ -51,13 +52,14 @@ interface ResizeHandlesProps {
 export function ResizeHandles({
   object,
   circleMode = false,
+  cornersOnly = false,
   onResizeStart,
   onResizeMove,
   onResizeEnd,
 }: ResizeHandlesProps) {
   const activeHandleRef = useRef<ResizeHandle | null>(null);
 
-  const handles = circleMode ? edgeHandles : allHandles;
+  const handles = circleMode ? edgeHandles : cornersOnly ? cornerHandles : allHandles;
 
   const handleMouseDown = (handle: HandleDef, e: Konva.KonvaEventObject<MouseEvent>) => {
     e.cancelBubble = true;
