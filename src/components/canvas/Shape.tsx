@@ -16,6 +16,8 @@ interface ShapeProps {
   isLockedByOther: boolean;
   lockedByColor?: string;
   draftText?: string;
+  /** True when arrow tool is hovering over this object */
+  isArrowHover?: boolean;
   onSelect: (id: string) => void;
   onDragStart: (id: string) => void;
   onDragMove: (id: string, x: number, y: number) => void;
@@ -40,6 +42,7 @@ export const Shape = React.memo(function Shape({
   onDragEnd,
   onDoubleClick,
   onUpdateObject,
+  isArrowHover,
   onRotateStart,
   onRotateMove,
   onRotateEnd,
@@ -184,6 +187,7 @@ export const Shape = React.memo(function Shape({
       offsetX={object.width / 2}
       offsetY={object.height / 2}
       rotation={object.rotation || 0}
+      opacity={isArrowHover ? 0.55 : 1}
       draggable={!isEditing}
       onClick={() => onSelect(object.id)}
       onTap={() => onSelect(object.id)}

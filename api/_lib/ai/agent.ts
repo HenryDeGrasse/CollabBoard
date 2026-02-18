@@ -537,7 +537,7 @@ async function executeToolCall(
     case "createStickyNote":
       return tools.createStickyNote(ctx, args.text, args.x, args.y, args.color, args.parentFrameId);
     case "createShape":
-      return tools.createShape(ctx, args.type, args.x, args.y, args.width, args.height, args.color, args.parentFrameId);
+      return tools.createShape(ctx, args.type, args.x, args.y, args.width, args.height, args.color, args.parentFrameId, args.x2, args.y2);
     case "createFrame":
       return tools.createFrame(ctx, args.title, args.x, args.y, args.width, args.height, args.expectedChildCount);
     case "addObjectToFrame":

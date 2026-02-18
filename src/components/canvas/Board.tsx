@@ -268,6 +268,9 @@ export function Board({
   const pendingDragPositionsRef = useRef<Record<string, { x: number; y: number }> | null>(null);
   const pendingDragParentFrameIdsRef = useRef<Record<string, string | null> | null>(null);
 
+  // Arrow tool: object being hovered (for visual feedback)
+  const [arrowHoverObjectId, setArrowHoverObjectId] = useState<string | null>(null);
+
   // Arrow drawing state
   const [arrowDraw, setArrowDraw] = useState<{
     fromId: string;
@@ -279,6 +282,11 @@ export function Board({
 
   const stageWidth = stageSize.width;
   const stageHeight = stageSize.height;
+
+  // Clear arrow hover when tool changes away from arrow
+  useEffect(() => {
+    if (activeTool !== "arrow") setArrowHoverObjectId(null);
+  }, [activeTool]);
 
   // Track space key for pan mode
   useEffect(() => {
@@ -749,6 +757,32 @@ export function Board({
       if (!canvasPoint) return;
 
       onCursorMove(canvasPoint.x, canvasPoint.y);
+
+      // Arrow tool: detect hovered object for visual feedback
+      if (activeTool === "arrow") {
+        // Find topmost object under cursor (by checking bounds + rotation)
+        let hoveredId: string | null = null;
+        const objs = Object.values(objectsRef.current);
+        for (let i = objs.length - 1; i >= 0; i--) {
+          const o = objs[i];
+          if (o.type === "frame") continue; // skip frames for connector purposes
+          const cx = o.x + o.width / 2;
+          const cy = o.y + o.height / 2;
+          // Rotate point into local space
+          const rad = -(o.rotation ?? 0) * (Math.PI / 180);
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+          const dx = canvasPoint.x - cx;
+          const dy = canvasPoint.y - cy;
+          const lx = cx + dx * cos - dy * sin;
+          const ly = cy + dx * sin + dy * cos;
+          if (lx >= o.x && lx <= o.x + o.width && ly >= o.y && ly <= o.y + o.height) {
+            hoveredId = o.id;
+            break;
+          }
+        }
+        setArrowHoverObjectId(hoveredId);
+      }
 
       // Arrow drawing preview
       if (arrowDraw && activeTool === "arrow") {
@@ -2146,6 +2180,7 @@ export function Board({
                   isEditing={editingObjectId === obj.id}
                   isLockedByOther={lock.locked}
                   lockedByColor={lock.lockedByColor}
+                  isArrowHover={arrowHoverObjectId === obj.id}
                   draftText={getDraftTextForObject(obj.id)?.text}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
@@ -2174,6 +2209,7 @@ export function Board({
                   lockedByName={lock.lockedBy}
                   lockedByColor={lock.lockedByColor}
                   draftText={getDraftTextForObject(obj.id)?.text}
+                  isArrowHover={arrowHoverObjectId === obj.id}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
@@ -2257,6 +2293,7 @@ export function Board({
                               isEditing={editingObjectId === cobj.id}
                               isLockedByOther={lock.locked}
                               lockedByColor={lock.lockedByColor}
+                              isArrowHover={arrowHoverObjectId === cobj.id}
                               draftText={getDraftTextForObject(cobj.id)?.text}
                               onSelect={handleObjectClick}
                               onDragStart={handleDragStart}
@@ -2278,6 +2315,7 @@ export function Board({
                               lockedByName={lock.lockedBy}
                               lockedByColor={lock.lockedByColor}
                               draftText={getDraftTextForObject(cobj.id)?.text}
+                              isArrowHover={arrowHoverObjectId === cobj.id}
                               onSelect={handleObjectClick}
                               onDragStart={handleDragStart}
                               onDragMove={handleDragMove}
@@ -2349,6 +2387,7 @@ export function Board({
                     isEditing={editingObjectId === obj.id}
                     isLockedByOther={lock.locked}
                     lockedByColor={lock.lockedByColor}
+                    isArrowHover={arrowHoverObjectId === obj.id}
                     draftText={getDraftTextForObject(obj.id)?.text}
                     onSelect={handleObjectClick}
                     onDragStart={handleDragStart}
@@ -2369,6 +2408,7 @@ export function Board({
                     lockedByName={lock.lockedBy}
                     lockedByColor={lock.lockedByColor}
                     draftText={getDraftTextForObject(obj.id)?.text}
+                    isArrowHover={arrowHoverObjectId === obj.id}
                     onSelect={handleObjectClick}
                     onDragStart={handleDragStart}
                     onDragMove={handleDragMove}

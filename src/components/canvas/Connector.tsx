@@ -11,7 +11,20 @@ interface ConnectorProps {
   onSelect: (id: string) => void;
 }
 
-// Calculate the intersection point of a line from center to target with the object's edge
+// Rotate point (px, py) around (cx, cy) by `angle` radians
+function rotatePoint(px: number, py: number, cx: number, cy: number, angle: number) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dx = px - cx;
+  const dy = py - cy;
+  return {
+    x: cx + dx * cos - dy * sin,
+    y: cy + dx * sin + dy * cos,
+  };
+}
+
+// Calculate the intersection point of a line from center to target with the object's edge,
+// accounting for rotation.
 function getEdgePoint(
   obj: BoardObject,
   targetX: number,
@@ -19,38 +32,53 @@ function getEdgePoint(
 ): { x: number; y: number } {
   const cx = obj.x + obj.width / 2;
   const cy = obj.y + obj.height / 2;
-  const dx = targetX - cx;
-  const dy = targetY - cy;
+  const rotation = (obj.rotation ?? 0) * (Math.PI / 180); // deg → rad
+
+  // Rotate target into local (un-rotated) coordinate system
+  const local = rotation !== 0
+    ? rotatePoint(targetX, targetY, cx, cy, -rotation)
+    : { x: targetX, y: targetY };
+
+  const dx = local.x - cx;
+  const dy = local.y - cy;
 
   if (dx === 0 && dy === 0) return { x: cx, y: cy };
+
+  let edgeLocal: { x: number; y: number };
 
   if (obj.type === "circle") {
     const r = Math.min(obj.width, obj.height) / 2;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist === 0) return { x: cx, y: cy };
-    return {
+    edgeLocal = {
       x: cx + (dx / dist) * r,
       y: cy + (dy / dist) * r,
     };
-  }
-
-  // Rectangle edge intersection
-  const hw = obj.width / 2;
-  const hh = obj.height / 2;
-  const absDx = Math.abs(dx);
-  const absDy = Math.abs(dy);
-
-  let scale: number;
-  if (absDx * hh > absDy * hw) {
-    scale = hw / absDx;
   } else {
-    scale = hh / absDy;
+    // Rectangle edge intersection
+    const hw = obj.width / 2;
+    const hh = obj.height / 2;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    let scale: number;
+    if (absDx * hh > absDy * hw) {
+      scale = hw / absDx;
+    } else {
+      scale = hh / absDy;
+    }
+
+    edgeLocal = {
+      x: cx + dx * scale,
+      y: cy + dy * scale,
+    };
   }
 
-  return {
-    x: cx + dx * scale,
-    y: cy + dy * scale,
-  };
+  // Rotate edge point back to world space
+  if (rotation !== 0) {
+    return rotatePoint(edgeLocal.x, edgeLocal.y, cx, cy, rotation);
+  }
+  return edgeLocal;
 }
 
 export const ConnectorLine = React.memo(function ConnectorLine({ connector, fromObj, toObj, isSelected, onSelect }: ConnectorProps) {

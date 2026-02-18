@@ -41,7 +41,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "createShape",
       description:
-        "Creates a shape (rectangle, circle, or line) on the board. If parentFrameId is provided, the shape is placed inside that frame using auto-layout.",
+        "Creates a shape (rectangle, circle, or line) on the board. Size can be specified via width+height OR by giving two opposite corners (x,y)→(x2,y2). If parentFrameId is provided, the shape is placed inside that frame using auto-layout.",
       parameters: {
         type: "object",
         properties: {
@@ -50,10 +50,12 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             enum: ["rectangle", "circle", "line"],
             description: "Shape type",
           },
-          x: { type: "number", description: "X position (ignored when parentFrameId is set)" },
-          y: { type: "number", description: "Y position (ignored when parentFrameId is set)" },
-          width: { type: "number", description: "Width (50–2000)" },
-          height: { type: "number", description: "Height (50–2000)" },
+          x: { type: "number", description: "X position (top-left, or first corner when x2/y2 given). Ignored when parentFrameId is set." },
+          y: { type: "number", description: "Y position (top-left, or first corner when x2/y2 given). Ignored when parentFrameId is set." },
+          x2: { type: "number", description: "Optional. X of opposite corner. When given with y2, width/height are computed automatically." },
+          y2: { type: "number", description: "Optional. Y of opposite corner. When given with x2, width/height are computed automatically." },
+          width: { type: "number", description: "Width (50–2000). Optional if x2/y2 given." },
+          height: { type: "number", description: "Height (50–2000). Optional if x2/y2 given." },
           color: { type: "string", description: "Hex color code" },
           parentFrameId: {
             type: "string",
@@ -61,7 +63,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
               "Optional. ID of the frame to place this shape inside. Auto-positions in grid layout.",
           },
         },
-        required: ["type", "width", "height", "color"],
+        required: ["type", "color"],
       },
     },
   },
@@ -283,6 +285,14 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
                 height: {
                   type: "number",
                   description: "Height in pixels (shapes/frames only, ignored for stickies)",
+                },
+                x2: {
+                  type: "number",
+                  description: "Optional X of opposite corner. When given with y2, computes width/height from corners.",
+                },
+                y2: {
+                  type: "number",
+                  description: "Optional Y of opposite corner. When given with x2, computes width/height from corners.",
                 },
                 parentFrameId: {
                   type: "string",

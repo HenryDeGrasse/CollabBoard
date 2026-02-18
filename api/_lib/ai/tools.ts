@@ -290,16 +290,29 @@ export async function createShape(
   type: string,
   x: number | undefined,
   y: number | undefined,
-  width: number,
-  height: number,
+  width: number | undefined,
+  height: number | undefined,
   color: string,
-  parentFrameId?: string
+  parentFrameId?: string,
+  x2?: number,
+  y2?: number
 ): Promise<ToolResult> {
   try {
     const validTypes = ["rectangle", "circle", "line"];
     const shapeType = validTypes.includes(type) ? type : "rectangle";
-    const w = sanitizeSize(width);
-    const h = sanitizeSize(height);
+
+    // If x2/y2 given, compute x, y, width, height from two corners
+    if (x !== undefined && y !== undefined && x2 !== undefined && y2 !== undefined) {
+      const minX = Math.min(x, x2);
+      const minY = Math.min(y, y2);
+      width = Math.abs(x2 - x);
+      height = Math.abs(y2 - y);
+      x = minX;
+      y = minY;
+    }
+
+    const w = sanitizeSize(width ?? 150);
+    const h = sanitizeSize(height ?? 100);
 
     let posX: number;
     let posY: number;
@@ -818,6 +831,8 @@ export async function bulkCreate(
     color?: string;          // hex code | "random"
     width?: number;
     height?: number;
+    x2?: number;
+    y2?: number;
     parentFrameId?: string;
     x?: number;
     y?: number;
@@ -839,6 +854,16 @@ export async function bulkCreate(
       const isShape = shapeTypes.includes(item.type);
 
       if (!isFrame && !isSticky && !isShape) continue;
+
+      // ── Two-corner resolution ──
+      if (item.x !== undefined && item.y !== undefined && item.x2 !== undefined && item.y2 !== undefined) {
+        const minX = Math.min(item.x, item.x2);
+        const minY = Math.min(item.y, item.y2);
+        item.width = Math.abs(item.x2 - item.x);
+        item.height = Math.abs(item.y2 - item.y);
+        item.x = minX;
+        item.y = minY;
+      }
 
       // ── Size ──
       let w: number;
