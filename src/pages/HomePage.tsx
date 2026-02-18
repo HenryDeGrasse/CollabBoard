@@ -179,13 +179,15 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
             <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`p-2 transition ${viewMode === "grid" ? "bg-emerald-50 text-emerald-600" : "text-gray-400 hover:text-gray-600"}`}
+                className={`p-2 transition ${viewMode === "grid" ? "text-white" : "text-gray-400 hover:text-gray-600"}`}
+                style={viewMode === "grid" ? { backgroundColor: "#0F2044" } : {}}
               >
                 <LayoutGrid size={16} />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`p-2 transition ${viewMode === "list" ? "bg-emerald-50 text-emerald-600" : "text-gray-400 hover:text-gray-600"}`}
+                className={`p-2 transition ${viewMode === "list" ? "text-white" : "text-gray-400 hover:text-gray-600"}`}
+                style={viewMode === "list" ? { backgroundColor: "#0F2044" } : {}}
               >
                 <List size={16} />
               </button>
@@ -204,11 +206,11 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
                 placeholder="Board ID"
                 className="w-32 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition shadow-sm"
               />
-              <button onClick={handleJoinBoard} disabled={!joinBoardId.trim()} className="px-4 py-2.5 bg-gray-800 text-white rounded-xl text-sm font-medium hover:bg-gray-900 transition disabled:opacity-50 shadow-sm">
+              <button onClick={handleJoinBoard} disabled={!joinBoardId.trim()} className="px-4 py-2.5 text-white rounded-xl text-sm font-medium transition disabled:opacity-50 shadow-sm" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>
                 Join
               </button>
             </div>
-            <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-medium transition shadow-md hover:shadow-lg" style={{ backgroundColor: "#10B981" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor="#059669")} onMouseLeave={e => (e.currentTarget.style.backgroundColor="#10B981")}>
+            <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-medium transition shadow-md hover:shadow-lg" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>
               <Plus size={16} />
               New Board
             </button>
@@ -217,18 +219,18 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
 
         {loading && (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full" />
+            <div className="animate-spin w-8 h-8 border-4 border-slate-200 border-t-[#0F2044] rounded-full" />
           </div>
         )}
 
         {!loading && filteredBoards.length === 0 && !searchQuery && (
           <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "rgba(16,185,129,0.08)" }}>
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "rgba(15,32,68,0.06)" }}>
               <CollabBoardLogo size={34} />
             </div>
             <h2 className="text-xl font-semibold mb-2" style={{ color: "#0F2044" }}>No boards yet</h2>
             <p className="text-gray-500 mb-6">Create your first collaborative whiteboard to get started.</p>
-            <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 px-6 py-3 text-white rounded-xl font-medium transition shadow-md" style={{ backgroundColor: "#10B981" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor="#059669")} onMouseLeave={e => (e.currentTarget.style.backgroundColor="#10B981")}>
+            <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 px-6 py-3 text-white rounded-xl font-medium transition shadow-md" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>
               <Plus size={18} />
               Create Your First Board
             </button>
@@ -280,7 +282,7 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
             <input autoFocus type="text" value={newBoardTitle} onChange={(e) => setNewBoardTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()} placeholder="Board title (optional)" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition mb-4" />
             <div className="flex gap-3">
               <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">Cancel</button>
-              <button onClick={handleCreateBoard} className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md" style={{ backgroundColor: "#10B981" }} onMouseEnter={e => (e.currentTarget.style.backgroundColor="#059669")} onMouseLeave={e => (e.currentTarget.style.backgroundColor="#10B981")}>Create</button>
+              <button onClick={handleCreateBoard} className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>Create</button>
             </div>
           </div>
         </div>
