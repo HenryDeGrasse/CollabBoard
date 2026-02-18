@@ -1,17 +1,44 @@
-import { Link } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Link, Copy, Hash } from "lucide-react";
 import type { UserPresence } from "../../types/presence";
 
 interface PresencePanelProps {
   users: Record<string, UserPresence>;
   currentUserId: string;
-  onShareClick: () => void;
-  linkCopied: boolean;
+  boardUrl: string;
+  boardId: string;
 }
 
-export function PresencePanel({ users, currentUserId, onShareClick, linkCopied }: PresencePanelProps) {
+type CopiedWhat = "link" | "id" | null;
+
+export function PresencePanel({ users, currentUserId, boardUrl, boardId }: PresencePanelProps) {
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copiedWhat, setCopiedWhat] = useState<CopiedWhat>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const onlineUsers = Object.entries(users).filter(
     ([, presence]) => presence.online
   );
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!shareOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShareOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [shareOpen]);
+
+  const copy = (text: string, which: CopiedWhat) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedWhat(which);
+      setTimeout(() => setCopiedWhat(null), 2000);
+    });
+    setShareOpen(false);
+  };
 
   return (
     <div className="fixed top-4 right-4 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[180px]">
@@ -22,18 +49,43 @@ export function PresencePanel({ users, currentUserId, onShareClick, linkCopied }
             Online ({onlineUsers.length})
           </span>
         </div>
-        <button
-          onClick={onShareClick}
-          className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500 hover:text-gray-700"
-          title={linkCopied ? "Link copied!" : "Copy board link"}
-        >
-          {linkCopied ? (
-            <span className="text-xs text-green-600 font-medium">✓</span>
-          ) : (
-            <Link size={14} />
+
+        {/* Share button + dropdown */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={() => setShareOpen((o) => !o)}
+            className="p-1.5 rounded-lg hover:bg-gray-100 transition text-gray-500 hover:text-gray-700"
+            title="Share"
+          >
+            {copiedWhat ? (
+              <span className="text-xs text-green-600 font-medium">✓</span>
+            ) : (
+              <Link size={14} />
+            )}
+          </button>
+
+          {shareOpen && (
+            <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
+              <button
+                onClick={() => copy(boardUrl, "link")}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition text-left"
+              >
+                <Copy size={13} className="shrink-0" />
+                <span>Copy share link</span>
+              </button>
+              <div className="h-px bg-gray-100 mx-2" />
+              <button
+                onClick={() => copy(boardId, "id")}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition text-left"
+              >
+                <Hash size={13} className="shrink-0" />
+                <span>Copy board ID</span>
+              </button>
+            </div>
           )}
-        </button>
+        </div>
       </div>
+
       <div className="space-y-1.5">
         {onlineUsers.map(([uid, presence]) => (
           <div key={uid} className="flex items-center gap-2">

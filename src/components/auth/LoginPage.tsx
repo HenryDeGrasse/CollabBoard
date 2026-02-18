@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LayoutDashboard } from "lucide-react";
 import { supabase } from "../../services/supabase";
 
 export function LoginPage() {
@@ -92,7 +93,7 @@ export function LoginPage() {
         {/* Header */}
         <div className="px-8 pt-8 pb-4 text-center">
           <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">🎨</span>
+            <LayoutDashboard size={32} className="text-indigo-600" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">CollabBoard</h1>
           <p className="text-sm text-gray-500 mt-1">Real-time collaborative whiteboard</p>

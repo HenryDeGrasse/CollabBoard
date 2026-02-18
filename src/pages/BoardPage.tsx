@@ -34,8 +34,8 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const [activeTool, setActiveTool] = useState<ToolType>("select");
   const [activeColor, setActiveColor] = useState<string>(DEFAULT_STICKY_COLOR);
   const [isRotating, setIsRotating] = useState(false);
+
   const [joined, setJoined] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Ensure user is a member of this board BEFORE loading data.
   // RLS policies require board_members entry for SELECT access.
@@ -81,6 +81,21 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const canvas = useCanvas(boardId);
   const selection = useSelection();
   const aiAgent = useAIAgent(boardId, canvas.stageRef, selection.selectedIds);
+
+  // ── Thumbnail capture ────────────────────────────────────────
+  const captureThumbnail = useCallback(() => {
+    const stage = canvas.stageRef.current;
+    if (!stage || !boardId) return;
+    try {
+      const dataUrl = stage.toDataURL({ pixelRatio: 0.25, mimeType: "image/jpeg", quality: 0.6 });
+      localStorage.setItem(`collabboard-thumb-${boardId}`, dataUrl);
+    } catch {
+      // Canvas tainted or unavailable — ignore
+    }
+  }, [boardId, canvas.stageRef]);
+
+  // Capture on unmount (e.g. SPA navigation away)
+  useEffect(() => () => captureThumbnail(), [captureThumbnail]);
   const undoRedo = useUndoRedo(
     createObject,
     updateObject,
@@ -424,20 +439,14 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       <PresencePanel
         users={users}
         currentUserId={userId}
-        onShareClick={() => {
-          const url = window.location.href;
-          navigator.clipboard.writeText(url).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          });
-        }}
-        linkCopied={copied}
+        boardUrl={window.location.href}
+        boardId={boardId}
       />
 
       {/* Back to Dashboard button */}
       <div className="fixed top-4 left-4 z-50">
         <button
-          onClick={() => onNavigateHome?.()}
+          onClick={() => { captureThumbnail(); onNavigateHome?.(); }}
           className="flex items-center gap-1 text-xs bg-white/80 backdrop-blur px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white hover:text-gray-800 transition shadow-sm"
           title="Back to Dashboard"
         >
