@@ -150,8 +150,20 @@ export const executeAICommand = traceable(async function executeAICommand(
 
   let result: AIExecutionResult;
 
-  // Path 1: Deterministic template (Phase 2)
-  if (route.intent === "create_template" && route.templateId) {
+  // Path 0: Deterministic fast-path for common simple commands
+  const fastPathResult = await tryExecuteFastPath(
+    command,
+    route,
+    ctx,
+    boardObjects,
+    startTime,
+    updateProgress
+  );
+
+  if (fastPathResult) {
+    result = fastPathResult;
+  } else if (route.intent === "create_template" && route.templateId) {
+    // Path 1: Deterministic template (Phase 2)
     result = await executeTemplatePath(
       command,
       route,
@@ -179,14 +191,14 @@ export const executeAICommand = traceable(async function executeAICommand(
     // Path 3: General tool-calling loop (existing behavior, optimized)
     result = await executeToolLoop(
       command,
-    route,
-    ctx,
-    viewport,
-    boardObjects,
-    selectedIds,
-    openaiApiKey,
-    startTime,
-    updateProgress
+      route,
+      ctx,
+      viewport,
+      boardObjects,
+      selectedIds,
+      openaiApiKey,
+      startTime,
+      updateProgress
     );
   }
 
@@ -437,60 +449,113 @@ const executeToolLoop = traceable(async function executeToolLoop(
       MAX_TOOL_CALLS - totalToolCalls
     );
 
-    for (const toolCall of callsToExecute) {
-      totalToolCalls++;
-      let result: any;
+    const trackToolResult = (toolName: string, result: any) => {
+      if (result?.objectId) {
+        const createTools = [
+          "createStickyNote",
+          "createShape",
+          "createFrame",
+          "createConnector",
+        ];
+        if (createTools.includes(toolName)) {
+          objectsCreated.push(result.objectId);
+        } else {
+          objectsUpdated.push(result.objectId);
+        }
+      }
+      if (result?.data?.createdIds && Array.isArray(result.data.createdIds)) {
+        objectsCreated.push(...result.data.createdIds);
+      }
+      if (result?.data?.updatedIds && Array.isArray(result.data.updatedIds)) {
+        objectsUpdated.push(...result.data.updatedIds);
+      }
+      if (result?.data?.deletedIds && Array.isArray(result.data.deletedIds)) {
+        objectsDeleted.push(...result.data.deletedIds);
+      }
+      if (result?.data?.deletedCount && !result?.data?.deletedIds) {
+        objectsDeleted.push(`all (${result.data.deletedCount})`);
+      }
+    };
 
+    const PARALLEL_SAFE_TOOLS = new Set([
+      "moveObject",
+      "resizeObject",
+      "updateText",
+      "changeColor",
+    ]);
+
+    const parsedCalls = callsToExecute.map((toolCall) => {
       const fn = "function" in toolCall ? toolCall.function : null;
-      if (!fn) {
-        result = { success: false, error: "Unsupported tool call type" };
+      return { toolCall, fn };
+    });
+
+    const canRunInParallel =
+      parsedCalls.length > 1 &&
+      parsedCalls.every(({ fn }) => fn && PARALLEL_SAFE_TOOLS.has(fn.name));
+
+    if (canRunInParallel) {
+      totalToolCalls += parsedCalls.length;
+      const results = await Promise.all(
+        parsedCalls.map(async ({ toolCall, fn }) => {
+          if (!fn) {
+            return {
+              toolCall,
+              toolName: "unknown",
+              result: { success: false, error: "Unsupported tool call type" },
+            };
+          }
+          try {
+            const args = JSON.parse(fn.arguments);
+            const result = await executeToolCall(fn.name, args, ctx, selectedIds);
+            return { toolCall, toolName: fn.name, result };
+          } catch (err) {
+            return {
+              toolCall,
+              toolName: fn.name,
+              result: { success: false, error: String(err) },
+            };
+          }
+        })
+      );
+
+      // Preserve tool message ordering as provided by the model
+      for (const { toolCall, toolName, result } of results) {
+        trackToolResult(toolName, result);
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
           content: JSON.stringify(result),
         });
-        continue;
       }
+    } else {
+      for (const { toolCall, fn } of parsedCalls) {
+        totalToolCalls++;
+        let result: any;
 
-      try {
-        const args = JSON.parse(fn.arguments);
-        result = await executeToolCall(fn.name, args, ctx, selectedIds);
+        if (!fn) {
+          result = { success: false, error: "Unsupported tool call type" };
+          messages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(result),
+          });
+          continue;
+        }
 
-        // Track results
-        if (result?.objectId) {
-          const createTools = [
-            "createStickyNote",
-            "createShape",
-            "createFrame",
-            "createConnector",
-          ];
-          if (createTools.includes(fn.name)) {
-            objectsCreated.push(result.objectId);
-          } else {
-            objectsUpdated.push(result.objectId);
-          }
+        try {
+          const args = JSON.parse(fn.arguments);
+          result = await executeToolCall(fn.name, args, ctx, selectedIds);
+          trackToolResult(fn.name, result);
+        } catch (err) {
+          result = { success: false, error: String(err) };
         }
-        if (result?.data?.createdIds && Array.isArray(result.data.createdIds)) {
-          objectsCreated.push(...result.data.createdIds);
-        }
-        if (result?.data?.updatedIds && Array.isArray(result.data.updatedIds)) {
-          objectsUpdated.push(...result.data.updatedIds);
-        }
-        if (result?.data?.deletedIds && Array.isArray(result.data.deletedIds)) {
-          objectsDeleted.push(...result.data.deletedIds);
-        }
-        if (result?.data?.deletedCount && !result?.data?.deletedIds) {
-          objectsDeleted.push(`all (${result.data.deletedCount})`);
-        }
-      } catch (err) {
-        result = { success: false, error: String(err) };
+
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(result),
+        });
       }
-
-      messages.push({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: JSON.stringify(result),
-      });
     }
 
     await updateProgress(
@@ -683,6 +748,338 @@ async function executeToolCall(
     default:
       return { success: false, error: `Unknown tool: ${name}` };
   }
+}
+
+// ─── Fast Path (deterministic, no LLM) ───────────────────────
+
+type FastPathMatch =
+  | { kind: "delete_all" }
+  | { kind: "delete_by_type"; objectType: "sticky" | "rectangle" | "circle" | "frame" | "connector" | "shape" }
+  | { kind: "create_sticky_batch"; count: number; topic?: string; color?: string }
+  | { kind: "create_single_sticky"; text: string; color?: string; frameName?: string }
+  | { kind: "create_shape_batch"; count: number; shape: "rectangle" | "circle"; color?: string }
+  | { kind: "query_summary" };
+
+const COLOR_MAP: Record<string, string> = {
+  yellow: "#FBBF24",
+  pink: "#F472B6",
+  blue: "#3B82F6",
+  green: "#22C55E",
+  orange: "#F97316",
+  purple: "#A855F7",
+  red: "#EF4444",
+  gray: "#9CA3AF",
+  grey: "#9CA3AF",
+  white: "#FFFFFF",
+};
+
+function normalizeText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function parseFastPath(command: string): FastPathMatch | null {
+  const cmd = command.trim();
+  const lc = cmd.toLowerCase();
+
+  // Delete everything
+  if (/\b(delete|remove|clear|wipe|erase)\b.*\b(all|everything|board)\b/i.test(cmd) || /\bstart\s*over\b/i.test(cmd)) {
+    return { kind: "delete_all" };
+  }
+
+  // Delete by type
+  const deleteType = cmd.match(/\b(delete|remove|clear)\b\s+(?:all\s+)?(?:the\s+)?(sticky notes?|stickies|rectangles?|circles?|frames?|connectors?|shapes?)\b/i);
+  if (deleteType) {
+    const raw = deleteType[2].toLowerCase();
+    const objectType = raw.startsWith("sticky")
+      ? "sticky"
+      : raw.startsWith("rectangle")
+      ? "rectangle"
+      : raw.startsWith("circle")
+      ? "circle"
+      : raw.startsWith("frame")
+      ? "frame"
+      : raw.startsWith("connector")
+      ? "connector"
+      : "shape";
+    return { kind: "delete_by_type", objectType };
+  }
+
+  // Add/create a sticky in a named frame: "... to the Strengths frame"
+  const addToFrame = cmd.match(/\b(?:add|create|make)\b\s+(?:a|an|one)?\s*(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?sticky(?:\s+note)?(?:\s+that\s+says\s+["“]?(.+?)["”]?)?\s+to\s+(?:the\s+)?(.+?)\s+frame\b/i);
+  if (addToFrame) {
+    const [, color, text, frameName] = addToFrame;
+    return {
+      kind: "create_single_sticky",
+      text: (text || "New note").trim(),
+      color: color?.toLowerCase(),
+      frameName: frameName.trim(),
+    };
+  }
+
+  // Single sticky: "add a green sticky note that says hello"
+  const addSingleSticky = cmd.match(/\b(?:add|create|make)\b\s+(?:a|an|one)?\s*(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?sticky(?:\s+note)?(?:\s+that\s+says\s+["“]?(.+?)["”]?)?\b/i);
+  if (addSingleSticky) {
+    const [, color, text] = addSingleSticky;
+    return {
+      kind: "create_single_sticky",
+      text: (text || "New note").trim(),
+      color: color?.toLowerCase(),
+    };
+  }
+
+  // Batch sticky notes: "create 5 sticky notes about productivity"
+  const batchSticky = cmd.match(/\b(?:create|add|make)\b\s+(\d{1,3})\s+(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?sticky\s*notes?(?:\s+about\s+(.+))?$/i);
+  if (batchSticky) {
+    const count = Number(batchSticky[1]);
+    if (count >= 2 && count <= 100) {
+      return {
+        kind: "create_sticky_batch",
+        count,
+        color: batchSticky[2]?.toLowerCase(),
+        topic: batchSticky[3]?.trim(),
+      };
+    }
+  }
+
+  // Batch shapes: "create 3 blue rectangles"
+  const batchShape = cmd.match(/\b(?:create|add|make)\b\s+(\d{1,3})\s+(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?(rectangles?|circles?)\b/i);
+  if (batchShape) {
+    const count = Number(batchShape[1]);
+    if (count >= 2 && count <= 100) {
+      return {
+        kind: "create_shape_batch",
+        count,
+        color: batchShape[2]?.toLowerCase(),
+        shape: batchShape[3].toLowerCase().startsWith("circle")
+          ? "circle"
+          : "rectangle",
+      };
+    }
+  }
+
+  // Query summary: "what is on this board", "how many objects"
+  if (
+    /\bwhat(?:'s|\s+is)\b.*\b(on|in)\b.*\bboard\b/i.test(lc) ||
+    /\bhow\s+many\b.*\b(objects?|stick(?:y|ies)|frames?|rectangles?|circles?)\b/i.test(lc) ||
+    /\bsummarize\b.*\bboard\b/i.test(lc)
+  ) {
+    return { kind: "query_summary" };
+  }
+
+  return null;
+}
+
+async function tryExecuteFastPath(
+  command: string,
+  route: RouteResult,
+  ctx: tools.ToolContext,
+  boardObjects: CompactObject[],
+  startTime: number,
+  updateProgress: (status: string, step?: string) => Promise<void>
+): Promise<AIExecutionResult | null> {
+  // Restrict fast-path to intents where deterministic parsing is reliable.
+  if (!["create_simple", "delete", "edit_specific", "query"].includes(route.intent)) {
+    return null;
+  }
+
+  const match = parseFastPath(command);
+  if (!match) return null;
+
+  await updateProgress("executing", "Fast path...");
+
+  try {
+    switch (match.kind) {
+      case "delete_all": {
+        const r = await tools.bulkDelete(ctx, "all");
+        if (!r.success) return null;
+        const deleted = r.data?.deletedCount ? [`all (${r.data.deletedCount})`] : ["all"];
+        return {
+          success: true,
+          message: buildSummary([], [], deleted),
+          objectsCreated: [],
+          objectsUpdated: [],
+          objectsDeleted: deleted,
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 1,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      case "delete_by_type": {
+        const r = await tools.bulkDelete(ctx, "by_type", undefined, match.objectType);
+        if (!r.success) return null;
+        const deletedIds = (r.data?.deletedIds as string[] | undefined) ?? [];
+        const deleted = deletedIds.length > 0 ? deletedIds : [match.objectType];
+        return {
+          success: true,
+          message: buildSummary([], [], deleted),
+          objectsCreated: [],
+          objectsUpdated: [],
+          objectsDeleted: deleted,
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 1,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      case "create_sticky_batch": {
+        const color = match.color ? COLOR_MAP[match.color] : "random";
+        const items = Array.from({ length: match.count }).map((_, i) => {
+          const text = match.topic
+            ? `${titleCase(match.topic)} ${i + 1}`
+            : `Sticky ${i + 1}`;
+          return { type: "sticky" as const, text, color };
+        });
+
+        const r = await tools.bulkCreate(ctx, items);
+        if (!r.success) return null;
+        const createdIds = (r.data?.createdIds as string[] | undefined) ?? [];
+        return {
+          success: true,
+          message: buildSummary(createdIds, [], []),
+          objectsCreated: createdIds,
+          objectsUpdated: [],
+          objectsDeleted: [],
+          focus: computeFocusBounds(createdIds, ctx.existingObjects),
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 1,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      case "create_single_sticky": {
+        let parentFrameId: string | undefined;
+        if (match.frameName) {
+          const needle = normalizeText(match.frameName);
+          const frame = boardObjects.find(
+            (o) =>
+              o.type === "frame" &&
+              o.text &&
+              normalizeText(o.text).includes(needle)
+          );
+          if (!frame) return null; // fall back if frame not found
+          parentFrameId = frame.id;
+        }
+
+        const color = match.color ? COLOR_MAP[match.color] ?? "#FBBF24" : "#FBBF24";
+        const r = await tools.createStickyNote(
+          ctx,
+          match.text,
+          undefined,
+          undefined,
+          color,
+          parentFrameId
+        );
+        if (!r.success || !r.objectId) return null;
+        return {
+          success: true,
+          message: buildSummary([r.objectId], [], []),
+          objectsCreated: [r.objectId],
+          objectsUpdated: [],
+          objectsDeleted: [],
+          focus: computeFocusBounds([r.objectId], ctx.existingObjects),
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 1,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      case "create_shape_batch": {
+        const color = match.color ? COLOR_MAP[match.color] : "random";
+        const items = Array.from({ length: match.count }).map(() => ({
+          type: match.shape,
+          color,
+          width: match.shape === "circle" ? 120 : 160,
+          height: match.shape === "circle" ? 120 : 100,
+        }));
+
+        const r = await tools.bulkCreate(ctx, items);
+        if (!r.success) return null;
+        const createdIds = (r.data?.createdIds as string[] | undefined) ?? [];
+        return {
+          success: true,
+          message: buildSummary(createdIds, [], []),
+          objectsCreated: createdIds,
+          objectsUpdated: [],
+          objectsDeleted: [],
+          focus: computeFocusBounds(createdIds, ctx.existingObjects),
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 1,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      case "query_summary": {
+        const counts = new Map<string, number>();
+        for (const obj of boardObjects) {
+          counts.set(obj.type, (counts.get(obj.type) ?? 0) + 1);
+        }
+
+        const total = boardObjects.length;
+        const frames = boardObjects.filter((o) => o.type === "frame");
+        const frameLines = frames
+          .slice(0, 4)
+          .map((f) => {
+            const children = boardObjects.filter((o) => o.parentFrameId === f.id).length;
+            return `${f.text || "Untitled"}: ${children} item(s)`;
+          });
+
+        const parts: string[] = [];
+        if ((counts.get("sticky") ?? 0) > 0) parts.push(`${counts.get("sticky")} stickies`);
+        if ((counts.get("frame") ?? 0) > 0) parts.push(`${counts.get("frame")} frames`);
+        if ((counts.get("rectangle") ?? 0) > 0) parts.push(`${counts.get("rectangle")} rectangles`);
+        if ((counts.get("circle") ?? 0) > 0) parts.push(`${counts.get("circle")} circles`);
+        if ((counts.get("line") ?? 0) > 0) parts.push(`${counts.get("line")} lines`);
+
+        const summary = parts.length > 0 ? parts.join(", ") : "no objects";
+        const message = frameLines.length > 0
+          ? `Board has ${total} objects: ${summary}. Frames — ${frameLines.join("; ")}.`
+          : `Board has ${total} objects: ${summary}.`;
+
+        return {
+          success: true,
+          message,
+          objectsCreated: [],
+          objectsUpdated: [],
+          objectsDeleted: [],
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 0,
+          durationMs: Date.now() - startTime,
+        };
+      }
+    }
+  } catch {
+    // Any fast-path failure should gracefully fall back to LLM path.
+    return null;
+  }
+
+  return null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
