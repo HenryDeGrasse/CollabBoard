@@ -15,6 +15,11 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
     supabaseUrl,
     hasServiceKey,
     hasOpenAI,
+    langsmith: {
+      tracing: process.env.LANGSMITH_TRACING === "true",
+      project: process.env.LANGSMITH_PROJECT || "(not set)",
+      hasKey: !!process.env.LANGSMITH_API_KEY,
+    },
     nodeEnv: process.env.NODE_ENV || "development",
   });
 }

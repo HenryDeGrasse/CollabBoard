@@ -35,6 +35,11 @@ describe("GET /api/health", () => {
       supabaseUrl: "http://127.0.0.1:54321",
       hasServiceKey: true,
       hasOpenAI: true,
+      langsmith: {
+        tracing: expect.any(Boolean),
+        project: expect.any(String),
+        hasKey: expect.any(Boolean),
+      },
       nodeEnv: expect.any(String),
     });
   });

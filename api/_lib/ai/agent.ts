@@ -3,6 +3,8 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
 import { TOOL_DEFINITIONS } from "./toolSchemas.js";
 import * as tools from "./tools.js";
 import {
@@ -52,7 +54,7 @@ export interface AIExecutionResult {
 
 // ─── Main Entry Point ─────────────────────────────────────────
 
-export async function executeAICommand(
+export const executeAICommand = traceable(async function executeAICommand(
   command: string,
   boardId: string,
   uid: string,
@@ -192,11 +194,11 @@ export async function executeAICommand(
   }
 
   return result;
-}
+}, { name: "executeAICommand", metadata: { service: "collabboard-ai" } });
 
 // ─── Path 1: Template Execution ──────────────────────────────
 
-async function executeTemplatePath(
+const executeTemplatePath = traceable(async function executeTemplatePath(
   command: string,
   route: RouteResult,
   ctx: tools.ToolContext,
@@ -251,11 +253,11 @@ async function executeTemplatePath(
     toolCallsCount: 0,
     durationMs,
   };
-}
+}, { name: "executeTemplatePath" });
 
 // ─── Path 2: Plan → Execute ──────────────────────────────────
 
-async function executePlannerPath(
+const executePlannerPath = traceable(async function executePlannerPath(
   command: string,
   route: RouteResult,
   ctx: tools.ToolContext,
@@ -337,11 +339,11 @@ async function executePlannerPath(
       updateProgress
     );
   }
-}
+}, { name: "executePlannerPath" });
 
 // ─── Path 3: General Tool-Calling Loop ───────────────────────
 
-async function executeToolLoop(
+const executeToolLoop = traceable(async function executeToolLoop(
   command: string,
   route: RouteResult,
   ctx: tools.ToolContext,
@@ -358,7 +360,7 @@ async function executeToolLoop(
   let outputTokens = 0;
   let totalToolCalls = 0;
 
-  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const openai = wrapOpenAI(new OpenAI({ apiKey: openaiApiKey }));
 
   const systemPrompt = buildSystemPrompt(viewport, selectedIds, boardObjects, route);
   const messages: ChatCompletionMessageParam[] = [
@@ -497,7 +499,7 @@ async function executeToolLoop(
     toolCallsCount: totalToolCalls,
     durationMs,
   };
-}
+}, { name: "executeToolLoop" });
 
 // ─── System Prompt Builder ────────────────────────────────────
 
