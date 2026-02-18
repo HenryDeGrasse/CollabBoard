@@ -15,11 +15,9 @@ function GhostCursor({
   animClass: string;
 }) {
   return (
-    <div
-      className={`absolute pointer-events-none select-none ${animClass}`}
-      style={style}
-    >
+    <div className={`absolute pointer-events-none select-none ${animClass}`} style={style}>
       <svg width="18" height="22" viewBox="0 0 18 22" fill="none">
+        {/* Cursor tip is at (1.5, 1) — top-left of this SVG */}
         <path
           d="M1.5 1L1.5 19L11.5 13L1.5 1Z"
           fill={color}
@@ -44,41 +42,14 @@ function GhostCursor({
 function AnimatedLogo() {
   return (
     <div className="relative w-16 h-16 mx-auto mb-3">
-      {/* Cursor 1 — blue */}
-      <svg
-        className="absolute logo-c1"
-        width="30"
-        height="36"
-        viewBox="0 0 30 36"
-        fill="none"
-        style={{ top: 2, left: 4 }}
-      >
-        <path
-          d="M2 2L2 30L17 22L2 2Z"
-          fill="#2563EB"
-          stroke="white"
-          strokeWidth="2.5"
-          strokeLinejoin="round"
-        />
+      {/* Cursor 1 — orange */}
+      <svg className="absolute logo-c1" width="30" height="36" viewBox="0 0 30 36" fill="none" style={{ top: 2, left: 4 }}>
+        <path d="M2 2L2 30L17 22L2 2Z" fill="#EA580C" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
       </svg>
-      {/* Cursor 2 — cyan */}
-      <svg
-        className="absolute logo-c2"
-        width="30"
-        height="36"
-        viewBox="0 0 30 36"
-        fill="none"
-        style={{ bottom: 0, right: 2 }}
-      >
-        <path
-          d="M2 2L2 30L17 22L2 2Z"
-          fill="#06B6D4"
-          stroke="white"
-          strokeWidth="2.5"
-          strokeLinejoin="round"
-        />
+      {/* Cursor 2 — amber */}
+      <svg className="absolute logo-c2" width="30" height="36" viewBox="0 0 30 36" fill="none" style={{ bottom: 0, right: 2 }}>
+        <path d="M2 2L2 30L17 22L2 2Z" fill="#F59E0B" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
       </svg>
-      {/* Glow behind the overlap */}
       <div className="absolute inset-0 logo-glow rounded-2xl" />
     </div>
   );
@@ -96,7 +67,6 @@ export function LoginPage() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ── Email/Password ──
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setInfo("");
@@ -120,7 +90,6 @@ export function LoginPage() {
     finally { setLoading(false); }
   };
 
-  // ── Google ──
   const handleGoogleLogin = async () => {
     setError(""); setInfo(""); setLoading(true);
     try {
@@ -133,7 +102,6 @@ export function LoginPage() {
     finally { setLoading(false); }
   };
 
-  // ── Guest ──
   const handleGuestLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = guestName.trim();
@@ -165,7 +133,7 @@ export function LoginPage() {
   return (
     <>
       <style>{`
-        /* ── Logo ── */
+        /* ─── Logo ─────────────────────────────────────── */
         .logo-c1 {
           opacity: 0;
           animation: logoIn1 0.6s ease-out forwards,
@@ -193,7 +161,7 @@ export function LoginPage() {
           50%      { transform: translate(-4px, -2px) rotate(-8deg); }
         }
         .logo-glow {
-          background: radial-gradient(circle, rgba(37,99,235,0.14) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(234,88,12,0.12) 0%, transparent 70%);
           animation: glowPulse 3s ease-in-out infinite;
         }
         @keyframes glowPulse {
@@ -201,7 +169,7 @@ export function LoginPage() {
           50%      { opacity: 1; }
         }
 
-        /* ── Card entrance ── */
+        /* ─── Card entrance ─────────────────────────────── */
         .card-enter {
           animation: cardIn 0.45s ease-out 0.05s both;
         }
@@ -210,64 +178,149 @@ export function LoginPage() {
           to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* ── Ghost cursors — fast sweeping paths ── */
-        .ghost-1 { animation: g1 8s ease-in-out infinite; }
-        .ghost-2 { animation: g2 10s ease-in-out infinite; }
-        .ghost-3 { animation: g3 6s ease-in-out infinite; }
-
-        @keyframes g1 {
-          0%, 100% { transform: translate(0, 0); }
-          20%      { transform: translate(26vw, -10vh); }
-          45%      { transform: translate(40vw, 5vh); }
-          70%      { transform: translate(16vw, 16vh); }
-        }
-        @keyframes g2 {
-          0%, 100% { transform: translate(0, 0); }
-          25%      { transform: translate(-22vw, -14vh); }
-          50%      { transform: translate(-6vw, 12vh); }
-          75%      { transform: translate(14vw, -8vh); }
-        }
-        @keyframes g3 {
-          0%, 100% { transform: translate(0, 0); }
-          30%      { transform: translate(14vw, -20vh); }
-          60%      { transform: translate(28vw, -5vh); }
-        }
-
-        /* ── Dot grid ── */
+        /* ─── Dot grid ──────────────────────────────────── */
         .dot-grid {
-          background-image: radial-gradient(circle, rgba(37,99,235,0.14) 1.5px, transparent 1.5px);
+          background-image: radial-gradient(circle, rgba(217,119,6,0.13) 1.5px, transparent 1.5px);
           background-size: 28px 28px;
         }
 
-        /* ── Reduced motion ── */
+        /* ─── Story animation (18s shared loop) ─────────── */
+        /*
+          Positions (vw/vh from each cursor's starting left/top):
+          Sarah  starts: left 8%,  top 22%
+          Alex   starts: right 10% (≈ left 85%), top 58%
+          Note   placed: left 20%, top 32%  (= Sarah + translate(12vw,10vh))
+
+          Alex → note:      translate(-65vw, -26vh)
+          Alex → offscreen: translate( 30vw, -26vh)
+          Note → offscreen: translate( 95vw,   0  )
+        */
+
+        /* Sarah — moves to drop point, holds, moves away */
+        .ghost-sarah {
+          animation: sarah 18s ease-in-out infinite;
+        }
+        @keyframes sarah {
+          0%   { transform: translate(0, 0);          opacity: 0; }
+          2%   {                                       opacity: 0.44; }
+          14%  { transform: translate(12vw, 10vh);    opacity: 0.44; } /* arrives */
+          30%  { transform: translate(12vw, 10vh);    opacity: 0.44; } /* holds — note pops at 18% */
+          44%  { transform: translate(30vw, 2vh);     opacity: 0.44; } /* wanders away */
+          64%  { transform: translate(8vw, -10vh);    opacity: 0.44; }
+          80%  { transform: translate(8vw, -10vh);    opacity: 0; }    /* fade out */
+          82%  { transform: translate(0, 0);          opacity: 0; }    /* invisible reset */
+          100% { transform: translate(0, 0);          opacity: 0; }
+        }
+
+        /* Alex — waits, approaches note, grabs and drags off screen */
+        .ghost-alex {
+          animation: alex 18s ease-in-out infinite;
+        }
+        @keyframes alex {
+          0%   { transform: translate(0, 0);          opacity: 0; }
+          32%  { transform: translate(0, 0);          opacity: 0; }    /* idle off-screen while Sarah works */
+          35%  {                                       opacity: 0.38; } /* fades in, starts moving */
+          56%  { transform: translate(-65vw, -26vh);  opacity: 0.38; } /* arrives at note */
+          63%  { transform: translate(-65vw, -26vh);  opacity: 0.38; } /* brief "grab" pause */
+          78%  { transform: translate(30vw, -26vh);   opacity: 0.38; } /* dragged note off screen */
+          82%  { transform: translate(30vw, -26vh);   opacity: 0; }    /* fully off, fade out */
+          84%  { transform: translate(0, 0);          opacity: 0; }    /* invisible reset */
+          100% { transform: translate(0, 0);          opacity: 0; }
+        }
+
+        /* Jordan — independent wanderer (11s, ≈2× original 22s) */
+        .ghost-jordan {
+          animation: jordan 11s ease-in-out infinite;
+        }
+        @keyframes jordan {
+          0%, 100% { transform: translate(0, 0); }
+          30%      { transform: translate(-14vw, -16vh); }
+          65%      { transform: translate(10vw, -10vh); }
+        }
+
+        /* ─── Story sticky note ─────────────────────────── */
+        /*
+          Positioned absolutely at left:20%, top:32%
+          transform-origin: top left  →  grows from cursor tip
+          Timeline mirrors Sarah/Alex above
+        */
+        .story-note {
+          position: absolute;
+          left: 20%;
+          top: 32%;
+          transform-origin: top left;
+          pointer-events: none;
+          animation: storyNote 18s ease-in-out infinite;
+        }
+        @keyframes storyNote {
+          /* invisible until Sarah "clicks" */
+          0%    { opacity: 0; transform: scale(0); }
+          17%   { opacity: 0; transform: scale(0); }
+
+          /* SNAP in — fast overshoot bounce like a tool creation */
+          17.5% { opacity: 1; transform: scale(1.12); }
+          19%   { opacity: 1; transform: scale(0.94); }
+          20.5% { opacity: 1; transform: scale(1);    }  /* settled */
+
+          /* sits there while Alex approaches */
+          55%   { opacity: 0.82; transform: translate(0, 0) scale(1); }
+          63%   { opacity: 0.82; transform: translate(0, 0) scale(1); } /* grabbed */
+
+          /* dragged off screen with Alex */
+          78%   { opacity: 0.82; transform: translate(95vw, 0) scale(1); }
+          82%   { opacity: 0;    transform: translate(97vw, 0) scale(1); }
+
+          /* invisible reset */
+          84%   { opacity: 0; transform: scale(0); }
+          100%  { opacity: 0; transform: scale(0); }
+        }
+
+        /* ─── Reduced motion ────────────────────────────── */
         @media (prefers-reduced-motion: reduce) {
           .logo-c1, .logo-c2, .logo-glow,
-          .card-enter, .ghost-1, .ghost-2, .ghost-3 {
+          .card-enter,
+          .ghost-sarah, .ghost-alex, .ghost-jordan,
+          .story-note {
             animation: none !important;
             opacity: 1 !important;
           }
+          .story-note { opacity: 0 !important; } /* hide entirely if no motion */
         }
       `}</style>
 
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-sky-50 flex items-center justify-center p-4 overflow-hidden relative">
+      {/* ── Page ──────────────────────────────────────────── */}
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 flex items-center justify-center p-4 overflow-hidden relative">
 
         {/* Dot grid */}
         <div className="absolute inset-0 dot-grid" />
 
-        {/* Faint whiteboard objects — slightly more visible now */}
-        <div className="absolute top-[12%] left-[6%] w-28 h-28 bg-amber-300/[0.12] rounded-xl rotate-3 border border-amber-200/20" />
-        <div className="absolute top-[55%] right-[8%] w-24 h-20 bg-sky-300/[0.12] rounded-xl -rotate-6 border border-sky-200/20" />
-        <div className="absolute bottom-[18%] left-[55%] w-36 h-24 bg-emerald-300/[0.10] rounded-xl rotate-1 border border-emerald-200/20" />
-        <div className="absolute top-[30%] right-[30%] w-16 h-16 bg-cyan-300/[0.10] rounded-full" />
-        {/* Extra sticky note top-right */}
-        <div className="absolute top-[10%] right-[18%] w-20 h-20 bg-rose-200/[0.10] rounded-xl -rotate-2 border border-rose-200/20" />
+        {/* Faint static whiteboard objects */}
+        <div className="absolute top-[12%] left-[6%]  w-28 h-28 bg-amber-300/[0.11] rounded-xl  rotate-3  border border-amber-300/20" />
+        <div className="absolute top-[55%] right-[8%] w-24 h-20 bg-orange-300/[0.11] rounded-xl -rotate-6  border border-orange-300/20" />
+        <div className="absolute bottom-[18%] left-[56%] w-36 h-24 bg-yellow-300/[0.09] rounded-xl  rotate-1  border border-yellow-300/20" />
+        <div className="absolute top-[28%] right-[28%] w-14 h-14 bg-rose-300/[0.09]   rounded-full" />
+        <div className="absolute top-[8%]  right-[16%] w-20 h-20 bg-amber-200/[0.10] rounded-xl -rotate-2  border border-amber-300/20" />
 
-        {/* Ghost cursors */}
-        <GhostCursor name="Sarah" color="#2563EB" animClass="ghost-1" style={{ left: "8%", top: "22%", opacity: 0.45 }} />
-        <GhostCursor name="Alex"  color="#10B981" animClass="ghost-2" style={{ right: "10%", top: "58%", opacity: 0.40 }} />
-        <GhostCursor name="Jordan" color="#F59E0B" animClass="ghost-3" style={{ left: "28%", top: "68%", opacity: 0.38 }} />
+        {/* ── Story sticky note — appears at Sarah's cursor tip ── */}
+        <div className="story-note">
+          {/* Outer card */}
+          <div className="w-[72px] h-[72px] bg-amber-200 rounded-lg shadow-lg rotate-1 flex flex-col p-2 gap-1.5 overflow-hidden">
+            {/* Dark top strip (like our app's sticky note fold) */}
+            <div className="h-1.5 w-full bg-amber-400/60 rounded-sm shrink-0" />
+            {/* Fake text lines */}
+            <div className="h-1 w-full   bg-amber-500/25 rounded-sm" />
+            <div className="h-1 w-4/5    bg-amber-500/20 rounded-sm" />
+            <div className="h-1 w-full   bg-amber-500/25 rounded-sm" />
+            <div className="h-1 w-2/3    bg-amber-500/15 rounded-sm" />
+          </div>
+        </div>
 
-        {/* ── Login Card ── */}
+        {/* ── Ghost cursors ──────────────────────────────── */}
+        <GhostCursor name="Sarah"  color="#EA580C" animClass="ghost-sarah"  style={{ left: "8%",        top: "22%", opacity: 0.44 }} />
+        <GhostCursor name="Alex"   color="#10B981" animClass="ghost-alex"   style={{ right: "10%",       top: "58%", opacity: 0.38 }} />
+        <GhostCursor name="Jordan" color="#F59E0B" animClass="ghost-jordan" style={{ left: "28%",        top: "68%", opacity: 0.36 }} />
+
+        {/* ── Login Card ─────────────────────────────────── */}
         <div className="card-enter relative z-10 bg-white/55 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/70 w-full max-w-[420px]">
 
           {/* Header */}
@@ -285,7 +338,7 @@ export function LoginPage() {
                 value={signUpName}
                 onChange={(e) => setSignUpName(e.target.value)}
                 placeholder="Display name"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
                 disabled={loading}
                 maxLength={30}
               />
@@ -295,7 +348,7 @@ export function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
               disabled={loading}
             />
             <input
@@ -303,13 +356,13 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 active:bg-blue-800 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-200"
+              className="w-full py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 active:bg-orange-800 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-orange-200"
             >
               {loading ? "..." : mode === "signin" ? "Sign In" : "Create Account"}
             </button>
@@ -317,11 +370,11 @@ export function LoginPage() {
               {mode === "signin" ? (
                 <>No account?{" "}
                   <button type="button" onClick={() => { setMode("signup"); setError(""); setInfo(""); }}
-                    className="text-blue-600 font-medium hover:underline">Sign up</button></>
+                    className="text-orange-600 font-medium hover:underline">Sign up</button></>
               ) : (
                 <>Already have one?{" "}
                   <button type="button" onClick={() => { setMode("signin"); setError(""); setInfo(""); }}
-                    className="text-blue-600 font-medium hover:underline">Sign in</button></>
+                    className="text-orange-600 font-medium hover:underline">Sign in</button></>
               )}
             </p>
           </form>
@@ -340,7 +393,7 @@ export function LoginPage() {
               disabled={loading}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/80 transition disabled:opacity-50 bg-white/60"
             >
-              <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -365,7 +418,7 @@ export function LoginPage() {
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
                 placeholder="Enter your name"
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
                 disabled={loading}
                 maxLength={30}
               />
@@ -399,12 +452,12 @@ export function LoginPage() {
             </span>
             <span className="text-gray-300">·</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
               AI templates
             </span>
             <span className="text-gray-300">·</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
               Infinite canvas
             </span>
           </div>
