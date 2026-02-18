@@ -42,13 +42,13 @@ function GhostCursor({
 function AnimatedLogo() {
   return (
     <div className="relative w-16 h-16 mx-auto mb-3">
-      {/* Cursor 1 — orange */}
+      {/* Cursor 1 — deep navy */}
       <svg className="absolute logo-c1" width="30" height="36" viewBox="0 0 30 36" fill="none" style={{ top: 2, left: 4 }}>
-        <path d="M2 2L2 30L17 22L2 2Z" fill="#EA580C" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d="M2 2L2 30L17 22L2 2Z" fill="#0F2044" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
       </svg>
-      {/* Cursor 2 — amber */}
+      {/* Cursor 2 — mint */}
       <svg className="absolute logo-c2" width="30" height="36" viewBox="0 0 30 36" fill="none" style={{ bottom: 0, right: 2 }}>
-        <path d="M2 2L2 30L17 22L2 2Z" fill="#F59E0B" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d="M2 2L2 30L17 22L2 2Z" fill="#10B981" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
       </svg>
       <div className="absolute inset-0 logo-glow rounded-2xl" />
     </div>
@@ -154,19 +154,19 @@ export function LoginPage() {
         }
         @keyframes logoOrbit1 {
           0%, 100% { transform: translate(-4px, -2px) rotate(-8deg); }
-          50%      { transform: translate(4px, 2px) rotate(8deg); }
+          50%      { transform: translate(4px,  2px) rotate( 8deg); }
         }
         @keyframes logoOrbit2 {
-          0%, 100% { transform: translate(4px, 2px) rotate(8deg); }
+          0%, 100% { transform: translate(4px,  2px) rotate( 8deg); }
           50%      { transform: translate(-4px, -2px) rotate(-8deg); }
         }
         .logo-glow {
-          background: radial-gradient(circle, rgba(234,88,12,0.12) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%);
           animation: glowPulse 3s ease-in-out infinite;
         }
         @keyframes glowPulse {
-          0%, 100% { opacity: 0.5; }
-          50%      { opacity: 1; }
+          0%, 100% { opacity: 0.4; }
+          50%      { opacity: 1;   }
         }
 
         /* ─── Card entrance ─────────────────────────────── */
@@ -175,75 +175,64 @@ export function LoginPage() {
         }
         @keyframes cardIn {
           from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
+          to   { opacity: 1; transform: translateY(0);    }
         }
 
-        /* ─── Dot grid ──────────────────────────────────── */
+        /* ─── Dot grid — navy tinted ────────────────────── */
         .dot-grid {
-          background-image: radial-gradient(circle, rgba(217,119,6,0.13) 1.5px, transparent 1.5px);
+          background-image: radial-gradient(circle, rgba(15,32,68,0.10) 1.5px, transparent 1.5px);
           background-size: 28px 28px;
         }
 
         /* ─── Story animation (18s shared loop) ─────────── */
         /*
-          Positions (vw/vh from each cursor's starting left/top):
           Sarah  starts: left 8%,  top 22%
+          Note   placed: left 20%, top 32%  (+12vw, +10vh from Sarah)
           Alex   starts: right 10% (≈ left 85%), top 58%
-          Note   placed: left 20%, top 32%  (= Sarah + translate(12vw,10vh))
-
-          Alex → note:      translate(-65vw, -26vh)
-          Alex → offscreen: translate( 30vw, -26vh)
-          Note → offscreen: translate( 95vw,   0  )
+          Alex → note:       translate(-65vw, -26vh)
+          Alex → off-screen: translate( 30vw, -26vh)
+          Note → off-screen: translate( 95vw,   0  )
         */
 
-        /* Sarah — moves to drop point, holds, moves away */
-        .ghost-sarah {
-          animation: sarah 18s ease-in-out infinite;
-        }
+        /* Sarah — arrives, "clicks" to place the note, wanders off */
+        .ghost-sarah { animation: sarah 18s ease-in-out infinite; }
         @keyframes sarah {
-          0%   { transform: translate(0, 0);          opacity: 0; }
-          2%   {                                       opacity: 0.44; }
-          14%  { transform: translate(12vw, 10vh);    opacity: 0.44; } /* arrives */
-          30%  { transform: translate(12vw, 10vh);    opacity: 0.44; } /* holds — note pops at 18% */
-          44%  { transform: translate(30vw, 2vh);     opacity: 0.44; } /* wanders away */
-          64%  { transform: translate(8vw, -10vh);    opacity: 0.44; }
-          80%  { transform: translate(8vw, -10vh);    opacity: 0; }    /* fade out */
-          82%  { transform: translate(0, 0);          opacity: 0; }    /* invisible reset */
-          100% { transform: translate(0, 0);          opacity: 0; }
+          0%   { transform: translate(0, 0);       opacity: 0;    }
+          2%   {                                    opacity: 0.44; }
+          14%  { transform: translate(12vw, 10vh); opacity: 0.44; } /* arrives at drop point */
+          30%  { transform: translate(12vw, 10vh); opacity: 0.44; } /* holds — note snaps at 17.5% */
+          44%  { transform: translate(30vw,  2vh); opacity: 0.44; } /* drifts away */
+          64%  { transform: translate( 8vw,-10vh); opacity: 0.44; }
+          80%  { transform: translate( 8vw,-10vh); opacity: 0;    } /* fade out */
+          82%  { transform: translate(0, 0);       opacity: 0;    } /* invisible reset */
+          100% { transform: translate(0, 0);       opacity: 0;    }
         }
 
-        /* Alex — waits, approaches note, grabs and drags off screen */
-        .ghost-alex {
-          animation: alex 18s ease-in-out infinite;
-        }
+        /* Alex — waits, approaches, grabs the note, drags it off screen */
+        .ghost-alex { animation: alex 18s ease-in-out infinite; }
         @keyframes alex {
-          0%   { transform: translate(0, 0);          opacity: 0; }
-          32%  { transform: translate(0, 0);          opacity: 0; }    /* idle off-screen while Sarah works */
-          35%  {                                       opacity: 0.38; } /* fades in, starts moving */
-          56%  { transform: translate(-65vw, -26vh);  opacity: 0.38; } /* arrives at note */
-          63%  { transform: translate(-65vw, -26vh);  opacity: 0.38; } /* brief "grab" pause */
-          78%  { transform: translate(30vw, -26vh);   opacity: 0.38; } /* dragged note off screen */
-          82%  { transform: translate(30vw, -26vh);   opacity: 0; }    /* fully off, fade out */
-          84%  { transform: translate(0, 0);          opacity: 0; }    /* invisible reset */
-          100% { transform: translate(0, 0);          opacity: 0; }
+          0%   { transform: translate(0, 0);           opacity: 0;    }
+          32%  { transform: translate(0, 0);           opacity: 0;    } /* idle while Sarah works */
+          35%  {                                        opacity: 0.38; } /* fades in, starts moving */
+          56%  { transform: translate(-65vw, -26vh);   opacity: 0.38; } /* arrives at note */
+          63%  { transform: translate(-65vw, -26vh);   opacity: 0.38; } /* "grab" pause */
+          78%  { transform: translate( 30vw, -26vh);   opacity: 0.38; } /* off screen with note */
+          82%  { transform: translate( 30vw, -26vh);   opacity: 0;    } /* fade out */
+          84%  { transform: translate(0, 0);           opacity: 0;    } /* invisible reset */
+          100% { transform: translate(0, 0);           opacity: 0;    }
         }
 
-        /* Jordan — independent wanderer (11s, ≈2× original 22s) */
-        .ghost-jordan {
-          animation: jordan 11s ease-in-out infinite;
-        }
+        /* Jordan — independent free wanderer (11s) */
+        .ghost-jordan { animation: jordan 11s ease-in-out infinite; }
         @keyframes jordan {
-          0%, 100% { transform: translate(0, 0); }
+          0%, 100% { transform: translate(  0,    0); }
           30%      { transform: translate(-14vw, -16vh); }
-          65%      { transform: translate(10vw, -10vh); }
+          65%      { transform: translate( 10vw, -10vh); }
         }
 
         /* ─── Story sticky note ─────────────────────────── */
-        /*
-          Positioned absolutely at left:20%, top:32%
-          transform-origin: top left  →  grows from cursor tip
-          Timeline mirrors Sarah/Alex above
-        */
+        /* Positioned at Sarah's cursor tip: left 20%, top 32%  */
+        /* transform-origin: top left → grows from cursor tip   */
         .story-note {
           position: absolute;
           left: 20%;
@@ -253,81 +242,82 @@ export function LoginPage() {
           animation: storyNote 18s ease-in-out infinite;
         }
         @keyframes storyNote {
-          /* invisible until Sarah "clicks" */
-          0%    { opacity: 0; transform: scale(0); }
-          17%   { opacity: 0; transform: scale(0); }
+          0%    { opacity: 0; transform: scale(0);    }
+          17%   { opacity: 0; transform: scale(0);    } /* Sarah just arrived */
 
-          /* SNAP in — fast overshoot bounce like a tool creation */
+          /* SNAP — fast overshoot, exactly like clicking the sticky tool */
           17.5% { opacity: 1; transform: scale(1.12); }
           19%   { opacity: 1; transform: scale(0.94); }
-          20.5% { opacity: 1; transform: scale(1);    }  /* settled */
+          20.5% { opacity: 1; transform: scale(1);    } /* settled */
 
-          /* sits there while Alex approaches */
-          55%   { opacity: 0.82; transform: translate(0, 0) scale(1); }
-          63%   { opacity: 0.82; transform: translate(0, 0) scale(1); } /* grabbed */
+          /* sits while Alex approaches */
+          55%   { opacity: 0.85; transform: translate(  0,   0) scale(1); }
+          63%   { opacity: 0.85; transform: translate(  0,   0) scale(1); } /* grabbed */
 
-          /* dragged off screen with Alex */
-          78%   { opacity: 0.82; transform: translate(95vw, 0) scale(1); }
-          82%   { opacity: 0;    transform: translate(97vw, 0) scale(1); }
+          /* dragged off screen right with Alex */
+          78%   { opacity: 0.85; transform: translate(95vw,  0) scale(1); }
+          82%   { opacity: 0;    transform: translate(97vw,  0) scale(1); }
 
-          /* invisible reset */
-          84%   { opacity: 0; transform: scale(0); }
+          84%   { opacity: 0; transform: scale(0); } /* invisible reset */
           100%  { opacity: 0; transform: scale(0); }
         }
 
         /* ─── Reduced motion ────────────────────────────── */
         @media (prefers-reduced-motion: reduce) {
-          .logo-c1, .logo-c2, .logo-glow,
-          .card-enter,
-          .ghost-sarah, .ghost-alex, .ghost-jordan,
-          .story-note {
+          .logo-c1, .logo-c2, .logo-glow, .card-enter,
+          .ghost-sarah, .ghost-alex, .ghost-jordan, .story-note {
             animation: none !important;
             opacity: 1 !important;
           }
-          .story-note { opacity: 0 !important; } /* hide entirely if no motion */
+          .story-note { opacity: 0 !important; }
         }
       `}</style>
 
-      {/* ── Page ──────────────────────────────────────────── */}
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 flex items-center justify-center p-4 overflow-hidden relative">
+      {/* ── Page ──────────────────────────────────────────────── */}
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 flex items-center justify-center p-4 overflow-hidden relative">
 
-        {/* Dot grid */}
+        {/* Dot grid — navy tinted */}
         <div className="absolute inset-0 dot-grid" />
 
-        {/* Faint static whiteboard objects */}
-        <div className="absolute top-[12%] left-[6%]  w-28 h-28 bg-amber-300/[0.11] rounded-xl  rotate-3  border border-amber-300/20" />
-        <div className="absolute top-[55%] right-[8%] w-24 h-20 bg-orange-300/[0.11] rounded-xl -rotate-6  border border-orange-300/20" />
-        <div className="absolute bottom-[18%] left-[56%] w-36 h-24 bg-yellow-300/[0.09] rounded-xl  rotate-1  border border-yellow-300/20" />
-        <div className="absolute top-[28%] right-[28%] w-14 h-14 bg-rose-300/[0.09]   rounded-full" />
-        <div className="absolute top-[8%]  right-[16%] w-20 h-20 bg-amber-200/[0.10] rounded-xl -rotate-2  border border-amber-300/20" />
+        {/* Faint static whiteboard objects — navy + mint tones */}
+        <div className="absolute top-[12%] left-[6%]   w-28 h-28 rounded-xl  rotate-3  bg-slate-400/[0.09]   border border-slate-300/20" />
+        <div className="absolute top-[55%] right-[8%]  w-24 h-20 rounded-xl -rotate-6  bg-emerald-400/[0.09] border border-emerald-300/20" />
+        <div className="absolute bottom-[18%] left-[56%] w-36 h-24 rounded-xl  rotate-1  bg-slate-300/[0.08]   border border-slate-200/20" />
+        <div className="absolute top-[28%] right-[28%] w-14 h-14 rounded-full           bg-emerald-300/[0.08]" />
+        <div className="absolute top-[8%]  right-[16%] w-20 h-20 rounded-xl -rotate-2  bg-blue-300/[0.07]    border border-blue-200/20" />
 
-        {/* ── Story sticky note — appears at Sarah's cursor tip ── */}
+        {/* ── Story sticky note — mint colored, grows from Sarah's cursor tip ── */}
         <div className="story-note">
-          {/* Outer card */}
-          <div className="w-[72px] h-[72px] bg-amber-200 rounded-lg shadow-lg rotate-1 flex flex-col p-2 gap-1.5 overflow-hidden">
-            {/* Dark top strip (like our app's sticky note fold) */}
-            <div className="h-1.5 w-full bg-amber-400/60 rounded-sm shrink-0" />
-            {/* Fake text lines */}
-            <div className="h-1 w-full   bg-amber-500/25 rounded-sm" />
-            <div className="h-1 w-4/5    bg-amber-500/20 rounded-sm" />
-            <div className="h-1 w-full   bg-amber-500/25 rounded-sm" />
-            <div className="h-1 w-2/3    bg-amber-500/15 rounded-sm" />
+          <div className="w-[72px] h-[72px] bg-emerald-100 rounded-lg shadow-lg rotate-1 flex flex-col p-2 gap-1.5 overflow-hidden">
+            <div className="h-1.5 w-full bg-emerald-400/50 rounded-sm shrink-0" />
+            <div className="h-1   w-full   bg-emerald-600/20 rounded-sm" />
+            <div className="h-1   w-4/5    bg-emerald-600/15 rounded-sm" />
+            <div className="h-1   w-full   bg-emerald-600/20 rounded-sm" />
+            <div className="h-1   w-2/3    bg-emerald-600/12 rounded-sm" />
           </div>
         </div>
 
-        {/* ── Ghost cursors ──────────────────────────────── */}
-        <GhostCursor name="Sarah"  color="#EA580C" animClass="ghost-sarah"  style={{ left: "8%",        top: "22%", opacity: 0.44 }} />
-        <GhostCursor name="Alex"   color="#10B981" animClass="ghost-alex"   style={{ right: "10%",       top: "58%", opacity: 0.38 }} />
-        <GhostCursor name="Jordan" color="#F59E0B" animClass="ghost-jordan" style={{ left: "28%",        top: "68%", opacity: 0.36 }} />
+        {/* ── Ghost cursors ──────────────────────────────────── */}
+        {/* Sarah = navy (places the note) */}
+        <GhostCursor name="Sarah"  color="#0F2044" animClass="ghost-sarah"
+          style={{ left: "8%",  top: "22%", opacity: 0.50 }} />
+        {/* Alex = mint (drags the note off) */}
+        <GhostCursor name="Alex"   color="#10B981" animClass="ghost-alex"
+          style={{ right: "10%", top: "58%", opacity: 0.44 }} />
+        {/* Jordan = slate (free wanderer) */}
+        <GhostCursor name="Jordan" color="#475569" animClass="ghost-jordan"
+          style={{ left: "28%", top: "68%", opacity: 0.36 }} />
 
-        {/* ── Login Card ─────────────────────────────────── */}
-        <div className="card-enter relative z-10 bg-white/55 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/70 w-full max-w-[420px]">
+        {/* ── Login Card ─────────────────────────────────────── */}
+        <div className="card-enter relative z-10 bg-white/60 backdrop-blur-sm rounded-2xl shadow-2xl border border-slate-200/60 w-full max-w-[420px]">
 
           {/* Header */}
           <div className="px-8 pt-8 pb-2 text-center">
             <AnimatedLogo />
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">CollabBoard</h1>
-            <p className="text-sm text-gray-500 mt-1">Think together, in real time</p>
+            <h1 className="text-2xl font-bold tracking-tight" style={{ color: "#0F2044" }}>
+              CollabBoard
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">Think together, in real time</p>
           </div>
 
           {/* Email / Password */}
@@ -338,7 +328,7 @@ export function LoginPage() {
                 value={signUpName}
                 onChange={(e) => setSignUpName(e.target.value)}
                 placeholder="Display name"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none bg-white/80 transition"
                 disabled={loading}
                 maxLength={30}
               />
@@ -348,7 +338,7 @@ export function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none bg-white/80 transition"
               disabled={loading}
             />
             <input
@@ -356,34 +346,44 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none bg-white/80 transition"
               disabled={loading}
             />
+            {/* Mint accent button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 active:bg-orange-800 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-orange-200"
+              className="w-full py-2.5 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+              style={{ backgroundColor: "#10B981", boxShadow: "0 4px 14px rgba(16,185,129,0.30)" }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#059669")}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#10B981")}
             >
               {loading ? "..." : mode === "signin" ? "Sign In" : "Create Account"}
             </button>
-            <p className="text-center text-xs text-gray-400">
+            <p className="text-center text-xs text-slate-400">
               {mode === "signin" ? (
                 <>No account?{" "}
-                  <button type="button" onClick={() => { setMode("signup"); setError(""); setInfo(""); }}
-                    className="text-orange-600 font-medium hover:underline">Sign up</button></>
+                  <button type="button"
+                    onClick={() => { setMode("signup"); setError(""); setInfo(""); }}
+                    className="font-medium hover:underline" style={{ color: "#10B981" }}>
+                    Sign up
+                  </button></>
               ) : (
                 <>Already have one?{" "}
-                  <button type="button" onClick={() => { setMode("signin"); setError(""); setInfo(""); }}
-                    className="text-orange-600 font-medium hover:underline">Sign in</button></>
+                  <button type="button"
+                    onClick={() => { setMode("signin"); setError(""); setInfo(""); }}
+                    className="font-medium hover:underline" style={{ color: "#10B981" }}>
+                    Sign in
+                  </button></>
               )}
             </p>
           </form>
 
           {/* — or continue with — */}
           <div className="px-8 flex items-center gap-3">
-            <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-[11px] text-gray-400 uppercase tracking-wider">or continue with</span>
-            <div className="flex-1 h-px bg-gray-200" />
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-[11px] text-slate-400 uppercase tracking-wider">or continue with</span>
+            <div className="flex-1 h-px bg-slate-200" />
           </div>
 
           {/* Google */}
@@ -391,7 +391,7 @@ export function LoginPage() {
             <button
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/80 transition disabled:opacity-50 bg-white/60"
+              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 bg-white/70"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
@@ -405,9 +405,9 @@ export function LoginPage() {
 
           {/* — or try it out — */}
           <div className="px-8 pt-3 flex items-center gap-3">
-            <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-[11px] text-gray-400 uppercase tracking-wider">or try it out</span>
-            <div className="flex-1 h-px bg-gray-200" />
+            <div className="flex-1 h-px bg-slate-200" />
+            <span className="text-[11px] text-slate-400 uppercase tracking-wider">or try it out</span>
+            <div className="flex-1 h-px bg-slate-200" />
           </div>
 
           {/* Guest */}
@@ -418,14 +418,14 @@ export function LoginPage() {
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
                 placeholder="Enter your name"
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none bg-white/70 transition"
+                className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none bg-white/80 transition"
                 disabled={loading}
                 maxLength={30}
               />
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2.5 bg-gray-100/80 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200/80 transition disabled:opacity-50 whitespace-nowrap"
+                className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-200 transition disabled:opacity-50 whitespace-nowrap"
               >
                 {loading ? "..." : "Join as Guest"}
               </button>
@@ -435,36 +435,36 @@ export function LoginPage() {
           {/* Error / Info */}
           {error && (
             <div className="px-8 pt-1 pb-1">
-              <p className="text-sm text-red-600 bg-red-50/80 rounded-xl px-4 py-2 text-center">{error}</p>
+              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2 text-center">{error}</p>
             </div>
           )}
           {info && (
             <div className="px-8 pt-1 pb-1">
-              <p className="text-sm text-emerald-600 bg-emerald-50/80 rounded-xl px-4 py-2 text-center">{info}</p>
+              <p className="text-sm text-emerald-600 bg-emerald-50 rounded-xl px-4 py-2 text-center">{info}</p>
             </div>
           )}
 
           {/* Feature pills */}
-          <div className="px-8 pt-4 pb-6 flex items-center justify-center gap-3 text-[11px] text-gray-400 flex-wrap">
+          <div className="px-8 pt-4 pb-6 flex items-center justify-center gap-3 text-[11px] text-slate-400 flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Real-time cursors
             </span>
-            <span className="text-gray-300">·</span>
+            <span className="text-slate-300">·</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: "#0F2044", opacity: 0.6 }} />
               AI templates
             </span>
-            <span className="text-gray-300">·</span>
+            <span className="text-slate-300">·</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
               Infinite canvas
             </span>
           </div>
         </div>
 
         {/* Bottom note */}
-        <p className="absolute bottom-4 text-[11px] text-gray-400/70 tracking-wide z-10">
+        <p className="absolute bottom-4 text-[11px] text-slate-400/60 tracking-wide z-10">
           Free to use · No credit card required
         </p>
       </div>
