@@ -27,6 +27,18 @@ All bug fixes and new features MUST follow TDD:
 
 **After every message/response, make a git commit** with all current changes. This ensures incremental progress is never lost. Use Conventional Commits format. Only commit; do NOT push unless the user explicitly asks.
 
+## ⛔ MANDATORY: Push & Deploy Gate
+
+### NEVER push or deploy without explicit user approval.
+
+- **`git push`** — ALWAYS ask the user "Ready to push?" and wait for a clear "yes" / "go ahead" / "push it" BEFORE running the command. No exceptions.
+- **`vercel --prod`** (or any deploy command) — ALWAYS ask the user "Ready to deploy to production?" and wait for explicit approval BEFORE running. No exceptions.
+- **If the user says "push to production"** in the same message as a feature request, implement the feature first, then ASK before actually running push/deploy.
+- Committing locally (`git commit`) is fine without asking — that's just local safety. Pushing and deploying affect production and other people.
+
+### Why
+`git push` triggers Vercel auto-deploy. Running it without permission can ship broken or unfinished work to production. The user must always have final say.
+
 ## Quality Gates & Deployment Pipeline
 
 ### Before Every Commit
@@ -40,10 +52,9 @@ All bug fixes and new features MUST follow TDD:
 ### Deployment Flow
 1. **Develop & test locally** — verify features work on `localhost:5174`
 2. **Commit** — tests run automatically via pre-commit hook
-3. **Push to GitHub** — tests + build run automatically via pre-push hook
-4. **Vercel deploys from GitHub** — only push when local dev is verified
+3. **ASK the user for permission** — "Ready to push/deploy?"
+4. **Only after explicit approval**: push to GitHub / deploy to Vercel
 5. **Never push broken code** — if tests or build fail, fix before pushing
-6. **NEVER push to GitHub (which triggers Vercel deploy) without explicit user approval** — always ask "Ready to push/deploy?" and wait for confirmation before running `git push`
 
 ### Production
 - Frontend hosted on **Vercel** (NOT Firebase Hosting)
