@@ -133,7 +133,13 @@ function hasLikelyExistingTemplate(
 
 // ─── Tool Sets ────────────────────────────────────────────────
 
-const TOOLS_CREATE = [
+// Simple creation: no connectors or arrange needed
+const TOOLS_CREATE_SIMPLE = [
+  "createStickyNote", "createShape", "createFrame", "bulkCreate",
+];
+
+// Full creation: includes connectors and layout tools
+const TOOLS_CREATE_FULL = [
   "createStickyNote", "createShape", "createFrame",
   "createConnector", "bulkCreate", "arrangeObjects",
 ];
@@ -278,10 +284,15 @@ export function routeCommand(
   // ── Simple create ──
   for (const re of CREATE_PATTERNS) {
     if (re.test(cmd)) {
-      // Complexity heuristic: long command, multiple objects, conjunctions
+      // Needs connectors or layout? ("create … and connect them", "arrange in a row")
+      const needsConnectors = /\bconnect|arrow|link\b/i.test(cmd);
+      const needsArrange = /\barrange|grid|row|column|layout|align\b/i.test(cmd);
+      const needsFullTools = needsConnectors || needsArrange;
+
+      // Model: gpt-4o-mini handles all pure creation. Reserve gpt-4o for
+      // complex multi-step commands (long prompt + many conjunctions).
       const isComplex =
-        cmd.length > 120 ||
-        /\b\d{2,}\b/.test(cmd) ||  // mentions a number ≥ 10
+        cmd.length > 150 &&
         (cmd.match(/\band\b/g) || []).length >= 3;
 
       return {
@@ -290,7 +301,7 @@ export function routeCommand(
         model: isComplex ? "gpt-4o" : "gpt-4o-mini",
         templateId: null,
         needsFullContext: false,
-        allowedTools: TOOLS_CREATE,
+        allowedTools: needsFullTools ? TOOLS_CREATE_FULL : TOOLS_CREATE_SIMPLE,
       };
     }
   }

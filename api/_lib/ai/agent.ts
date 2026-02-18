@@ -3,7 +3,7 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
-import { traceable } from "langsmith/traceable";
+import { traceable, getCurrentRunTree } from "langsmith/traceable";
 import { wrapOpenAI } from "langsmith/wrappers";
 import { TOOL_DEFINITIONS } from "./toolSchemas.js";
 import * as tools from "./tools.js";
@@ -109,6 +109,26 @@ export const executeAICommand = traceable(async function executeAICommand(
     boardObjects.length,
     existingFrameTitles
   );
+
+  // Tag the LangSmith trace with routing metadata for filtering
+  try {
+    const runTree = getCurrentRunTree();
+    if (runTree) {
+      runTree.extra = {
+        ...runTree.extra,
+        metadata: {
+          ...(runTree.extra?.metadata ?? {}),
+          intent: route.intent,
+          model: route.model,
+          boardId,
+          boardObjectCount: boardObjects.length,
+          selectedCount: selectedIds.length,
+          templateId: route.templateId,
+          toolCount: route.allowedTools?.length ?? "all",
+        },
+      };
+    }
+  } catch { /* non-critical */ }
 
   // Tool context
   const ctx: tools.ToolContext = {
