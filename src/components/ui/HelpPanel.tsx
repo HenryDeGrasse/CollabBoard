@@ -61,10 +61,10 @@ export function HelpPanel() {
 
   return (
     <>
-      {/* Help button */}
+      {/* Help button — inline, sits inside parent container */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 left-4 z-50 ml-20 w-8 h-8 bg-white/80 backdrop-blur rounded-lg shadow-sm border border-gray-200 flex items-center justify-center hover:bg-white transition text-gray-500 hover:text-gray-700"
+        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition text-gray-400 hover:text-gray-700"
         title="Keyboard shortcuts (?)"
       >
         <HelpCircle size={16} />

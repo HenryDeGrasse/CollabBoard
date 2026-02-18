@@ -81,6 +81,13 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const canvas = useCanvas(boardId);
   const selection = useSelection();
   const aiAgent = useAIAgent(boardId, canvas.stageRef, selection.selectedIds);
+  const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+
+  // Wrap presence setEditingObject to also track locally for TextStylePanel visibility
+  const handleSetEditingObject = useCallback((objectId: string | null) => {
+    setEditingObjectId(objectId);
+    setEditingObject(objectId);
+  }, [setEditingObject]);
 
   // ── Thumbnail capture ────────────────────────────────────────
   // Konva's toDataURL captures transparent pixels. JPEG converts
@@ -441,8 +448,8 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         onChangeSelectedColor={handleChangeSelectedColor}
       />
 
-      {/* Left-side text style popup */}
-      {activeTool === "select" && canEditSelectedText && (
+      {/* Left-side text style popup — only during text editing */}
+      {editingObjectId && canEditSelectedText && (
         <TextStylePanel
           textSize={selectedTextSize}
           textColor={selectedTextColor}
@@ -452,28 +459,32 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         />
       )}
 
-      {/* Presence panel */}
-      <PresencePanel
-        users={users}
-        currentUserId={userId}
-        boardUrl={window.location.href}
-        boardId={boardId}
-      />
-
-      {/* Back to Dashboard button */}
-      <div className="fixed top-4 left-4 z-50">
+      {/* ── Top header bar ─────────────────────────────────── */}
+      <div className="fixed top-0 left-0 right-0 z-50 h-11 bg-white/80 backdrop-blur-sm border-b border-gray-200 flex items-center justify-between px-3">
+        {/* Left: dashboard button */}
         <button
           onClick={() => { captureThumbnail(); onNavigateHome?.(); }}
-          className="flex items-center gap-1 text-xs bg-white/80 backdrop-blur px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white hover:text-gray-800 transition shadow-sm"
+          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition px-2 py-1.5 rounded-lg hover:bg-gray-100"
           title="Back to Dashboard"
         >
-          ← Dashboard
+          ← <span className="font-medium">Dashboard</span>
         </button>
-      </div>
 
-      {/* Zoom indicator */}
-      <div className="fixed bottom-4 left-4 z-50 bg-white/80 backdrop-blur rounded-lg px-3 py-1.5 text-xs text-gray-500 border border-gray-200">
-        {Math.round(canvas.viewport.scale * 100)}%
+        {/* Center: zoom */}
+        <div className="text-xs text-gray-400 tabular-nums">
+          {Math.round(canvas.viewport.scale * 100)}%
+        </div>
+
+        {/* Right: presence + help */}
+        <div className="flex items-center gap-1.5">
+          <PresencePanel
+            users={users}
+            currentUserId={userId}
+            boardUrl={window.location.href}
+            boardId={boardId}
+          />
+          <HelpPanel />
+        </div>
       </div>
 
       {/* Main canvas */}
@@ -498,17 +509,20 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         remoteDragPositions={remoteDragPositions}
         onObjectDragBroadcast={broadcastObjectDrag}
         onObjectDragEndBroadcast={endObjectDrag}
-        onSetEditingObject={setEditingObject}
+        onSetEditingObject={handleSetEditingObject}
         onDraftTextChange={setDraftText}
         getDraftTextForObject={getDraftTextForObject}
         isObjectLocked={isObjectLocked}
         onPushUndo={undoRedo.pushAction}
         onRotatingChange={setIsRotating}
         onResetTool={(selectId) => {
-          setActiveTool("select");
           if (selectId) {
+            // Object just created — select it but stay in current tool mode.
             selection.clearSelection();
             selection.select(selectId);
+          } else {
+            // No ID = Escape pressed or explicit reset → return to select tool.
+            setActiveTool("select");
           }
         }}
       />
@@ -516,12 +530,9 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       {/* AI Command Input */}
       <AICommandInput aiAgent={aiAgent} />
 
-      {/* Help Panel */}
-      <HelpPanel />
-
-      {/* Rotation hint */}
+      {/* Rotation hint — above toolbar */}
       {isRotating && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900/80 backdrop-blur text-white text-xs px-4 py-2 rounded-full pointer-events-none">
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-gray-900/80 backdrop-blur text-white text-xs px-4 py-2 rounded-full pointer-events-none">
           Hold <kbd className="px-1.5 py-0.5 bg-white/20 rounded text-[11px] font-medium mx-0.5">Shift</kbd> while rotating to snap to 15° increments
         </div>
       )}

@@ -1858,6 +1858,8 @@ export function Board({
         }
         onClearSelection();
         setSelectedConnectorIds(new Set());
+        // Return to select tool
+        onResetTool();
       }
     };
 

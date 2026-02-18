@@ -41,7 +41,7 @@ export function PresencePanel({ users, currentUserId, boardUrl, boardId }: Prese
   };
 
   return (
-    <div className="fixed top-4 right-4 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[180px]">
+    <div className="relative bg-white/60 rounded-lg border border-gray-200/50 px-2.5 py-1.5">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-500" />
@@ -68,7 +68,7 @@ export function PresencePanel({ users, currentUserId, boardUrl, boardId }: Prese
             <div className="absolute right-0 top-8 w-44 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50">
               <button
                 onClick={() => copy(boardUrl, "link")}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition text-left"
               >
                 <Copy size={13} className="shrink-0" />
                 <span>Copy share link</span>
@@ -76,7 +76,7 @@ export function PresencePanel({ users, currentUserId, boardUrl, boardId }: Prese
               <div className="h-px bg-gray-100 mx-2" />
               <button
                 onClick={() => copy(boardId, "id")}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition text-left"
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition text-left"
               >
                 <Hash size={13} className="shrink-0" />
                 <span>Copy board ID</span>

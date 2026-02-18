@@ -115,14 +115,14 @@ export function Toolbar({
   const allColors = [...new Set([...getStickyColorArray(), ...getShapeColorArray()])];
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1">
       {tools.map((tool) => (
         <button
           key={tool.id}
           onClick={() => onToolChange(tool.id)}
           className={`group h-10 flex items-center rounded-lg transition-colors duration-150 ${
             activeTool === tool.id
-              ? "bg-indigo-50 text-indigo-600"
+              ? "bg-emerald-50 text-emerald-600"
               : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
           }`}
           title={`${tool.label} (${tool.shortcut})`}
@@ -131,7 +131,6 @@ export function Toolbar({
           <span className="w-10 h-10 flex items-center justify-center shrink-0">
             {tool.icon}
           </span>
-          {/* Label reveals to exactly its own text width via max-width transition */}
           <span className="text-xs whitespace-nowrap overflow-hidden max-w-0 group-hover:max-w-[160px] transition-[max-width,padding-right] duration-300 ease-in-out pr-0 group-hover:pr-3">
             {tool.label}
           </span>
