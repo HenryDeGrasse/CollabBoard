@@ -89,7 +89,7 @@ describe("HomePage integration", () => {
     expect(mockJoinBoard).toHaveBeenCalledWith("abc-123", "user-123");
   });
 
-  it("shows toast when joining a board that does not exist", async () => {
+  it("shows 'board not found' toast for any join error", async () => {
     mockJoinBoard.mockRejectedValueOnce(new Error("Board not found"));
     const user = userEvent.setup();
     render(<HomePage onNavigateToBoard={mockNavigate} />);
@@ -103,7 +103,26 @@ describe("HomePage integration", () => {
     await user.click(screen.getByRole("button", { name: /^join$/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/board not found/i)).toBeInTheDocument();
+      expect(screen.getByText(/board not found — double-check the id/i)).toBeInTheDocument();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("shows same toast for non-UUID input", async () => {
+    mockJoinBoard.mockRejectedValueOnce(new Error('invalid input syntax for type uuid: "not-a-uuid"'));
+    const user = userEvent.setup();
+    render(<HomePage onNavigateToBoard={mockNavigate} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/no boards yet/i)).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText(/board id/i);
+    await user.type(input, "not-a-uuid");
+    await user.click(screen.getByRole("button", { name: /^join$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/board not found — double-check the id/i)).toBeInTheDocument();
     });
     expect(mockNavigate).not.toHaveBeenCalled();
   });

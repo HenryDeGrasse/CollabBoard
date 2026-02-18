@@ -115,12 +115,7 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
       await joinBoard(id, userId);
       onNavigateToBoard(id);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      if (msg === "Board not found") {
-        setToast({ message: "Board not found — double-check the ID and try again.", type: "error" });
-      } else {
-        setToast({ message: "Something went wrong joining that board.", type: "error" });
-      }
+      setToast({ message: "Board not found — double-check the ID and try again.", type: "error" });
       console.error("Failed to join board:", err);
     }
   }, [joinBoardId, userId, onNavigateToBoard]);
