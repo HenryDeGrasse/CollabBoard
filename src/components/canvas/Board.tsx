@@ -84,6 +84,7 @@ interface BoardProps {
   isObjectLocked: (objectId: string) => { locked: boolean; lockedBy?: string; lockedByColor?: string };
   onResetTool: (selectId?: string) => void;
   onPushUndo: (action: UndoAction) => void;
+  onRotatingChange?: (rotating: boolean) => void;
 }
 
 export function Board({
@@ -113,6 +114,7 @@ export function Board({
   isObjectLocked,
   onResetTool,
   onPushUndo,
+  onRotatingChange,
 }: BoardProps) {
   const { viewport, setViewport, onWheel, stageRef } = canvas;
   // Stable ref for objects — used inside callbacks to avoid regenerating them
@@ -1496,7 +1498,8 @@ export function Board({
     const obj = objectsRef.current[id];
     if (!obj) return;
     rotateStartRef.current = { id, rotation: obj.rotation || 0 };
-  }, []);
+    onRotatingChange?.(true);
+  }, [onRotatingChange]);
 
   const handleRotateMove = useCallback(
     (id: string, angle: number) => {
@@ -1521,8 +1524,9 @@ export function Board({
         });
       }
       rotateStartRef.current = null;
+      onRotatingChange?.(false);
     },
-    [onPushUndo]
+    [onPushUndo, onRotatingChange]
   );
 
   const handleDoubleClick = useCallback(
