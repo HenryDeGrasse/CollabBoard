@@ -40,6 +40,12 @@ describe("GET /api/health", () => {
         project: expect.any(String),
         hasKey: expect.any(Boolean),
       },
+      aiRouteLatency: expect.objectContaining({
+        windowMinutes: expect.any(Number),
+        sampleCount: expect.any(Number),
+        bySource: expect.any(Object),
+        byIntent: expect.any(Object),
+      }),
       nodeEnv: expect.any(String),
     });
   });

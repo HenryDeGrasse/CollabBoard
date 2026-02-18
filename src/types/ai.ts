@@ -25,6 +25,11 @@ export interface AICommandResponse {
   objectsDeleted: string[];
   focus?: { minX: number; minY: number; maxX: number; maxY: number };
   runId: string;
+  route?: {
+    source: "fast_path" | "ai_extractor" | "full_agent";
+    confidence: number;
+    reason: string;
+  };
   error?: string;
 }
 

@@ -194,6 +194,14 @@ export function routeCommand(
 
   for (const [id, re] of Object.entries(TEMPLATE_PATTERNS)) {
     if (re.test(cmd)) {
+      // Guard: when the user explicitly asks for sticky notes, prefer create_simple
+      // over template creation unless they explicitly ask for a board/template.
+      const stickyRequest = /\bsticky\s*notes?\b/i.test(cmd);
+      const explicitTemplateRequest = /\b(template|board|canvas|layout)\b/i.test(cmd);
+      if (stickyRequest && !explicitTemplateRequest) {
+        continue;
+      }
+
       // If the command uses edit-like verbs ("add a sticky to the SWOT"),
       // route to targeted edit mode — the user is modifying, not creating.
       if (EDIT_VERBS.test(cmd) && !CREATION_VERBS.test(cmd)) {

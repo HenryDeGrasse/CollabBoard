@@ -196,6 +196,11 @@ export default async function handler(
       objectsDeleted: result.objectsDeleted,
       focus: result.focus,
       runId: payload.commandId,
+      route: {
+        source: result.routeSource ?? "full_agent",
+        confidence: result.routeConfidence ?? 0,
+        reason: result.routeReason ?? "unknown",
+      },
     };
 
     // 9. Log and mark completed

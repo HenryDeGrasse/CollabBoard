@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { getRouteLatencyStats } from "./_lib/ai/runtimeMetrics.js";
 
 /**
  * GET /api/health — simple diagnostic endpoint.
@@ -20,6 +21,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       project: process.env.LANGSMITH_PROJECT || "(not set)",
       hasKey: !!process.env.LANGSMITH_API_KEY,
     },
+    aiRouteLatency: getRouteLatencyStats(),
     nodeEnv: process.env.NODE_ENV || "development",
   });
 }

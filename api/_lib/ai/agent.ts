@@ -20,7 +20,8 @@ import {
   executeTemplate,
 } from "./templates.js";
 import { generatePlan, validatePlan, executePlan, type Plan } from "./planner.js";
-import { getSupabaseAdmin } from "../supabaseAdmin.js";
+import { decideIntentRoute, parseFastPath, type FastPathMatch, type RouteSource } from "./intentEngine.js";
+import { recordRouteLatency } from "./runtimeMetrics.js";
 import {
   getBoardVersion,
   incrementBoardVersion,
@@ -50,6 +51,9 @@ export interface AIExecutionResult {
   totalTokens: number;
   toolCallsCount: number;
   durationMs: number;
+  routeSource?: RouteSource;
+  routeConfidence?: number;
+  routeReason?: string;
 }
 
 // ─── Main Entry Point ─────────────────────────────────────────
@@ -102,6 +106,12 @@ export const executeAICommand = traceable(async function executeAICommand(
     existingFrameTitles
   );
 
+  // Intent engine chooses route source + confidence.
+  const initialDecision = decideIntentRoute(command, route.intent);
+  let routeSource: RouteSource = initialDecision.source;
+  let routeConfidence = initialDecision.confidence;
+  let routeReason = initialDecision.reason;
+
   // Tag the LangSmith trace with routing metadata for filtering
   try {
     const runTree = getCurrentRunTree();
@@ -117,10 +127,15 @@ export const executeAICommand = traceable(async function executeAICommand(
           selectedCount: selectedIds.length,
           templateId: route.templateId,
           toolCount: route.allowedTools?.length ?? "all",
+          routeSource,
+          routeConfidence,
+          routeReason,
         },
       };
     }
-  } catch { /* non-critical */ }
+  } catch {
+    /* non-critical */
+  }
 
   // Tool context
   const ctx: tools.ToolContext = {
@@ -150,15 +165,49 @@ export const executeAICommand = traceable(async function executeAICommand(
 
   let result: AIExecutionResult;
 
-  // Path 0: Deterministic fast-path for common simple commands
-  const fastPathResult = await tryExecuteFastPath(
-    command,
-    route,
-    ctx,
-    boardObjects,
-    startTime,
-    updateProgress
-  );
+  // Path 0: Intent engine route sources
+  let fastPathResult: AIExecutionResult | null = null;
+
+  if (routeSource === "fast_path") {
+    fastPathResult = await tryExecuteFastPath(
+      route,
+      ctx,
+      boardObjects,
+      startTime,
+      updateProgress,
+      initialDecision.match
+    );
+    if (!fastPathResult) {
+      // Deterministic execution failed unexpectedly → fallback
+      routeSource = "full_agent";
+      routeConfidence = 0.2;
+      routeReason = `fast_path_failed:${routeReason}`;
+    }
+  } else if (routeSource === "ai_extractor") {
+    const extracted = await tryExtractFastPathWithAI(command, openaiApiKey);
+    if (extracted.match && extracted.confidence >= 0.8) {
+      fastPathResult = await tryExecuteFastPath(
+        route,
+        ctx,
+        boardObjects,
+        startTime,
+        updateProgress,
+        extracted.match
+      );
+      if (fastPathResult) {
+        routeConfidence = extracted.confidence;
+        routeReason = extracted.reason;
+      } else {
+        routeSource = "full_agent";
+        routeConfidence = 0.2;
+        routeReason = `ai_extractor_exec_failed:${extracted.reason}`;
+      }
+    } else {
+      routeSource = "full_agent";
+      routeConfidence = extracted.confidence;
+      routeReason = `ai_extractor_no_match:${extracted.reason}`;
+    }
+  }
 
   if (fastPathResult) {
     result = fastPathResult;
@@ -216,6 +265,36 @@ export const executeAICommand = traceable(async function executeAICommand(
       /* non-critical: version bump is best-effort */
     }
   }
+
+  // Attach route diagnostics to result payload/logs
+  result.routeSource = routeSource;
+  result.routeConfidence = routeConfidence;
+  result.routeReason = routeReason;
+
+  // Update trace metadata with final route decision (after fallbacks)
+  try {
+    const runTree = getCurrentRunTree();
+    if (runTree) {
+      runTree.extra = {
+        ...runTree.extra,
+        metadata: {
+          ...(runTree.extra?.metadata ?? {}),
+          routeSource,
+          routeConfidence,
+          routeReason,
+        },
+      };
+    }
+  } catch {
+    /* non-critical */
+  }
+
+  // Track latency percentiles by route source and intent (in-memory window)
+  recordRouteLatency({
+    source: routeSource,
+    intent: route.intent,
+    durationMs: result.durationMs,
+  });
 
   return result;
 }, { name: "executeAICommand", metadata: { service: "collabboard-ai" } });
@@ -752,14 +831,6 @@ async function executeToolCall(
 
 // ─── Fast Path (deterministic, no LLM) ───────────────────────
 
-type FastPathMatch =
-  | { kind: "delete_all" }
-  | { kind: "delete_by_type"; objectType: "sticky" | "rectangle" | "circle" | "frame" | "connector" | "shape" }
-  | { kind: "create_sticky_batch"; count: number; topic?: string; color?: string }
-  | { kind: "create_single_sticky"; text: string; color?: string; frameName?: string }
-  | { kind: "create_shape_batch"; count: number; shape: "rectangle" | "circle"; color?: string }
-  | { kind: "query_summary" };
-
 const COLOR_MAP: Record<string, string> = {
   yellow: "#FBBF24",
   pink: "#F472B6",
@@ -785,112 +856,75 @@ function titleCase(value: string): string {
     .join(" ");
 }
 
-function parseFastPath(command: string): FastPathMatch | null {
-  const cmd = command.trim();
-  const lc = cmd.toLowerCase();
+async function tryExtractFastPathWithAI(
+  command: string,
+  openaiApiKey: string
+): Promise<{ match: FastPathMatch | null; confidence: number; reason: string }> {
+  const openai = wrapOpenAI(new OpenAI({ apiKey: openaiApiKey }));
 
-  // Delete everything
-  if (/\b(delete|remove|clear|wipe|erase)\b.*\b(all|everything|board)\b/i.test(cmd) || /\bstart\s*over\b/i.test(cmd)) {
-    return { kind: "delete_all" };
-  }
+  const extractorPrompt = `Extract a deterministic whiteboard action from the user command.
+Return JSON only.
+If uncertain, return {"kind":"none","confidence":0,"reason":"..."}.
 
-  // Delete by type
-  const deleteType = cmd.match(/\b(delete|remove|clear)\b\s+(?:all\s+)?(?:the\s+)?(sticky notes?|stickies|rectangles?|circles?|frames?|connectors?|shapes?)\b/i);
-  if (deleteType) {
-    const raw = deleteType[2].toLowerCase();
-    const objectType = raw.startsWith("sticky")
-      ? "sticky"
-      : raw.startsWith("rectangle")
-      ? "rectangle"
-      : raw.startsWith("circle")
-      ? "circle"
-      : raw.startsWith("frame")
-      ? "frame"
-      : raw.startsWith("connector")
-      ? "connector"
-      : "shape";
-    return { kind: "delete_by_type", objectType };
-  }
+Allowed kinds:
+- delete_all
+- delete_by_type (objectType: sticky|rectangle|circle|frame|connector|shape)
+- delete_shapes_except (keep: circle|rectangle)
+- create_sticky_batch (count, optional topic, optional color)
+- create_single_sticky (text, optional color, optional frameName)
+- create_shape_batch (count, shape: rectangle|circle, optional color)
+- query_summary`;
 
-  // Add/create a sticky in a named frame: "... to the Strengths frame"
-  const addToFrame = cmd.match(/\b(?:add|create|make)\b\s+(?:a|an|one)?\s*(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?sticky(?:\s+note)?(?:\s+that\s+says\s+["“]?(.+?)["”]?)?\s+to\s+(?:the\s+)?(.+?)\s+frame\b/i);
-  if (addToFrame) {
-    const [, color, text, frameName] = addToFrame;
-    return {
-      kind: "create_single_sticky",
-      text: (text || "New note").trim(),
-      color: color?.toLowerCase(),
-      frameName: frameName.trim(),
-    };
-  }
+  try {
+    const response = await withTimeout(
+      openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: extractorPrompt },
+          { role: "user", content: command },
+        ],
+        response_format: { type: "json_object" },
+      }),
+      5_000,
+      "AI extractor timed out"
+    );
 
-  // Single sticky: "add a green sticky note that says hello"
-  const addSingleSticky = cmd.match(/\b(?:add|create|make)\b\s+(?:a|an|one)?\s*(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?sticky(?:\s+note)?(?:\s+that\s+says\s+["“]?(.+?)["”]?)?\b/i);
-  if (addSingleSticky) {
-    const [, color, text] = addSingleSticky;
-    return {
-      kind: "create_single_sticky",
-      text: (text || "New note").trim(),
-      color: color?.toLowerCase(),
-    };
-  }
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) return { match: null, confidence: 0, reason: "empty_extractor_response" };
 
-  // Batch sticky notes: "create 5 sticky notes about productivity"
-  const batchSticky = cmd.match(/\b(?:create|add|make)\b\s+(\d{1,3})\s+(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?sticky\s*notes?(?:\s+about\s+(.+))?$/i);
-  if (batchSticky) {
-    const count = Number(batchSticky[1]);
-    if (count >= 2 && count <= 100) {
-      return {
-        kind: "create_sticky_batch",
-        count,
-        color: batchSticky[2]?.toLowerCase(),
-        topic: batchSticky[3]?.trim(),
-      };
+    const parsed = JSON.parse(raw);
+    const kind = String(parsed.kind || "none");
+    const confidence = Number(parsed.confidence || 0);
+    const reason = String(parsed.reason || "ai_extractor");
+
+    if (kind === "none") {
+      return { match: null, confidence, reason };
     }
-  }
 
-  // Batch shapes: "create 3 blue rectangles"
-  const batchShape = cmd.match(/\b(?:create|add|make)\b\s+(\d{1,3})\s+(?:(yellow|pink|blue|green|orange|purple|red|gray|grey|white)\s+)?(rectangles?|circles?)\b/i);
-  if (batchShape) {
-    const count = Number(batchShape[1]);
-    if (count >= 2 && count <= 100) {
-      return {
-        kind: "create_shape_batch",
-        count,
-        color: batchShape[2]?.toLowerCase(),
-        shape: batchShape[3].toLowerCase().startsWith("circle")
-          ? "circle"
-          : "rectangle",
-      };
-    }
-  }
+    let synthesized = "";
+    if (kind === "delete_all") synthesized = "delete all";
+    else if (kind === "delete_by_type") synthesized = `delete all ${parsed.objectType || "objects"}`;
+    else if (kind === "delete_shapes_except") synthesized = `delete all shapes except ${parsed.keep || "circles"}`;
+    else if (kind === "create_sticky_batch") synthesized = `create ${parsed.count || 0} sticky notes`;
+    else if (kind === "create_single_sticky") synthesized = `add sticky note that says ${parsed.text || ""}`;
+    else if (kind === "create_shape_batch") synthesized = `create ${parsed.count || 0} ${parsed.shape || "rectangle"}s`;
+    else if (kind === "query_summary") synthesized = "what is on this board";
 
-  // Query summary: "what is on this board", "how many objects"
-  if (
-    /\bwhat(?:'s|\s+is)\b.*\b(on|in)\b.*\bboard\b/i.test(lc) ||
-    /\bhow\s+many\b.*\b(objects?|stick(?:y|ies)|frames?|rectangles?|circles?)\b/i.test(lc) ||
-    /\bsummarize\b.*\bboard\b/i.test(lc)
-  ) {
-    return { kind: "query_summary" };
+    const match = parseFastPath(synthesized);
+    return { match, confidence, reason };
+  } catch {
+    return { match: null, confidence: 0, reason: "extractor_error" };
   }
-
-  return null;
 }
 
 async function tryExecuteFastPath(
-  command: string,
   route: RouteResult,
   ctx: tools.ToolContext,
   boardObjects: CompactObject[],
   startTime: number,
-  updateProgress: (status: string, step?: string) => Promise<void>
+  updateProgress: (status: string, step?: string) => Promise<void>,
+  match: FastPathMatch | null
 ): Promise<AIExecutionResult | null> {
-  // Restrict fast-path to intents where deterministic parsing is reliable.
-  if (!["create_simple", "delete", "edit_specific", "query"].includes(route.intent)) {
-    return null;
-  }
-
-  const match = parseFastPath(command);
   if (!match) return null;
 
   await updateProgress("executing", "Fast path...");
@@ -927,6 +961,47 @@ async function tryExecuteFastPath(
           objectsCreated: [],
           objectsUpdated: [],
           objectsDeleted: deleted,
+          model: "fast-path",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          toolCallsCount: 1,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      case "delete_shapes_except": {
+        const keepType = match.keep;
+        const idsToDelete = boardObjects
+          .filter((o) => ["rectangle", "circle", "line"].includes(o.type))
+          .filter((o) => o.type !== keepType)
+          .map((o) => o.id);
+
+        if (idsToDelete.length === 0) {
+          return {
+            success: true,
+            message: "Nothing to delete.",
+            objectsCreated: [],
+            objectsUpdated: [],
+            objectsDeleted: [],
+            model: "fast-path",
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            toolCallsCount: 0,
+            durationMs: Date.now() - startTime,
+          };
+        }
+
+        const r = await tools.bulkDelete(ctx, "by_ids", idsToDelete);
+        if (!r.success) return null;
+        const deletedIds = (r.data?.deletedIds as string[] | undefined) ?? idsToDelete;
+        return {
+          success: true,
+          message: buildSummary([], [], deletedIds),
+          objectsCreated: [],
+          objectsUpdated: [],
+          objectsDeleted: deletedIds,
           model: "fast-path",
           inputTokens: 0,
           outputTokens: 0,
