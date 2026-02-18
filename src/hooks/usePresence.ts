@@ -57,6 +57,10 @@ export function usePresence(
   const [remoteDragPositions, setRemoteDragPositions] = useState<Record<string, RemoteDragPosition>>({});
   const channelRef = useRef<ReturnType<typeof createPresenceChannel> | null>(null);
   const colorRef = useRef(getNextCursorColor());
+  // Pending timeouts that delay clearing remoteDragPositions after drag_end.
+  // Gives Supabase Realtime time to deliver the DB write before we remove
+  // the drag preview, preventing a snap-back flicker on the collaborator's screen.
+  const pendingDragClearsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const dragBroadcastersRef = useRef<
     Record<
       string,
@@ -122,28 +126,46 @@ export function usePresence(
         });
       },
       (remoteUserId, objectId, position, parentFrameId, ended, width, height) => {
-        setRemoteDragPositions((prev) => {
-          if (ended) {
-            if (!prev[objectId]) return prev;
-            const next = { ...prev };
-            delete next[objectId];
-            return next;
+        if (ended) {
+          // Don't clear immediately — give Supabase Realtime ~300 ms to deliver
+          // the DB write. Without this delay the object snaps back to its
+          // pre-drag position briefly before the Realtime update arrives.
+          // Cancel any previously scheduled clear (e.g. double drag_end).
+          if (pendingDragClearsRef.current[objectId]) {
+            clearTimeout(pendingDragClearsRef.current[objectId]);
           }
+          pendingDragClearsRef.current[objectId] = setTimeout(() => {
+            delete pendingDragClearsRef.current[objectId];
+            setRemoteDragPositions((prev) => {
+              if (!prev[objectId]) return prev;
+              const next = { ...prev };
+              delete next[objectId];
+              return next;
+            });
+          }, 300);
+          return;
+        }
 
-          return {
-            ...prev,
-            [objectId]: {
-              objectId,
-              x: position.x,
-              y: position.y,
-              ...(typeof width === "number" ? { width } : {}),
-              ...(typeof height === "number" ? { height } : {}),
-              parentFrameId,
-              userId: remoteUserId,
-              updatedAt: Date.now(),
-            },
-          };
-        });
+        // New drag position arriving — cancel any pending clear for this object
+        // (user might have picked it up again immediately after dropping).
+        if (pendingDragClearsRef.current[objectId]) {
+          clearTimeout(pendingDragClearsRef.current[objectId]);
+          delete pendingDragClearsRef.current[objectId];
+        }
+
+        setRemoteDragPositions((prev) => ({
+          ...prev,
+          [objectId]: {
+            objectId,
+            x: position.x,
+            y: position.y,
+            ...(typeof width === "number" ? { width } : {}),
+            ...(typeof height === "number" ? { height } : {}),
+            parentFrameId,
+            userId: remoteUserId,
+            updatedAt: Date.now(),
+          },
+        }));
       }
     );
 
@@ -154,6 +176,8 @@ export function usePresence(
       channelRef.current = null;
       Object.values(dragBroadcastersRef.current).forEach((sender) => sender.cancel());
       dragBroadcastersRef.current = {};
+      Object.values(pendingDragClearsRef.current).forEach(clearTimeout);
+      pendingDragClearsRef.current = {};
       setRemoteDragPositions({});
     };
   }, [boardId, userId, displayName]);
@@ -241,6 +265,9 @@ export function usePresence(
   const endObjectDrag = useCallback((objectId: string) => {
     const sender = dragBroadcastersRef.current[objectId];
     if (sender) {
+      // Flush any pending trailing call first so the final position reaches
+      // collaborators before the drag_end signal clears their preview.
+      sender.flush();
       sender.cancel();
       delete dragBroadcastersRef.current[objectId];
     }

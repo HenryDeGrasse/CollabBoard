@@ -84,4 +84,46 @@ describe("throttle utility", () => {
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledWith("a");
   });
+
+  it("flush fires a pending trailing call immediately", () => {
+    const fn = vi.fn();
+    const throttled = throttle(fn, 100);
+
+    throttled("a"); // immediate
+    throttled("b"); // queued as trailing
+
+    // flush before the timer fires — should call fn("b") right now
+    throttled.flush();
+
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn).toHaveBeenLastCalledWith("b");
+
+    // timer no longer pending — advancing time should not fire again
+    vi.advanceTimersByTime(100);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("flush is a no-op when no trailing call is pending", () => {
+    const fn = vi.fn();
+    const throttled = throttle(fn, 100);
+
+    throttled("a"); // immediate, no pending trailing call
+    throttled.flush();
+
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("flush then cancel does not double-fire", () => {
+    const fn = vi.fn();
+    const throttled = throttle(fn, 100);
+
+    throttled("a"); // immediate
+    throttled("b"); // trailing pending
+    throttled.flush();  // fires "b" now
+    throttled.cancel(); // nothing left to cancel
+
+    vi.advanceTimersByTime(100);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn).toHaveBeenLastCalledWith("b");
+  });
 });
