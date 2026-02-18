@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../../services/supabase";
 
-// ─── Ghost Cursor (background animation) ────────────────────
+// ─── Ghost Cursor ────────────────────────────────────────────
 
 function GhostCursor({
   name,
@@ -23,14 +23,14 @@ function GhostCursor({
         <path
           d="M1.5 1L1.5 19L11.5 13L1.5 1Z"
           fill={color}
-          fillOpacity="0.85"
+          fillOpacity="0.9"
           stroke="white"
           strokeWidth="1.5"
           strokeLinejoin="round"
         />
       </svg>
       <div
-        className="ml-3 -mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold text-white whitespace-nowrap"
+        className="ml-3 -mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold text-white whitespace-nowrap shadow-sm"
         style={{ backgroundColor: color }}
       >
         {name}
@@ -44,7 +44,7 @@ function GhostCursor({
 function AnimatedLogo() {
   return (
     <div className="relative w-16 h-16 mx-auto mb-3">
-      {/* Cursor 1 — indigo, top-left */}
+      {/* Cursor 1 — blue */}
       <svg
         className="absolute logo-c1"
         width="30"
@@ -55,13 +55,13 @@ function AnimatedLogo() {
       >
         <path
           d="M2 2L2 30L17 22L2 2Z"
-          fill="#4F46E5"
+          fill="#2563EB"
           stroke="white"
           strokeWidth="2.5"
           strokeLinejoin="round"
         />
       </svg>
-      {/* Cursor 2 — violet, bottom-right */}
+      {/* Cursor 2 — cyan */}
       <svg
         className="absolute logo-c2"
         width="30"
@@ -72,13 +72,13 @@ function AnimatedLogo() {
       >
         <path
           d="M2 2L2 30L17 22L2 2Z"
-          fill="#8B5CF6"
+          fill="#06B6D4"
           stroke="white"
           strokeWidth="2.5"
           strokeLinejoin="round"
         />
       </svg>
-      {/* Subtle glow behind the overlap */}
+      {/* Glow behind the overlap */}
       <div className="absolute inset-0 logo-glow rounded-2xl" />
     </div>
   );
@@ -87,141 +87,85 @@ function AnimatedLogo() {
 // ─── Login Page ──────────────────────────────────────────────
 
 export function LoginPage() {
-  // ── Auth mode ──
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-
-  // ── Email/password state ──
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signUpName, setSignUpName] = useState("");
-
-  // ── Guest state ──
   const [guestName, setGuestName] = useState("");
-
-  // ── Feedback ──
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ── Email/Password Auth ──
+  // ── Email/Password ──
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setInfo("");
-
-    if (!email.trim()) {
-      setError("Please enter your email");
-      return;
-    }
-    if (!password) {
-      setError("Please enter your password");
-      return;
-    }
-    if (mode === "signup" && password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-
+    setError(""); setInfo("");
+    if (!email.trim()) { setError("Please enter your email"); return; }
+    if (!password) { setError("Please enter your password"); return; }
+    if (mode === "signup" && password.length < 6) { setError("Password must be at least 6 characters"); return; }
     setLoading(true);
     try {
       if (mode === "signin") {
-        const { error: authErr } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+        const { error: authErr } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (authErr) setError(authErr.message);
       } else {
         const { data, error: authErr } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: {
-              display_name: signUpName.trim() || email.trim().split("@")[0],
-            },
-          },
+          email: email.trim(), password,
+          options: { data: { display_name: signUpName.trim() || email.trim().split("@")[0] } },
         });
-        if (authErr) {
-          setError(authErr.message);
-        } else if (data.user && !data.session) {
-          setInfo("Check your email for a confirmation link!");
-        }
+        if (authErr) setError(authErr.message);
+        else if (data.user && !data.session) setInfo("Check your email for a confirmation link!");
       }
-    } catch {
-      setError("Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError("Something went wrong"); }
+    finally { setLoading(false); }
   };
 
-  // ── Google OAuth ──
+  // ── Google ──
   const handleGoogleLogin = async () => {
-    setError("");
-    setInfo("");
-    setLoading(true);
+    setError(""); setInfo(""); setLoading(true);
     try {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: window.location.origin },
       });
       if (authError) setError(authError.message);
-    } catch {
-      setError("Failed to sign in with Google");
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError("Failed to sign in with Google"); }
+    finally { setLoading(false); }
   };
 
-  // ── Guest (Anonymous) ──
+  // ── Guest ──
   const handleGuestLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = guestName.trim();
-    if (!name) {
-      setError("Please enter a display name");
-      return;
-    }
-    setError("");
-    setInfo("");
-    setLoading(true);
+    if (!name) { setError("Please enter a display name"); return; }
+    setError(""); setInfo(""); setLoading(true);
     try {
       const { error: anonError } = await supabase.auth.signInAnonymously({
         options: { data: { display_name: name } },
       });
       if (!anonError) return;
-
       const anonCode = (anonError as { code?: string }).code;
       const anonMessage = anonError.message.toLowerCase();
-      const isAnonymousDisabled =
+      const isDisabled =
         anonCode === "anonymous_provider_disabled" ||
         anonMessage.includes("anonymous sign-ins are disabled") ||
         anonMessage.includes("anonymous provider disabled");
-
-      if (!isAnonymousDisabled) {
-        setError(anonError.message);
-        return;
-      }
-
-      // Fallback: generated email signup
+      if (!isDisabled) { setError(anonError.message); return; }
       const guestId = crypto.randomUUID().slice(0, 12);
-      const guestEmail = `guest-${guestId}@collabboard-app.com`;
-      const guestPassword = crypto.randomUUID();
       const { error: signUpError } = await supabase.auth.signUp({
-        email: guestEmail,
-        password: guestPassword,
+        email: `guest-${guestId}@collabboard-app.com`,
+        password: crypto.randomUUID(),
         options: { data: { display_name: name } },
       });
       if (signUpError) setError(signUpError.message);
-    } catch {
-      setError("Failed to sign in");
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError("Failed to sign in"); }
+    finally { setLoading(false); }
   };
 
   return (
     <>
-      {/* ── Keyframe animations ── */}
       <style>{`
-        /* ── Logo entrance + orbit ── */
+        /* ── Logo ── */
         .logo-c1 {
           opacity: 0;
           animation: logoIn1 0.6s ease-out forwards,
@@ -249,7 +193,7 @@ export function LoginPage() {
           50%      { transform: translate(-4px, -2px) rotate(-8deg); }
         }
         .logo-glow {
-          background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(37,99,235,0.14) 0%, transparent 70%);
           animation: glowPulse 3s ease-in-out infinite;
         }
         @keyframes glowPulse {
@@ -259,103 +203,81 @@ export function LoginPage() {
 
         /* ── Card entrance ── */
         .card-enter {
-          animation: cardIn 0.5s ease-out 0.1s both;
+          animation: cardIn 0.45s ease-out 0.05s both;
         }
         @keyframes cardIn {
-          from { opacity: 0; transform: translateY(18px); }
+          from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* ── Ghost cursors ── */
-        .ghost-1 {
-          animation: g1 22s ease-in-out infinite;
-        }
-        .ghost-2 {
-          animation: g2 26s ease-in-out infinite;
-        }
-        .ghost-3 {
-          animation: g3 19s ease-in-out infinite;
-        }
+        /* ── Ghost cursors — fast sweeping paths ── */
+        .ghost-1 { animation: g1 8s ease-in-out infinite; }
+        .ghost-2 { animation: g2 10s ease-in-out infinite; }
+        .ghost-3 { animation: g3 6s ease-in-out infinite; }
+
         @keyframes g1 {
           0%, 100% { transform: translate(0, 0); }
-          20%      { transform: translate(18vw, -6vh); }
-          45%      { transform: translate(30vw, 2vh); }
-          70%      { transform: translate(12vw, 10vh); }
+          20%      { transform: translate(26vw, -10vh); }
+          45%      { transform: translate(40vw, 5vh); }
+          70%      { transform: translate(16vw, 16vh); }
         }
         @keyframes g2 {
           0%, 100% { transform: translate(0, 0); }
-          25%      { transform: translate(-12vw, -8vh); }
-          50%      { transform: translate(-3vw, 6vh); }
-          75%      { transform: translate(8vw, -4vh); }
+          25%      { transform: translate(-22vw, -14vh); }
+          50%      { transform: translate(-6vw, 12vh); }
+          75%      { transform: translate(14vw, -8vh); }
         }
         @keyframes g3 {
           0%, 100% { transform: translate(0, 0); }
-          30%      { transform: translate(8vw, -12vh); }
-          60%      { transform: translate(18vw, -3vh); }
+          30%      { transform: translate(14vw, -20vh); }
+          60%      { transform: translate(28vw, -5vh); }
         }
 
         /* ── Dot grid ── */
         .dot-grid {
-          background-image: radial-gradient(circle, rgba(99,102,241,0.09) 1px, transparent 1px);
+          background-image: radial-gradient(circle, rgba(37,99,235,0.14) 1.5px, transparent 1.5px);
           background-size: 28px 28px;
         }
 
         /* ── Reduced motion ── */
         @media (prefers-reduced-motion: reduce) {
           .logo-c1, .logo-c2, .logo-glow,
-          .card-enter,
-          .ghost-1, .ghost-2, .ghost-3 {
+          .card-enter, .ghost-1, .ghost-2, .ghost-3 {
             animation: none !important;
             opacity: 1 !important;
           }
         }
       `}</style>
 
-      {/* ── Page ── */}
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4 overflow-hidden relative">
-        {/* Dot grid overlay */}
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-sky-50 flex items-center justify-center p-4 overflow-hidden relative">
+
+        {/* Dot grid */}
         <div className="absolute inset-0 dot-grid" />
 
-        {/* Faint whiteboard objects in background */}
-        <div className="absolute top-[12%] left-[6%] w-28 h-28 bg-amber-300/[0.06] rounded-xl rotate-3" />
-        <div className="absolute top-[55%] right-[8%] w-24 h-20 bg-sky-300/[0.07] rounded-xl -rotate-6" />
-        <div className="absolute bottom-[18%] left-[55%] w-36 h-24 bg-emerald-300/[0.05] rounded-xl rotate-1" />
-        <div className="absolute top-[30%] right-[30%] w-16 h-16 bg-violet-300/[0.05] rounded-full" />
+        {/* Faint whiteboard objects — slightly more visible now */}
+        <div className="absolute top-[12%] left-[6%] w-28 h-28 bg-amber-300/[0.12] rounded-xl rotate-3 border border-amber-200/20" />
+        <div className="absolute top-[55%] right-[8%] w-24 h-20 bg-sky-300/[0.12] rounded-xl -rotate-6 border border-sky-200/20" />
+        <div className="absolute bottom-[18%] left-[55%] w-36 h-24 bg-emerald-300/[0.10] rounded-xl rotate-1 border border-emerald-200/20" />
+        <div className="absolute top-[30%] right-[30%] w-16 h-16 bg-cyan-300/[0.10] rounded-full" />
+        {/* Extra sticky note top-right */}
+        <div className="absolute top-[10%] right-[18%] w-20 h-20 bg-rose-200/[0.10] rounded-xl -rotate-2 border border-rose-200/20" />
 
         {/* Ghost cursors */}
-        <GhostCursor
-          name="Sarah"
-          color="#6366F1"
-          animClass="ghost-1"
-          style={{ left: "8%", top: "22%", opacity: 0.28 }}
-        />
-        <GhostCursor
-          name="Alex"
-          color="#10B981"
-          animClass="ghost-2"
-          style={{ right: "10%", top: "58%", opacity: 0.24 }}
-        />
-        <GhostCursor
-          name="Jordan"
-          color="#F59E0B"
-          animClass="ghost-3"
-          style={{ left: "28%", top: "68%", opacity: 0.22 }}
-        />
+        <GhostCursor name="Sarah" color="#2563EB" animClass="ghost-1" style={{ left: "8%", top: "22%", opacity: 0.45 }} />
+        <GhostCursor name="Alex"  color="#10B981" animClass="ghost-2" style={{ right: "10%", top: "58%", opacity: 0.40 }} />
+        <GhostCursor name="Jordan" color="#F59E0B" animClass="ghost-3" style={{ left: "28%", top: "68%", opacity: 0.38 }} />
 
         {/* ── Login Card ── */}
-        <div className="card-enter relative z-10 bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/60 w-full max-w-[420px]">
-          {/* ── Header ── */}
+        <div className="card-enter relative z-10 bg-white/55 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/70 w-full max-w-[420px]">
+
+          {/* Header */}
           <div className="px-8 pt-8 pb-2 text-center">
             <AnimatedLogo />
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-              CollabBoard
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Think together, in real time
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">CollabBoard</h1>
+            <p className="text-sm text-gray-500 mt-1">Think together, in real time</p>
           </div>
 
-          {/* ── Email / Password Form ── */}
+          {/* Email / Password */}
           <form onSubmit={handleEmailAuth} className="px-8 pt-5 pb-3 space-y-3">
             {mode === "signup" && (
               <input
@@ -363,7 +285,7 @@ export function LoginPage() {
                 value={signUpName}
                 onChange={(e) => setSignUpName(e.target.value)}
                 placeholder="Display name"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white/60 transition"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
                 disabled={loading}
                 maxLength={30}
               />
@@ -373,7 +295,7 @@ export function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white/60 transition"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
               disabled={loading}
             />
             <input
@@ -381,83 +303,61 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white/60 transition"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
               disabled={loading}
             />
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-200"
+              className="w-full py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 active:bg-blue-800 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-blue-200"
             >
-              {loading
-                ? "..."
-                : mode === "signin"
-                  ? "Sign In"
-                  : "Create Account"}
+              {loading ? "..." : mode === "signin" ? "Sign In" : "Create Account"}
             </button>
             <p className="text-center text-xs text-gray-400">
               {mode === "signin" ? (
-                <>
-                  No account?{" "}
-                  <button
-                    type="button"
-                    onClick={() => { setMode("signup"); setError(""); setInfo(""); }}
-                    className="text-indigo-600 font-medium hover:underline"
-                  >
-                    Sign up
-                  </button>
-                </>
+                <>No account?{" "}
+                  <button type="button" onClick={() => { setMode("signup"); setError(""); setInfo(""); }}
+                    className="text-blue-600 font-medium hover:underline">Sign up</button></>
               ) : (
-                <>
-                  Already have one?{" "}
-                  <button
-                    type="button"
-                    onClick={() => { setMode("signin"); setError(""); setInfo(""); }}
-                    className="text-indigo-600 font-medium hover:underline"
-                  >
-                    Sign in
-                  </button>
-                </>
+                <>Already have one?{" "}
+                  <button type="button" onClick={() => { setMode("signin"); setError(""); setInfo(""); }}
+                    className="text-blue-600 font-medium hover:underline">Sign in</button></>
               )}
             </p>
           </form>
 
-          {/* ── Divider ── */}
+          {/* — or continue with — */}
           <div className="px-8 flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-[11px] text-gray-400 uppercase tracking-wider">
-              or continue with
-            </span>
+            <span className="text-[11px] text-gray-400 uppercase tracking-wider">or continue with</span>
             <div className="flex-1 h-px bg-gray-200" />
           </div>
 
-          {/* ── Google ── */}
+          {/* Google */}
           <div className="px-8 pt-3">
             <button
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50/80 transition disabled:opacity-50 bg-white/60"
+              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-white/80 transition disabled:opacity-50 bg-white/60"
             >
               <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
               Sign in with Google
             </button>
           </div>
 
-          {/* ── Divider ── */}
+          {/* — or try it out — */}
           <div className="px-8 pt-3 flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-200" />
-            <span className="text-[11px] text-gray-400 uppercase tracking-wider">
-              or try it out
-            </span>
+            <span className="text-[11px] text-gray-400 uppercase tracking-wider">or try it out</span>
             <div className="flex-1 h-px bg-gray-200" />
           </div>
 
-          {/* ── Guest Login ── */}
+          {/* Guest */}
           <form onSubmit={handleGuestLogin} className="px-8 pt-3 pb-2">
             <div className="flex gap-2">
               <input
@@ -465,57 +365,53 @@ export function LoginPage() {
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
                 placeholder="Enter your name"
-                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white/60 transition"
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white/70 transition"
                 disabled={loading}
                 maxLength={30}
               />
               <button
                 type="submit"
                 disabled={loading}
-                className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                className="px-4 py-2.5 bg-gray-100/80 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200/80 transition disabled:opacity-50 whitespace-nowrap"
               >
                 {loading ? "..." : "Join as Guest"}
               </button>
             </div>
           </form>
 
-          {/* ── Error / Info ── */}
+          {/* Error / Info */}
           {error && (
             <div className="px-8 pt-1 pb-1">
-              <p className="text-sm text-red-600 bg-red-50/80 rounded-xl px-4 py-2 text-center">
-                {error}
-              </p>
+              <p className="text-sm text-red-600 bg-red-50/80 rounded-xl px-4 py-2 text-center">{error}</p>
             </div>
           )}
           {info && (
             <div className="px-8 pt-1 pb-1">
-              <p className="text-sm text-emerald-600 bg-emerald-50/80 rounded-xl px-4 py-2 text-center">
-                {info}
-              </p>
+              <p className="text-sm text-emerald-600 bg-emerald-50/80 rounded-xl px-4 py-2 text-center">{info}</p>
             </div>
           )}
 
-          {/* ── Feature pills ── */}
-          <div className="px-8 pt-4 pb-6 flex items-center justify-center gap-3 text-[11px] text-gray-400">
+          {/* Feature pills */}
+          <div className="px-8 pt-4 pb-6 flex items-center justify-center gap-3 text-[11px] text-gray-400 flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Real-time cursors
             </span>
             <span className="text-gray-300">·</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
               AI templates
             </span>
             <span className="text-gray-300">·</span>
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               Infinite canvas
             </span>
           </div>
         </div>
 
         {/* Bottom note */}
-        <p className="absolute bottom-4 text-[11px] text-gray-400/60 tracking-wide z-10">
+        <p className="absolute bottom-4 text-[11px] text-gray-400/70 tracking-wide z-10">
           Free to use · No credit card required
         </p>
       </div>
