@@ -13,6 +13,7 @@ import type { BoardObject, Connector } from "../../types/board";
 import type { UndoAction } from "../../hooks/useUndoRedo";
 import type { UserPresence } from "../../types/presence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
+import { useCursorInterpolation } from "../../hooks/useCursorInterpolation";
 
 import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
 import {
@@ -701,9 +702,8 @@ export function Board({
     });
   }, [liveDragPositions]);
 
-  // Remote cursors — rendered directly at the reported position with no
-  // interpolation or added delay.
-  const remoteCursors = useMemo(() => {
+  // Remote cursors — extract raw positions then micro-interpolate
+  const rawRemoteCursors = useMemo(() => {
     return Object.entries(users)
       .filter(([uid, p]) => uid !== currentUserId && p.online && p.cursor)
       .map(([uid, p]) => ({
@@ -714,6 +714,10 @@ export function Board({
         y: p.cursor!.y,
       }));
   }, [users, currentUserId]);
+
+  // Smooth micro-interpolation: glides between 30ms broadcast hops,
+  // adaptive duration so cursor arrives at target before next update.
+  const remoteCursors = useCursorInterpolation(rawRemoteCursors);
 
   const getCanvasPoint = useCallback(
     (stage: Konva.Stage) => {
