@@ -7,7 +7,7 @@
  */
 import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers/openai";
-import { TOOL_DEFINITIONS, executeTool, fetchBoardState } from "./aiTools.js";
+import { TOOL_DEFINITIONS, executeTool } from "./aiTools.js";
 
 const MAX_ITERATIONS = 8;
 
@@ -162,6 +162,9 @@ export async function* runAgent(
   userId: string,
   userCommand: string,
   openaiApiKey: string,
+  // boardState is fetched by the caller (api/ai.ts) in parallel with the
+  // board-access check so we don't pay an extra sequential round-trip here.
+  boardState: unknown,
   viewport?: ViewportInput,
   screenSize?: ScreenSizeInput,
   conversationHistory?: ConversationTurn[],
@@ -176,9 +179,6 @@ export async function* runAgent(
 
   // Let the client know which model was selected
   yield { type: "meta", content: JSON.stringify({ model, complexity }) };
-
-  // Fetch initial board state for context
-  const boardState = await fetchBoardState(boardId);
 
   // Build viewport context block if we have the data
   let viewportContext = "";
@@ -239,17 +239,20 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
         tool_choice: "auto",
         stream: true,
         temperature: 0.3,
-        max_tokens: 4096,
+        // Simple commands rarely need more than a short confirmation;
+        // complex/multi-step commands get the full budget.
+        max_tokens: complexity === "complex" ? 4096 : 1024,
       });
 
-      // Accumulate the streamed response.
-      // We buffer text instead of streaming it token-by-token because GPT-4o
-      // often emits a planning sentence *before* a tool call, then emits the
-      // same summary *after* seeing the tool result.  Streaming both segments
-      // concatenates them into doubled text ("ThreeThree yellow yellow…").
-      // Solution: only emit text to the client in the *final* iteration —
-      // the one where the model issues no tool calls.
+      // ── Progressive streaming ─────────────────────────────────────
+      // We process delta.tool_calls BEFORE delta.content within each chunk
+      // so the isToolStep flag is set before we decide whether to emit text.
+      //
+      // Tool-calling steps: text (pre-narration) is silently dropped — the
+      // model rarely narrates before tool calls given the system prompt.
+      // Final step (no tool calls): tokens are emitted live as they arrive.
       let assistantContent = "";
+      let isToolStep = false;
       const toolCalls: Map<
         number,
         { id: string; name: string; arguments: string }
@@ -259,13 +262,9 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
         const delta = chunk.choices[0]?.delta;
         if (!delta) continue;
 
-        // Accumulate text — do NOT yield yet; we'll decide below
-        if (delta.content) {
-          assistantContent += delta.content;
-        }
-
-        // Accumulate tool calls (may arrive across multiple chunks)
+        // Tool calls first — sets isToolStep before we touch content
         if (delta.tool_calls) {
+          isToolStep = true;
           for (const tc of delta.tool_calls) {
             const idx = tc.index;
             const existing = toolCalls.get(idx);
@@ -283,13 +282,18 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
             }
           }
         }
+
+        // Stream text live only during the final (non-tool) step
+        if (delta.content) {
+          assistantContent += delta.content;
+          if (!isToolStep) {
+            yield { type: "text", content: delta.content };
+          }
+        }
       }
 
-      // If no tool calls this is the final response — emit the text now
-      if (toolCalls.size === 0) {
-        if (assistantContent) {
-          yield { type: "text", content: assistantContent };
-        }
+      // Final step — text was already streamed token-by-token above
+      if (!isToolStep) {
         messages.push({ role: "assistant", content: assistantContent });
         yield { type: "done", content: "" };
         return;

@@ -12,6 +12,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { traceable } from "langsmith/traceable";
 import { verifyToken, assertCanWriteBoard, AuthError } from "./_lib/auth.js";
 import { runAgent } from "./_lib/aiAgent.js";
+import { fetchBoardState } from "./_lib/aiTools.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only accept POST
@@ -43,9 +44,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "Command too long (max 2000 chars)" });
   }
 
-  // ── Board access check ─────────────────────────────────
+  // ── Board access + board state (parallel) ─────────────
+  // assertCanWriteBoard and fetchBoardState both only need boardId (plus
+  // userId for the access check). Running them concurrently saves ~80 ms of
+  // sequential Supabase latency on every request.
+  let boardState: unknown;
   try {
-    await assertCanWriteBoard(userId, boardId);
+    [, boardState] = await Promise.all([
+      assertCanWriteBoard(userId, boardId),
+      fetchBoardState(boardId),
+    ]);
   } catch (err) {
     if (err instanceof AuthError) {
       return res.status(err.status).json({ error: err.message });
@@ -72,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     async (input: { boardId: string; command: string; userId: string }) => {
       const agentStream = runAgent(
         input.boardId, input.userId, input.command,
-        openaiApiKey, viewport, screenSize, conversationHistory, selectedIds
+        openaiApiKey, boardState, viewport, screenSize, conversationHistory, selectedIds
       );
 
       let responseText = "";

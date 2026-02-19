@@ -473,7 +473,11 @@ export async function executeTool(
     case "create_objects": {
       const objects: any[] = args.objects || [];
       const now = new Date().toISOString();
-      const maxZIndex = await getMaxZIndex(boardId);
+      // Use Date.now() as the z_index base — always larger than any sequential
+      // counter that was used before, and monotonically increasing across calls.
+      // Adding the loop index ensures correct stacking within a single batch.
+      // This eliminates a SELECT round-trip (getMaxZIndex) on every create.
+      const baseZIndex = Date.now();
       const createdIds: string[] = [];
 
       // Build rows for batch insert
@@ -489,7 +493,7 @@ export async function executeTool(
           color: obj.color ?? defaults.color,
           text: obj.text ?? "",
           rotation: obj.rotation ?? 0,
-          z_index: maxZIndex + i + 1,
+          z_index: baseZIndex + i,
           created_by: userId,
           parent_frame_id: obj.parentFrameId || null,
           created_at: now,
@@ -987,7 +991,7 @@ export async function executeTool(
 
       if (!objs || objs.length === 0) return { error: "No matching objects found." };
 
-      const maxZ = await getMaxZIndex(boardId);
+      const baseZIndex = Date.now();
       const now = new Date().toISOString();
 
       // Pre-generate IDs so we can build the idMap and remap connectors
@@ -1009,7 +1013,7 @@ export async function executeTool(
           text_color: o.text_color,
           text_vertical_align: o.text_vertical_align,
           rotation: o.rotation,
-          z_index: maxZ + i + 1,
+          z_index: baseZIndex + i,
           created_by: userId,
           parent_frame_id: o.parent_frame_id,
           points: o.points,
@@ -1107,17 +1111,6 @@ export async function executeTool(
 
 // ─── Helpers ───────────────────────────────────────────────────
 
-async function getMaxZIndex(boardId: string): Promise<number> {
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("objects")
-    .select("z_index")
-    .eq("board_id", boardId)
-    .order("z_index", { ascending: false })
-    .limit(1);
-
-  return data?.[0]?.z_index ?? 0;
-}
 
 export async function fetchBoardState(boardId: string) {
   const supabase = getSupabaseAdmin();

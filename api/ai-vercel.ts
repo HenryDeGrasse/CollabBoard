@@ -109,28 +109,28 @@ export default async function handler(req: Request): Promise<Response> {
   if (command.length > 2000)
     return json({ error: "Command too long (max 2000 chars)" }, 400);
 
-  // ── Board access ───────────────────────────────────────
-  try {
-    await assertCanWriteBoard(userId, boardId);
-  } catch (err) {
-    if (err instanceof AuthError)
-      return json({ error: err.message }, err.status);
-    return json({ error: "Board access check failed" }, 500);
-  }
-
   // ── OpenAI key ─────────────────────────────────────────
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey)
     return json({ error: "OPENAI_API_KEY not configured" }, 500);
 
-  // ── Model selection ────────────────────────────────────
+  // ── Board access + board state (parallel) ─────────────
   const cmd = command.trim();
   const complexity = classifyComplexity(cmd);
   const modelId = complexity === "complex" ? MODEL_COMPLEX : MODEL_SIMPLE;
   const openai = createOpenAI({ apiKey: openaiApiKey });
 
-  // ── Context ────────────────────────────────────────────
-  const boardState = await fetchBoardState(boardId);
+  let boardState: unknown;
+  try {
+    [, boardState] = await Promise.all([
+      assertCanWriteBoard(userId, boardId),
+      fetchBoardState(boardId),
+    ]);
+  } catch (err) {
+    if (err instanceof AuthError)
+      return json({ error: err.message }, err.status);
+    return json({ error: "Board access check failed" }, 500);
+  }
 
   let viewportContext = "";
   if (viewport && screenSize) {
