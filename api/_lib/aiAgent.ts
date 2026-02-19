@@ -13,7 +13,7 @@ import { TOOL_DEFINITIONS, executeTool } from "./aiTools.js";
 // LANGSMITH_TRACING is absent from the environment. Explicit "false" still wins.
 process.env.LANGSMITH_TRACING ??= "true";
 
-const MAX_ITERATIONS = 8;
+const MAX_ITERATIONS = 12;
 
 // ─── Complexity routing ────────────────────────────────────────
 // Classify the command with a zero-cost heuristic so simple requests
@@ -98,7 +98,8 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 3. For complex layouts, create objects first, then add connectors.
 4. Read the board state first if you need to understand existing content or find object IDs.
 5. Keep responses concise — the user sees objects appear in real time on the board.
-6. If the user's request is ambiguous, make reasonable assumptions and proceed.`;
+6. If the user's request is ambiguous, make reasonable assumptions and proceed.
+7. For creating 10+ objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt (e.g., "a fun fact about animals") or patterned text via textPattern (e.g., "Task {i}").`;
 
 export interface AgentStreamEvent {
   type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";
@@ -339,7 +340,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
             const result = await executeTool(tc.name, args, boardId, userId, {
               screenSize: screenSize ?? undefined,
               selectedIds: selectedIds ?? undefined,
-            });
+            }, openaiApiKey);
             return { id: tc.id, name: tc.name, result };
           } catch (err: any) {
             return {
