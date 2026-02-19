@@ -20,11 +20,9 @@
     "dev:api": "vercel dev --listen 3000"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.30",
     "@supabase/supabase-js": "^2.96.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-router": "^1.160.2",
-    "ai": "^6.0.91",
     "konva": "^10.2.0",
     "langsmith": "^0.5.4",
     "lucide-react": "^0.564.0",
