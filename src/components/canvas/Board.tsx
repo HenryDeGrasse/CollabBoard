@@ -127,6 +127,8 @@ export function Board({
   objectsRef.current = objects;
   const connectorsRef = useRef(connectors);
   connectorsRef.current = connectors;
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [selectedConnectorIds, _setSelectedConnectorIds] = useState<Set<string>>(new Set());
   const setSelectedConnectorIds = useCallback((ids: Set<string>) => {
@@ -186,6 +188,7 @@ export function Board({
   } = useDragSystem({
     objectsRef,
     selectedIds,
+    selectedIdsRef,
     stageRef,
     dragInsideFrameRef,
     frameManualDragActiveRef,
@@ -454,7 +457,7 @@ export function Board({
         // After selection changes, update connector selection:
         // Select connectors where both ends are in the (new) selection
         // We need to compute what the new selectedIds will be
-        const newSelected = new Set(selectedIds);
+        const newSelected = new Set(selectedIdsRef.current);
         if (multi) {
           if (newSelected.has(id)) newSelected.delete(id);
           else newSelected.add(id);
@@ -468,7 +471,7 @@ export function Board({
         setSelectedConnectorIds(new Set(connIds));
       }
     },
-    [activeTool, isConnectorTool, handleObjectClickForConnector, onSelect, selectedIds]
+    [activeTool, isConnectorTool, handleObjectClickForConnector, onSelect]
   );
 
   const handleTextCommit = useCallback(
@@ -560,8 +563,39 @@ export function Board({
 
   const editingObject = editingObjectId ? objects[editingObjectId] : null;
 
+  // Pre-compute lock status and draft text maps so we avoid calling isObjectLocked()
+  // and getDraftTextForObject() inline per-object (which creates new objects each render
+  // and defeats React.memo).
+  const lockStatusMap = useMemo(() => {
+    const map: Record<string, { locked: boolean; lockedBy?: string; lockedByColor?: string }> = {};
+    // Only populate entries for locked objects — unlocked objects will use the shared default
+    for (const [uid, user] of Object.entries(users)) {
+      if (uid !== currentUserId && user.editingObjectId) {
+        map[user.editingObjectId] = {
+          locked: true,
+          lockedBy: user.displayName,
+          lockedByColor: user.cursorColor,
+        };
+      }
+    }
+    return map;
+  }, [users, currentUserId]);
+
+  const draftTextMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [uid, user] of Object.entries(users)) {
+      if (uid !== currentUserId && user.editingObjectId && user.draftText) {
+        map[user.editingObjectId] = user.draftText;
+      }
+    }
+    return map;
+  }, [users, currentUserId]);
+
+  const DEFAULT_LOCK = { locked: false } as const;
+
   // Viewport culling: filter partitioned objects to only those visible on screen
   const {
+    visibleBounds,
     visibleShapes,
     visibleStickies,
     visibleFrames,
@@ -614,11 +648,11 @@ export function Board({
           {[...visibleShapes, ...visibleStickies]
             .filter((obj) => !remoteEnteringDraggedObjectIds.has(obj.id))
             .map((obj) => {
-              const lock = isObjectLocked(obj.id);
+              const lock = lockStatusMap[obj.id] || DEFAULT_LOCK;
               return (
                 <BoardObjectRenderer
                   key={obj.id}
-                  object={withLivePosition(objects[obj.id] || obj)}
+                  object={objectsWithLivePositions[obj.id] || obj}
                   isSelected={selectedIds.has(obj.id)}
                   editingObjectId={editingObjectId}
                   isLockedByOther={lock.locked}
@@ -626,7 +660,7 @@ export function Board({
                   lockedByColor={lock.lockedByColor}
                   isArrowHover={connectorHoverObjectId === obj.id}
                   interactable={activeTool === "select"}
-                  draftText={getDraftTextForObject(obj.id)?.text}
+                  draftText={draftTextMap[obj.id]}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
@@ -642,7 +676,7 @@ export function Board({
 
           {/* Render frame backgrounds + clipped contained objects */}
           {visibleFrames.map((obj) => {
-              const frameObj = withLivePosition(objects[obj.id] || obj);
+              const frameObj = objectsWithLivePositions[obj.id] || obj;
               const contained = (objectsByFrame[frameObj.id] || []).filter(
                 (cobj) => !remotePoppedOutDraggedObjectIds.has(cobj.id)
               );
@@ -684,7 +718,7 @@ export function Board({
                       }}
                     >
                       {clippedObjects.map((cobj) => {
-                        const lock = isObjectLocked(cobj.id);
+                        const lock = lockStatusMap[cobj.id] || DEFAULT_LOCK;
                         const isEnteringPreview = enteringIds.has(cobj.id);
                         const liveObj = resolvedLiveDragPositions[cobj.id]
                           ? { ...cobj, ...resolvedLiveDragPositions[cobj.id] }
@@ -701,7 +735,7 @@ export function Board({
                             lockedByColor={lock.lockedByColor}
                             isArrowHover={connectorHoverObjectId === cobj.id}
                             interactable={activeTool === "select"}
-                            draftText={getDraftTextForObject(cobj.id)?.text}
+                            draftText={draftTextMap[cobj.id]}
                             onSelect={handleObjectClick}
                             onDragStart={handleDragStart}
                             onDragMove={handleDragMove}
@@ -754,7 +788,7 @@ export function Board({
 
           {/* Live pop-out previews for dragged objects leaving frames */}
           {poppedOutDraggedObjects.map((obj) => {
-            const lock = isObjectLocked(obj.id);
+            const lock = lockStatusMap[obj.id] || DEFAULT_LOCK;
             return (
               <Group key={`popout-${obj.id}`} listening={false}>
                 <BoardObjectRenderer
@@ -766,7 +800,7 @@ export function Board({
                   lockedByColor={lock.lockedByColor}
                   isArrowHover={connectorHoverObjectId === obj.id}
                   interactable={activeTool === "select"}
-                  draftText={getDraftTextForObject(obj.id)?.text}
+                  draftText={draftTextMap[obj.id]}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
                   onDragMove={handleDragMove}
@@ -783,7 +817,7 @@ export function Board({
 
           {/* Frame overlays (header + border on top) */}
           {visibleFrames.map((obj) => {
-              const frameObj = withLivePosition(objects[obj.id] || obj);
+              const frameObj = objectsWithLivePositions[obj.id] || obj;
               const framePos =
                 resolvedLiveDragPositions[frameObj.id] || { x: frameObj.x, y: frameObj.y };
               const contained = objectsByFrame[frameObj.id] || [];
@@ -918,13 +952,15 @@ export function Board({
             poppedOutDraggedObjectIds={poppedOutDraggedObjectIds}
             selectedConnectorIds={selectedConnectorIds}
             onConnectorSelect={handleConnectorSelect}
+            visibleBounds={visibleBounds}
           />
 
           {/* All lines render on top (never clipped, like connectors) */}
-          {visibleLines.map((obj) => (
+          {visibleLines.map((obj) => {
+              return (
               <BoardObjectRenderer
                 key={obj.id}
-                object={withLivePosition(objects[obj.id] || obj)}
+                object={objectsWithLivePositions[obj.id] || obj}
                 isSelected={selectedIds.has(obj.id)}
                 editingObjectId={null}
                 isLockedByOther={false}
@@ -940,7 +976,8 @@ export function Board({
                 onRotateMove={handleRotateMove}
                 onRotateEnd={handleRotateEnd}
               />
-            ))}
+              );
+            })}
 
           {/* Selection rectangle */}
           <SelectionRect {...selectionRect} />

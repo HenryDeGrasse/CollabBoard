@@ -178,14 +178,6 @@ export function useCursorInterpolation(
     };
   }, []);
 
-  // Kick the rAF loop when new data arrives
-  useEffect(() => {
-    if (rawCursors.length > 0 && !activeRef.current) {
-      activeRef.current = true;
-      rafIdRef.current = requestAnimationFrame(tick);
-    }
-  });
-
   // ── Build output array ──
   return useMemo(() => {
     // Read tickRef to create a dependency on the rAF counter

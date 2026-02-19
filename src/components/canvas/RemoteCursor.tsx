@@ -1,3 +1,4 @@
+import React from "react";
 import { Group, Line, Text, Rect } from "react-konva";
 
 interface RemoteCursorProps {
@@ -7,7 +8,7 @@ interface RemoteCursorProps {
   y: number;
 }
 
-export function RemoteCursor({ displayName, color, x, y }: RemoteCursorProps) {
+export const RemoteCursor = React.memo(function RemoteCursor({ displayName, color, x, y }: RemoteCursorProps) {
   const CURSOR_SIZE = 16;
 
   return (
@@ -41,4 +42,4 @@ export function RemoteCursor({ displayName, color, x, y }: RemoteCursorProps) {
       </Group>
     </Group>
   );
-}
+});
