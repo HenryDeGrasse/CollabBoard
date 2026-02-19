@@ -42,7 +42,10 @@ export function createPresenceChannel(
     height?: number
   ) => void
 ) {
-  const channel = supabase.channel(`board-presence:${boardId}`, {
+  // Append a random suffix so React Strict Mode double-invoked effects
+  // each get a unique channel topic (see createBoardRealtimeChannels).
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const channel = supabase.channel(`board-presence:${boardId}:${suffix}`, {
     config: { presence: { key: userId } },
   });
 
@@ -118,7 +121,8 @@ export function createPresenceChannel(
   });
 
   // Subscribe and track initial presence when connected
-  channel.subscribe(async (status) => {
+  channel.subscribe(async (status, err) => {
+    console.log(`[realtime] presence channel: ${status}`, err ?? "");
     channelReady = status === "SUBSCRIBED";
     if (status === "SUBSCRIBED") {
       await trackPresence();
@@ -181,8 +185,14 @@ export function createBoardRealtimeChannels(
   onObjectChange: (eventType: "INSERT" | "UPDATE" | "DELETE", row: any) => void,
   onConnectorChange: (eventType: "INSERT" | "UPDATE" | "DELETE", row: any) => void
 ): RealtimeChannel[] {
-  const objectsChannel = supabase.channel(`board-objects:${boardId}`);
-  const connectorsChannel = supabase.channel(`board-connectors:${boardId}`);
+  // Append a random suffix so each effect invocation gets a unique channel
+  // topic. React Strict Mode double-invokes effects, sending phx_join →
+  // phx_leave → phx_join in rapid succession. If the server processes the
+  // leave *after* the second join on the same topic, it kills the active
+  // subscription (channel reports SUBSCRIBED but WAL events stop flowing).
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const objectsChannel = supabase.channel(`board-objects:${boardId}:${suffix}`);
+  const connectorsChannel = supabase.channel(`board-connectors:${boardId}:${suffix}`);
 
   objectsChannel
     .on(
@@ -195,7 +205,9 @@ export function createBoardRealtimeChannels(
         );
       }
     )
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log(`[realtime] objects channel: ${status}`, err ?? "");
+    });
 
   connectorsChannel
     .on(
@@ -208,7 +220,9 @@ export function createBoardRealtimeChannels(
         );
       }
     )
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log(`[realtime] connectors channel: ${status}`, err ?? "");
+    });
 
   return [objectsChannel, connectorsChannel];
 }
