@@ -1,6 +1,62 @@
 #!/bin/bash
-# Install dependencies in each new worktree
+set -e
+
+# Validate and repair worktree symlink, then install dependencies
+
+LOG_PREFIX="[dmux-hook worktree_created]"
+
+if [ -z "$DMUX_WORKTREE_PATH" ] || [ -z "$DMUX_ROOT" ] || [ -z "$DMUX_SLUG" ]; then
+  echo "$LOG_PREFIX Missing required env vars (DMUX_WORKTREE_PATH, DMUX_ROOT, DMUX_SLUG)" >&2
+  exit 1
+fi
+
+BRANCH="${DMUX_BRANCH:-$DMUX_SLUG}"
+
+repair_worktree() {
+  echo "$LOG_PREFIX Worktree is broken or missing .git link. Attempting repair..."
+
+  # Clean up any orphaned git worktree metadata
+  git -C "$DMUX_ROOT" worktree prune 2>/dev/null || true
+
+  # If the directory exists but is broken, remove it so git worktree add can recreate it
+  if [ -d "$DMUX_WORKTREE_PATH" ] && [ ! -f "$DMUX_WORKTREE_PATH/.git" ]; then
+    echo "$LOG_PREFIX Removing broken worktree directory..."
+    rm -rf "$DMUX_WORKTREE_PATH"
+  fi
+
+  # Ensure the branch exists; create from main/HEAD if it doesn't
+  if ! git -C "$DMUX_ROOT" rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
+    echo "$LOG_PREFIX Creating branch '$BRANCH'..."
+    git -C "$DMUX_ROOT" branch "$BRANCH" HEAD
+  fi
+
+  # Create the worktree
+  echo "$LOG_PREFIX Creating worktree at $DMUX_WORKTREE_PATH on branch $BRANCH..."
+  git -C "$DMUX_ROOT" worktree add "$DMUX_WORKTREE_PATH" "$BRANCH"
+}
+
+# Check if the worktree is properly linked
+if [ ! -f "$DMUX_WORKTREE_PATH/.git" ]; then
+  repair_worktree
+else
+  # .git file exists — verify it points to a valid gitdir
+  GITDIR=$(sed 's/^gitdir: //' "$DMUX_WORKTREE_PATH/.git")
+  if [ ! -d "$GITDIR" ]; then
+    echo "$LOG_PREFIX .git file points to missing gitdir: $GITDIR"
+    repair_worktree
+  fi
+fi
+
+# Final validation
+if [ ! -f "$DMUX_WORKTREE_PATH/.git" ]; then
+  echo "$LOG_PREFIX ERROR: Failed to establish worktree link. Aborting." >&2
+  exit 1
+fi
+
+echo "$LOG_PREFIX Worktree verified at $DMUX_WORKTREE_PATH"
+
+# Install dependencies
 cd "$DMUX_WORKTREE_PATH"
-echo "[dmux] Installing dependencies in $DMUX_PANE_SLUG..."
+echo "$LOG_PREFIX Installing dependencies for $DMUX_SLUG..."
 npm ci
-echo "[dmux] Dependencies ready."
+echo "$LOG_PREFIX Dependencies ready."
