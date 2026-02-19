@@ -11,7 +11,7 @@ sleep 0.5
 cd "$(dirname "$0")"
 
 # Run both in background, forward output
-npx ts api/_dev-server.mjs &
+npx tsx api/_dev-server.mjs &
 PID1=$!
 
 npm run dev &

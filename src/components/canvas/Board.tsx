@@ -13,7 +13,7 @@ import { GridBackground } from "./GridBackground";
 import { TopLevelConnectors } from "./TopLevelConnectors";
 import type { BoardObject, Connector } from "../../types/board";
 import type { UndoAction } from "../../hooks/useUndoRedo";
-import type { UserPresence } from "../../types/presence";
+import type { RemoteUser } from "../../hooks/usePresence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
 import type { CursorStore } from "../../hooks/usePresence";
 import { useObjectPartitioning } from "../../hooks/useObjectPartitioning";
@@ -38,7 +38,7 @@ const FRAME_CONTENT_PADDING = 6;
 interface BoardProps {
   objects: Record<string, BoardObject>;
   connectors: Record<string, Connector>;
-  users: Record<string, UserPresence>;
+  users: Record<string, RemoteUser>;
   cursorStore: CursorStore;
   currentUserId: string;
   canvas: UseCanvasReturn;

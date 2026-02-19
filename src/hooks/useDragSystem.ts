@@ -296,12 +296,29 @@ export function useDragSystem({
           if (stage) setNodeTopLeft(sid, primaryX + offset.dx, primaryY + offset.dy);
         }
 
-        // Throttled broadcast (primary only — collaborators infer the rest)
+        // Throttled broadcast — all dragged objects (primary + group + frame children)
         const now = performance.now();
         if (now - lastBroadcastRef.current >= BROADCAST_INTERVAL) {
           lastBroadcastRef.current = now;
+
           onObjectDragBroadcast(id, primaryX, primaryY, primaryParentFrameId ?? null);
           lastDragBroadcastRef.current[id] = { x: primaryX, y: primaryY, parentFrameId: primaryParentFrameId ?? null };
+
+          for (const [cid, offset] of Object.entries(frameContainedRef.current)) {
+            const bx = primaryX + offset.dx;
+            const by = primaryY + offset.dy;
+            const pf = objectsRef.current[cid]?.parentFrameId ?? null;
+            onObjectDragBroadcast(cid, bx, by, pf);
+            lastDragBroadcastRef.current[cid] = { x: bx, y: by, parentFrameId: pf };
+          }
+
+          for (const [sid, offset] of Object.entries(groupDragOffsetsRef.current)) {
+            const bx = primaryX + offset.dx;
+            const by = primaryY + offset.dy;
+            const pf = objectsRef.current[sid]?.parentFrameId ?? null;
+            onObjectDragBroadcast(sid, bx, by, pf);
+            lastDragBroadcastRef.current[sid] = { x: bx, y: by, parentFrameId: pf };
+          }
 
           if (stage) {
             const pointer = stage.getPointerPosition();

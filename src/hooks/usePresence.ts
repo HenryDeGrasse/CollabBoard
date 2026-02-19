@@ -141,7 +141,7 @@ export function usePresence(
           notifyCursorListeners();
         }
 
-        setUsers((prev) => {
+        setUsers((_prev) => {
           const now = Date.now();
           const next: Record<string, RemoteUser> = {};
 
