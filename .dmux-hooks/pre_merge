@@ -1,0 +1,10 @@
+#!/bin/bash
+# Gate merges on a passing test suite
+cd "$DMUX_WORKTREE_PATH"
+echo "[dmux] Running tests before merging $DMUX_PANE_SLUG..."
+npm test
+if [ $? -ne 0 ]; then
+  echo "[dmux] ❌ Tests failed — aborting merge of $DMUX_PANE_SLUG"
+  exit 1
+fi
+echo "[dmux] ✅ Tests passed — proceeding with merge."

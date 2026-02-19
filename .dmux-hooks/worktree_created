@@ -1,0 +1,6 @@
+#!/bin/bash
+# Install dependencies in each new worktree
+cd "$DMUX_WORKTREE_PATH"
+echo "[dmux] Installing dependencies in $DMUX_PANE_SLUG..."
+npm ci
+echo "[dmux] Dependencies ready."
