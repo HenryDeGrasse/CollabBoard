@@ -34,7 +34,7 @@ const COMPLEX_ACTION_VERBS = [
   "distribute", "align", "group", "cluster", "sort", "categorize",
 ];
 
-function classifyComplexity(command: string): "simple" | "complex" {
+export function classifyComplexity(command: string): "simple" | "complex" {
   const lower = command.toLowerCase();
 
   // Long commands are usually multi-step
@@ -55,10 +55,10 @@ function classifyComplexity(command: string): "simple" | "complex" {
   return "simple";
 }
 
-const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
-const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
+export const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
+export const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
 
-const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collaborative whiteboard application. You help users create, modify, and organize objects on their board.
+export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collaborative whiteboard application. You help users create, modify, and organize objects on their board.
 
 ## Your capabilities:
 - Create objects: sticky notes, rectangles, circles, text labels, and frames
@@ -127,7 +127,7 @@ interface ScreenSizeInput {
  *   canvasX = (screenX - stageX) / scale
  *   canvasY = (screenY - stageY) / scale
  */
-function computeViewBounds(
+export function computeViewBounds(
   viewport: ViewportInput,
   screen: ScreenSizeInput
 ) {

@@ -141,8 +141,11 @@ export function AICommandInput({
 
       try {
         // Determine API base URL
+        // VITE_AI_ENDPOINT lets you swap to /api/ai-vercel for the Edge experiment:
+        //   VITE_AI_ENDPOINT=/api/ai-vercel npm run dev
         const apiBase = import.meta.env.VITE_API_URL || "";
-        const url = `${apiBase}/api/ai`;
+        const aiPath = import.meta.env.VITE_AI_ENDPOINT || "/api/ai";
+        const url = `${apiBase}${aiPath}`;
 
         const resp = await fetch(url, {
           method: "POST",
