@@ -24,8 +24,19 @@ export interface RemoteDragPosition {
   updatedAt: number;
 }
 
+/** Lightweight cursor-only store that lives outside React state.
+ *  Components subscribe to get notified when cursor positions change
+ *  without triggering Board-level re-renders. */
+export interface CursorStore {
+  /** Current cursor positions keyed by user ID */
+  get: () => Record<string, { x: number; y: number }>;
+  /** Subscribe to cursor changes — returns unsubscribe function */
+  subscribe: (listener: () => void) => () => void;
+}
+
 export interface UsePresenceReturn {
   users: Record<string, RemoteUser>;
+  cursorStore: CursorStore;
   remoteDragPositions: Record<string, RemoteDragPosition>;
   updateCursor: (x: number, y: number) => void;
   setEditingObject: (objectId: string | null) => void;
@@ -57,6 +68,23 @@ export function usePresence(
   const [remoteDragPositions, setRemoteDragPositions] = useState<Record<string, RemoteDragPosition>>({});
   const channelRef = useRef<ReturnType<typeof createPresenceChannel> | null>(null);
   const colorRef = useRef(getNextCursorColor());
+
+  // ── Cursor store: ref-based, outside React state ──
+  // Cursor positions update at ~30ms intervals per collaborator. By keeping
+  // them out of React state we avoid triggering Board re-renders on every
+  // cursor broadcast. Only the cursor rendering component subscribes.
+  const cursorPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  const cursorListenersRef = useRef<Set<() => void>>(new Set());
+  const cursorStore = useRef<CursorStore>({
+    get: () => cursorPositionsRef.current,
+    subscribe: (listener: () => void) => {
+      cursorListenersRef.current.add(listener);
+      return () => { cursorListenersRef.current.delete(listener); };
+    },
+  }).current;
+  const notifyCursorListeners = useCallback(() => {
+    for (const listener of cursorListenersRef.current) listener();
+  }, []);
   // Pending timeouts that delay clearing remoteDragPositions after drag_end.
   // Gives Supabase Realtime time to deliver the DB write before we remove
   // the drag preview, preventing a snap-back flicker on the collaborator's screen.
@@ -87,6 +115,32 @@ export function usePresence(
       displayName,
       colorRef.current,
       (state) => {
+        // Seed cursor store from presence state for users who have cursors
+        const newCursors = { ...cursorPositionsRef.current };
+        let cursorsChanged = false;
+
+        // Clean up departed users from cursor store
+        const aliveKeys = new Set(Object.keys(state));
+        for (const key of Object.keys(newCursors)) {
+          if (!aliveKeys.has(key)) {
+            delete newCursors[key];
+            cursorsChanged = true;
+          }
+        }
+
+        for (const [key, presences] of Object.entries(state)) {
+          const p = presences[0] as PresenceState;
+          if (p?.cursor && !newCursors[key]) {
+            newCursors[key] = { x: p.cursor.x, y: p.cursor.y };
+            cursorsChanged = true;
+          }
+        }
+
+        if (cursorsChanged) {
+          cursorPositionsRef.current = newCursors;
+          notifyCursorListeners();
+        }
+
         setUsers((prev) => {
           const now = Date.now();
           const next: Record<string, RemoteUser> = {};
@@ -99,8 +153,8 @@ export function usePresence(
               id: key,
               displayName: p.displayName,
               cursorColor: p.cursorColor,
-              // Preserve latest cursor from broadcast if presence cursor is null.
-              cursor: p.cursor ?? prev[key]?.cursor ?? null,
+              // Cursor positions are now tracked in cursorStore, keep null here
+              cursor: null,
               online: true,
               lastSeen: now,
               editingObjectId: p.editingObjectId,
@@ -112,18 +166,13 @@ export function usePresence(
         });
       },
       (remoteUserId, x, y) => {
-        setUsers((prev) => {
-          const existing = prev[remoteUserId];
-          if (!existing) return prev;
-          return {
-            ...prev,
-            [remoteUserId]: {
-              ...existing,
-              cursor: { x, y },
-              lastSeen: Date.now(),
-            },
-          };
-        });
+        // Update the ref-based cursor store — does NOT trigger React re-renders.
+        // Only the subscribed cursor rendering component will be notified.
+        cursorPositionsRef.current = {
+          ...cursorPositionsRef.current,
+          [remoteUserId]: { x, y },
+        };
+        notifyCursorListeners();
       },
       (remoteUserId, objectId, position, parentFrameId, ended, width, height) => {
         if (ended) {
@@ -304,6 +353,7 @@ export function usePresence(
 
   return {
     users,
+    cursorStore,
     remoteDragPositions,
     updateCursor,
     setEditingObject,

@@ -3,7 +3,7 @@ import { Stage, Layer, Group } from "react-konva";
 import Konva from "konva";
 import { Frame, FrameOverlay } from "./Frame";
 import { ConnectorLine } from "./Connector";
-import { RemoteCursor } from "./RemoteCursor";
+import { RemoteCursorsLayer } from "./RemoteCursorsLayer";
 import { SelectionRect } from "./SelectionRect";
 import { TextOverlay } from "./TextOverlay";
 import { BoardObjectRenderer } from "./BoardObjectRenderer";
@@ -15,7 +15,7 @@ import type { BoardObject, Connector } from "../../types/board";
 import type { UndoAction } from "../../hooks/useUndoRedo";
 import type { UserPresence } from "../../types/presence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
-import { useCursorInterpolation } from "../../hooks/useCursorInterpolation";
+import type { CursorStore } from "../../hooks/usePresence";
 import { useObjectPartitioning } from "../../hooks/useObjectPartitioning";
 import { useViewportCulling } from "../../hooks/useViewportCulling";
 import { useLivePositions } from "../../hooks/useLivePositions";
@@ -39,6 +39,7 @@ interface BoardProps {
   objects: Record<string, BoardObject>;
   connectors: Record<string, Connector>;
   users: Record<string, UserPresence>;
+  cursorStore: CursorStore;
   currentUserId: string;
   canvas: UseCanvasReturn;
   selectedIds: Set<string>;
@@ -91,6 +92,7 @@ export function Board({
   objects,
   connectors,
   users,
+  cursorStore,
   currentUserId,
   canvas,
   selectedIds,
@@ -305,23 +307,6 @@ export function Board({
     remoteEnteringDraggedObjectIds,
     remotePoppedOutDraggedObjectIds,
   } = useLivePositions(objects, dragPositions, dragParentFrameIds, remoteDragPositions, dragInsideFrameRef);
-
-  // Remote cursors — extract raw positions then micro-interpolate
-  const rawRemoteCursors = useMemo(() => {
-    return Object.entries(users)
-      .filter(([uid, p]) => uid !== currentUserId && p.online && p.cursor)
-      .map(([uid, p]) => ({
-        id: uid,
-        displayName: p.displayName,
-        color: p.cursorColor,
-        x: p.cursor!.x,
-        y: p.cursor!.y,
-      }));
-  }, [users, currentUserId]);
-
-  // Smooth micro-interpolation: glides between 30ms broadcast hops,
-  // adaptive duration so cursor arrives at target before next update.
-  const remoteCursors = useCursorInterpolation(rawRemoteCursors);
 
   const getCanvasPoint = useCallback(
     (stage: Konva.Stage) => {
@@ -997,18 +982,13 @@ export function Board({
           <SelectionRect {...selectionRect} />
         </Layer>
 
-        {/* Cursors layer (separate for performance) */}
-        <Layer listening={false}>
-          {remoteCursors.map((cursor) => (
-            <RemoteCursor
-              key={cursor.id}
-              displayName={cursor.displayName}
-              color={cursor.color}
-              x={cursor.x}
-              y={cursor.y}
-            />
-          ))}
-        </Layer>
+        {/* Cursors layer — isolated component so interpolation rAF
+            only re-renders cursors, not the entire Board */}
+        <RemoteCursorsLayer
+          cursorStore={cursorStore}
+          users={users}
+          currentUserId={currentUserId}
+        />
       </Stage>
 
       {/* Text editing overlay */}

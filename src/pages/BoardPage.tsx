@@ -200,6 +200,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   // handler; those are the canonical declarations used by all closures.
   const {
     users,
+    cursorStore,
     remoteDragPositions,
     updateCursor,
     setEditingObject,
@@ -851,6 +852,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         objects={objects}
         connectors={connectors}
         users={users}
+        cursorStore={cursorStore}
         currentUserId={userId}
         canvas={canvas}
         selectedIds={selection.selectedIds}
