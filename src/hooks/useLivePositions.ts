@@ -95,6 +95,9 @@ export function useLivePositions(
   // - if a frame moves but some child packets are delayed/dropped,
   //   derive child preview positions from frame delta so motion stays cohesive.
   const resolvedLiveDragPositions = useMemo(() => {
+    // No drag positions at all — return empty (stable reference when possible)
+    if (Object.keys(liveDragPositions).length === 0) return liveDragPositions;
+
     const resolved: Record<string, LiveDragPosition> = {
       ...liveDragPositions,
     };
@@ -128,8 +131,54 @@ export function useLivePositions(
   // Caches merged objects between renders to preserve referential equality
   // and reduce GC pressure from per-object spread on every render.
   const livePositionCacheRef = useRef<Map<string, BoardObject>>(new Map());
+  // Previous base objects ref — used to detect when only drag positions changed
+  // so we can do a fast incremental update instead of iterating all objects.
+  const prevObjectsRef = useRef<Record<string, BoardObject> | null>(null);
+  const prevResultRef = useRef<Record<string, BoardObject> | null>(null);
   const objectsWithLivePositions = useMemo(() => {
     const cache = livePositionCacheRef.current;
+    const liveIds = Object.keys(resolvedLiveDragPositions);
+
+    // Fast path: if the base objects record hasn't changed (same reference),
+    // only update the entries that have live positions. This avoids iterating
+    // all 800+ objects when only a few are being dragged.
+    if (prevObjectsRef.current === objects && prevResultRef.current && liveIds.length < 100) {
+      const result = { ...prevResultRef.current };
+
+      // Restore previously-overridden entries back to their base object
+      for (const cachedId of cache.keys()) {
+        if (!resolvedLiveDragPositions[cachedId]) {
+          result[cachedId] = objects[cachedId] || result[cachedId];
+          cache.delete(cachedId);
+        }
+      }
+
+      // Apply current live positions
+      for (const id of liveIds) {
+        const obj = objects[id];
+        if (!obj) continue;
+        const live = resolvedLiveDragPositions[id];
+        const cached = cache.get(id);
+        if (
+          cached &&
+          cached.x === live.x &&
+          cached.y === live.y &&
+          (live.width === undefined || cached.width === live.width) &&
+          (live.height === undefined || cached.height === live.height)
+        ) {
+          result[id] = cached;
+        } else {
+          const merged = { ...obj, ...live };
+          cache.set(id, merged);
+          result[id] = merged;
+        }
+      }
+
+      prevResultRef.current = result;
+      return result;
+    }
+
+    // Full rebuild when base objects changed
     const result: Record<string, BoardObject> = {};
 
     for (const [id, obj] of Object.entries(objects)) {
@@ -161,6 +210,8 @@ export function useLivePositions(
       if (!objects[cachedId]) cache.delete(cachedId);
     }
 
+    prevObjectsRef.current = objects;
+    prevResultRef.current = result;
     return result;
   }, [objects, resolvedLiveDragPositions]);
 
@@ -172,6 +223,9 @@ export function useLivePositions(
   );
 
   const poppedOutDraggedObjects = useMemo(() => {
+    // Skip expensive iteration if no objects have live drag positions
+    if (Object.keys(liveDragPositions).length === 0) return [];
+
     return Object.values(objects)
       .filter((obj) => !!obj.parentFrameId && !!liveDragPositions[obj.id])
       .map((obj) => {
@@ -209,9 +263,15 @@ export function useLivePositions(
   // While dragging uncontained objects into a frame, show a live in-frame preview.
   // Hysteresis: entering uses higher threshold (0.55), staying in uses lower (0.45).
   const enteringFrameDraggedObjects = useMemo(() => {
+    // Skip expensive iteration if no objects have live drag positions
+    if (Object.keys(liveDragPositions).length === 0) return [];
+
     const frames = Object.values(objects)
       .filter((o) => o.type === "frame")
       .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+
+    // Skip if no frames to enter
+    if (frames.length === 0) return [];
 
     return Object.values(objects)
       .filter((obj) => !obj.parentFrameId && !!liveDragPositions[obj.id] && obj.type !== "frame")

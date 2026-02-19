@@ -25,7 +25,7 @@ export interface BoardObjectRendererProps {
   onRotateEnd: (id: string, angle: number) => void;
 }
 
-export function BoardObjectRenderer({
+export const BoardObjectRenderer = React.memo(function BoardObjectRenderer({
   object: obj,
   isSelected,
   editingObjectId,
@@ -109,4 +109,25 @@ export function BoardObjectRenderer({
   }
 
   return null;
-}
+}, (prev, next) => {
+  return (
+    prev.object === next.object &&
+    prev.isSelected === next.isSelected &&
+    prev.editingObjectId === next.editingObjectId &&
+    prev.isLockedByOther === next.isLockedByOther &&
+    prev.lockedBy === next.lockedBy &&
+    prev.lockedByColor === next.lockedByColor &&
+    prev.isArrowHover === next.isArrowHover &&
+    prev.interactable === next.interactable &&
+    prev.draftText === next.draftText &&
+    prev.onSelect === next.onSelect &&
+    prev.onDragStart === next.onDragStart &&
+    prev.onDragMove === next.onDragMove &&
+    prev.onDragEnd === next.onDragEnd &&
+    prev.onDoubleClick === next.onDoubleClick &&
+    prev.onUpdateObject === next.onUpdateObject &&
+    prev.onRotateStart === next.onRotateStart &&
+    prev.onRotateMove === next.onRotateMove &&
+    prev.onRotateEnd === next.onRotateEnd
+  );
+});

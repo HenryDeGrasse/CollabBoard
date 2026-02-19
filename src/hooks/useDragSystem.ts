@@ -9,9 +9,15 @@ import {
 
 const BROADCAST_INTERVAL = 50;
 
+/** When total dragged objects (primary + group + frame children) reaches this,
+ *  skip React state updates during drag and rely solely on direct Konva node
+ *  manipulation via setNodeTopLeft. Positions are committed on drag end. */
+const BULK_DRAG_THRESHOLD = 20;
+
 export interface UseDragSystemParams {
   objectsRef: React.MutableRefObject<Record<string, BoardObject>>;
   selectedIds: Set<string>;
+  selectedIdsRef: React.MutableRefObject<Set<string>>;
   stageRef: React.RefObject<Konva.Stage | null>;
   dragInsideFrameRef: React.MutableRefObject<Set<string>>;
   /** Ref tracking whether a frame manual drag is in progress (for heartbeat) */
@@ -56,6 +62,7 @@ export interface UseDragSystemReturn {
 export function useDragSystem({
   objectsRef,
   selectedIds,
+  selectedIdsRef,
   stageRef,
   dragInsideFrameRef,
   frameManualDragActiveRef,
@@ -77,11 +84,24 @@ export function useDragSystem({
   const pendingDragPositionsRef = useRef<Record<string, { x: number; y: number }> | null>(null);
   const pendingDragParentFrameIdsRef = useRef<Record<string, string | null> | null>(null);
 
+  // Ref to access dragPositions without closing over state
+  const dragPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  dragPositionsRef.current = dragPositions;
+
   // Object drag tracking refs
   const draggingRef = useRef<Set<string>>(new Set());
   const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
   const groupDragOffsetsRef = useRef<Record<string, { dx: number; dy: number }>>({});
   const frameContainedRef = useRef<Record<string, { dx: number; dy: number }>>({});
+
+  // Cached frame list — updated lazily in handleDragMove to avoid
+  // scanning all objects on every move event.
+  const framesRef = useRef<BoardObject[]>([]);
+  const framesObjectsGenRef = useRef<Record<string, BoardObject> | null>(null);
+
+  // Bulk drag mode: when many objects are selected, skip scheduleDragStateUpdate
+  // (no React re-renders during drag) and rely on setNodeTopLeft for visuals.
+  const isBulkDraggingRef = useRef(false);
 
   // Broadcast throttling
   const lastBroadcastRef = useRef<number>(0);
@@ -210,9 +230,10 @@ export function useDragSystem({
     }
 
     // If this object is part of a multi-selection, record offsets for group drag
-    if (selectedIds.has(id) && selectedIds.size > 1) {
+    const currentSelectedIds = selectedIdsRef.current;
+    if (currentSelectedIds.has(id) && currentSelectedIds.size > 1) {
       const offsets: Record<string, { dx: number; dy: number }> = {};
-      selectedIds.forEach((sid) => {
+      currentSelectedIds.forEach((sid) => {
         if (sid !== id) {
           const sobj = objectsRef.current[sid];
           if (sobj && obj) {
@@ -235,7 +256,11 @@ export function useDragSystem({
     }
 
     frameContainedRef.current = frameOffsets;
-  }, [selectedIds, getObjectsInFrame, objectsRef, dragInsideFrameRef]);
+
+    // Detect bulk drag mode based on total objects being dragged
+    const totalDragged = 1 + Object.keys(groupDragOffsetsRef.current).length + Object.keys(frameOffsets).length;
+    isBulkDraggingRef.current = totalDragged >= BULK_DRAG_THRESHOLD;
+  }, [selectedIdsRef, getObjectsInFrame, objectsRef, dragInsideFrameRef]);
 
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
@@ -245,9 +270,56 @@ export function useDragSystem({
       let primaryY = y;
       let primaryParentFrameId: string | null | undefined = draggedObj?.parentFrameId ?? null;
 
+      // Lazily rebuild cached frame list when the objects record changes.
+      if (framesObjectsGenRef.current !== objectsRef.current) {
+        framesObjectsGenRef.current = objectsRef.current;
+        framesRef.current = Object.values(objectsRef.current)
+          .filter((o) => o.type === "frame")
+          .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+      }
+      const cachedFrames = framesRef.current;
+
+      // ── Bulk drag fast path ──
+      // When many objects are dragged, skip frame constraints and React state
+      // updates. Only update Konva node positions directly via setNodeTopLeft.
+      if (isBulkDraggingRef.current) {
+        // Position the primary node
+        if (stage) setNodeTopLeft(id, primaryX, primaryY);
+
+        // Move frame-contained objects
+        for (const [cid, offset] of Object.entries(frameContainedRef.current)) {
+          if (stage) setNodeTopLeft(cid, primaryX + offset.dx, primaryY + offset.dy);
+        }
+
+        // Move other selected objects in the group
+        for (const [sid, offset] of Object.entries(groupDragOffsetsRef.current)) {
+          if (stage) setNodeTopLeft(sid, primaryX + offset.dx, primaryY + offset.dy);
+        }
+
+        // Throttled broadcast (primary only — collaborators infer the rest)
+        const now = performance.now();
+        if (now - lastBroadcastRef.current >= BROADCAST_INTERVAL) {
+          lastBroadcastRef.current = now;
+          onObjectDragBroadcast(id, primaryX, primaryY, primaryParentFrameId ?? null);
+          lastDragBroadcastRef.current[id] = { x: primaryX, y: primaryY, parentFrameId: primaryParentFrameId ?? null };
+
+          if (stage) {
+            const pointer = stage.getPointerPosition();
+            if (pointer) {
+              const cx = (pointer.x - stage.x()) / stage.scaleX();
+              const cy = (pointer.y - stage.y()) / stage.scaleY();
+              onCursorMove(cx, cy);
+            }
+          }
+        }
+        return; // Skip scheduleDragStateUpdate — no React re-renders during bulk drag
+      }
+
+      // ── Normal drag path ──
+
       // Prevent non-frame objects from sliding under frames while cursor is outside.
-      const isGroupDrag = selectedIds.has(id) && selectedIds.size > 1;
-      if (draggedObj && draggedObj.type !== "frame" && !isGroupDrag) {
+      const isGroupDrag = selectedIdsRef.current.has(id) && selectedIdsRef.current.size > 1;
+      if (draggedObj && draggedObj.type !== "frame" && !isGroupDrag && cachedFrames.length > 0) {
         const pointer = stage?.getPointerPosition();
         let frameUnderCursorId: string | null = null;
         if (pointer && stage) {
@@ -281,13 +353,10 @@ export function useDragSystem({
         }
 
         if (!allowedFrameId && !currentParentFrameId) {
-          const allFrames = Object.values(objectsRef.current)
-            .filter((o) => o.type === "frame")
-            .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
           const wasInside = dragInsideFrameRef.current.has(id);
           const threshold = wasInside ? 0.45 : 0.55;
 
-          for (const frame of allFrames) {
+          for (const frame of cachedFrames) {
             const isInside = !shouldPopOutFromFrame(
               { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
               { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
@@ -306,10 +375,9 @@ export function useDragSystem({
 
         primaryParentFrameId = allowedFrameId ?? null;
 
-        const frames = Object.values(objectsRef.current).filter((o) => o.type === "frame");
         const constrained = constrainObjectOutsideFrames(
           { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
-          frames,
+          cachedFrames,
           allowedFrameId
         );
         primaryX = constrained.x;
@@ -379,7 +447,7 @@ export function useDragSystem({
       dragInsideFrameRef,
       onCursorMove,
       onObjectDragBroadcast,
-      selectedIds,
+      selectedIdsRef,
       getFrameAtPoint,
       scheduleDragStateUpdate,
       setNodeTopLeft,
@@ -388,6 +456,57 @@ export function useDragSystem({
 
   const handleDragEnd = useCallback(
     (id: string, x: number, y: number) => {
+      // ── Bulk drag end: commit all positions from start + delta ──
+      if (isBulkDraggingRef.current) {
+        const primaryStart = dragStartPosRef.current[id];
+        const dx = primaryStart ? x - primaryStart.x : 0;
+        const dy = primaryStart ? y - primaryStart.y : 0;
+
+        const batchUndoActions: UndoAction[] = [];
+        const allDragStarts = dragStartPosRef.current;
+
+        for (const [oid, oStart] of Object.entries(allDragStarts)) {
+          const finalX = oStart.x + dx;
+          const finalY = oStart.y + dy;
+          onUpdateObject(oid, { x: finalX, y: finalY });
+          if (dx !== 0 || dy !== 0) {
+            batchUndoActions.push({
+              type: "update_object",
+              objectId: oid,
+              before: { x: oStart.x, y: oStart.y },
+              after: { x: finalX, y: finalY },
+            });
+          }
+        }
+
+        // Broadcast final positions and drag end
+        for (const [oid, oStart] of Object.entries(allDragStarts)) {
+          const finalX = oStart.x + dx;
+          const finalY = oStart.y + dy;
+          const obj = objectsRef.current[oid];
+          onObjectDragBroadcast(oid, finalX, finalY, obj?.parentFrameId ?? null);
+          onObjectDragEndBroadcast(oid);
+        }
+
+        if (batchUndoActions.length > 0) {
+          onPushUndo(
+            batchUndoActions.length === 1
+              ? batchUndoActions[0]
+              : { type: "batch", actions: batchUndoActions }
+          );
+        }
+
+        // Clean up all bulk drag state
+        isBulkDraggingRef.current = false;
+        draggingRef.current.clear();
+        dragStartPosRef.current = {};
+        groupDragOffsetsRef.current = {};
+        frameContainedRef.current = {};
+        lastDragBroadcastRef.current = {};
+        dragInsideFrameRef.current.clear();
+        return;
+      }
+
       draggingRef.current.delete(id);
 
       // Restore opacity on the original node
@@ -400,12 +519,12 @@ export function useDragSystem({
       const startPos = dragStartPosRef.current[id];
       const draggedObj = objectsRef.current[id];
 
-      const livePos = dragPositions[id];
+      const livePos = dragPositionsRef.current[id];
       let finalX = livePos?.x ?? x;
       let finalY = livePos?.y ?? y;
       let finalParentFrameId: string | null | undefined = draggedObj?.parentFrameId ?? null;
 
-      if (draggedObj && draggedObj.type !== "frame") {
+      if (draggedObj && draggedObj.type !== "frame" && framesRef.current.length > 0) {
         const stage = stageRef.current;
         const pointer = stage?.getPointerPosition();
 
@@ -424,10 +543,9 @@ export function useDragSystem({
 
         finalParentFrameId = targetFrame?.id ?? null;
 
-        const frames = Object.values(objectsRef.current).filter((o) => o.type === "frame");
         const constrained = constrainObjectOutsideFrames(
           { x: finalX, y: finalY, width: draggedObj.width, height: draggedObj.height },
-          frames,
+          framesRef.current,
           finalParentFrameId ?? null
         );
         finalX = constrained.x;
@@ -537,7 +655,6 @@ export function useDragSystem({
       onObjectDragBroadcast,
       onObjectDragEndBroadcast,
       getFrameAtPoint,
-      dragPositions,
       stageRef,
       clearDragPositionsSoon,
     ]

@@ -9,8 +9,10 @@ export interface UseSelectionReturn {
   selectMultiple: (ids: string[]) => void;
 }
 
+const EMPTY_SET = new Set<string>();
+
 export function useSelection(): UseSelectionReturn {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(EMPTY_SET);
 
   const select = useCallback((id: string, multi = false) => {
     setSelectedIds((prev) => {
@@ -23,20 +25,23 @@ export function useSelection(): UseSelectionReturn {
         }
         return next;
       }
+      // Single select: if already exactly this one item, keep same ref
+      if (prev.size === 1 && prev.has(id)) return prev;
       return new Set([id]);
     });
   }, []);
 
   const deselect = useCallback((id: string) => {
     setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev;
       const next = new Set(prev);
       next.delete(id);
-      return next;
+      return next.size === 0 ? EMPTY_SET : next;
     });
   }, []);
 
   const clearSelection = useCallback(() => {
-    setSelectedIds(new Set());
+    setSelectedIds((prev) => (prev.size === 0 ? prev : EMPTY_SET));
   }, []);
 
   const isSelected = useCallback(
