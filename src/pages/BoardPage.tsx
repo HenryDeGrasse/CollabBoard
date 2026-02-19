@@ -128,6 +128,15 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     setEmptySuggestions(EMPTY_BOARD_SUGGESTION_SETS[idx]);
   }, [boardId]);
 
+  // Warm the AI serverless function the moment a board loads.
+  // By the time the user types their first command the cold-start is already
+  // paid — a health ping is cheap and fire-and-forget.
+  useEffect(() => {
+    if (!boardId) return;
+    const apiBase = import.meta.env.VITE_API_URL ?? "";
+    fetch(`${apiBase}/api/health`).catch(() => {});
+  }, [boardId]);
+
   // Ensure user is a member of this board BEFORE loading data.
   // RLS policies require board_members entry for SELECT on objects/connectors.
   useEffect(() => {

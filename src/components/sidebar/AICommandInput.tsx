@@ -72,6 +72,15 @@ export function AICommandInput({
   selectedIdsRef.current = selectedIds;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
+  // Fire once per component lifetime — pings the AI endpoint on first focus
+  // so the serverless function is warm before the user hits send.
+  const warmupFiredRef = useRef(false);
+  const handleFocus = useCallback(() => {
+    if (warmupFiredRef.current) return;
+    warmupFiredRef.current = true;
+    const apiBase = import.meta.env.VITE_API_URL ?? "";
+    fetch(`${apiBase}/api/health`).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -470,6 +479,7 @@ export function AICommandInput({
             type="text"
             value={command}
             onChange={(e) => setCommand(e.target.value)}
+            onFocus={handleFocus}
             placeholder={isLoading ? "Working…" : "Ask AI to create or arrange..."}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none disabled:opacity-50"
             autoComplete="off"

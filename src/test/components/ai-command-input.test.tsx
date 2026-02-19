@@ -54,10 +54,24 @@ async function openPanel(user: ReturnType<typeof userEvent.setup>) {
 
 describe("AICommandInput — undo last AI change", () => {
   const fetchMock = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>();
+  // Queue of SSE responses to serve in order for /api/ai calls.
+  // Health pings (/api/health) are intercepted separately so they don't
+  // accidentally consume a slot meant for the AI endpoint.
+  const sseQueue: Response[] = [];
 
   beforeEach(() => {
+    sseQueue.length = 0;
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
+    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+      if (String(url).includes("/api/health")) {
+        return Promise.resolve(new Response("{}", { status: 200 }));
+      }
+      const next = sseQueue.shift();
+      return next
+        ? Promise.resolve(next)
+        : Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+    });
   });
 
   afterEach(() => {
@@ -71,7 +85,7 @@ describe("AICommandInput — undo last AI change", () => {
   it("shows 'Undo last AI change' after a completed turn with tool actions", async () => {
     const user = userEvent.setup();
 
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([
         { type: "tool_start", content: "create_objects" },
         { type: "text",       content: "Done!" },
@@ -93,7 +107,7 @@ describe("AICommandInput — undo last AI change", () => {
   it("does NOT show undo button for a turn with no tool actions", async () => {
     const user = userEvent.setup();
 
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([
         { type: "text", content: "Here is some info." },
         { type: "done", content: "" },
@@ -116,7 +130,7 @@ describe("AICommandInput — undo last AI change", () => {
   it("does NOT show undo button when onUndoSnapshot prop is absent", async () => {
     const user = userEvent.setup();
 
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([
         { type: "tool_start", content: "create_objects" },
         { type: "done",       content: "" },
@@ -145,7 +159,7 @@ describe("AICommandInput — undo last AI change", () => {
     const user = userEvent.setup();
     const captureSnapshot = vi.fn(() => ({ objects: {}, connectors: {} }));
 
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([{ type: "done", content: "" }])
     );
 
@@ -176,7 +190,7 @@ describe("AICommandInput — undo last AI change", () => {
     const captureSnapshot = vi.fn(() => preSnapshot);
     const onUndoSnapshot  = vi.fn();
 
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([
         { type: "tool_start", content: "create_objects" },
         { type: "text",       content: "Created!" },
@@ -209,14 +223,14 @@ describe("AICommandInput — undo last AI change", () => {
     const onUndoSnapshot = vi.fn();
 
     // First command
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([
         { type: "tool_start", content: "create_objects" },
         { type: "done",       content: "" },
       ])
     );
     // Second command
-    fetchMock.mockResolvedValueOnce(
+    sseQueue.push(
       makeSseResponse([
         { type: "tool_start", content: "update_objects" },
         { type: "done",       content: "" },

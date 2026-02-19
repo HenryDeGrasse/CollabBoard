@@ -9,6 +9,10 @@ import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers/openai";
 import { TOOL_DEFINITIONS, executeTool } from "./aiTools.js";
 
+// Default tracing to enabled so production traces are captured even when
+// LANGSMITH_TRACING is absent from the environment. Explicit "false" still wins.
+process.env.LANGSMITH_TRACING ??= "true";
+
 const MAX_ITERATIONS = 8;
 
 // ─── Complexity routing ────────────────────────────────────────
