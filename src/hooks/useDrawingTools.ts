@@ -1,0 +1,218 @@
+import { useState, useCallback, useRef } from "react";
+import type { BoardObject } from "../types/board";
+import type { ToolType } from "../components/canvas/Board";
+import { computeFrameFromGesture } from "../utils/frame-create";
+import type { UndoAction } from "./useUndoRedo";
+
+// Frame layout constants
+const MIN_FRAME_WIDTH = 200;
+const MIN_FRAME_HEIGHT = 150;
+const DEFAULT_FRAME_WIDTH = 200;
+const DEFAULT_FRAME_HEIGHT = 150;
+const FRAME_CLICK_THRESHOLD = 6;
+
+export interface DrawState {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
+export interface UseDrawingToolsReturn {
+  frameDraw: DrawState | null;
+  shapeDraw: DrawState | null;
+  /** Update drawing preview on mouse move */
+  onMouseMove: (canvasPoint: { x: number; y: number }) => void;
+  /** Start drawing on mouse down. Returns true if handled. */
+  onMouseDown: (canvasPoint: { x: number; y: number }) => boolean;
+  /** Finalize drawing on mouse up. Returns true if handled. */
+  onMouseUp: () => boolean;
+  /** Cancel all drawing (e.g. on Escape) */
+  cancel: () => void;
+}
+
+export function useDrawingTools(
+  activeTool: ToolType,
+  activeColor: string,
+  currentUserId: string,
+  objectsRef: React.MutableRefObject<Record<string, BoardObject>>,
+  onCreateObject: (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => string,
+  onPushUndo: (action: UndoAction) => void,
+  onResetTool: (selectId?: string) => void,
+  getFrameAtPoint: (x: number, y: number) => BoardObject | null
+): UseDrawingToolsReturn {
+  const [frameDraw, setFrameDraw] = useState<DrawState | null>(null);
+  const [shapeDraw, setShapeDraw] = useState<DrawState | null>(null);
+
+  const onMouseMove = useCallback(
+    (canvasPoint: { x: number; y: number }) => {
+      // Frame drawing preview
+      if (frameDraw && activeTool === "frame") {
+        setFrameDraw((prev) =>
+          prev ? { ...prev, endX: canvasPoint.x, endY: canvasPoint.y } : null
+        );
+      }
+
+      // Shape drawing preview (rectangle / circle / sticky drag-to-create)
+      if (shapeDraw && (activeTool === "rectangle" || activeTool === "circle" || activeTool === "sticky")) {
+        setShapeDraw((prev) => {
+          if (!prev) return null;
+          let endX = canvasPoint.x;
+          let endY = canvasPoint.y;
+          if (activeTool === "circle" || activeTool === "sticky") {
+            const dx = endX - prev.startX;
+            const dy = endY - prev.startY;
+            const side = Math.max(Math.abs(dx), Math.abs(dy));
+            endX = prev.startX + side * Math.sign(dx || 1);
+            endY = prev.startY + side * Math.sign(dy || 1);
+          }
+          return { ...prev, endX, endY };
+        });
+      }
+    },
+    [activeTool, frameDraw, shapeDraw]
+  );
+
+  const onMouseDown = useCallback(
+    (canvasPoint: { x: number; y: number }): boolean => {
+      if (activeTool === "frame") {
+        setFrameDraw({
+          startX: canvasPoint.x,
+          startY: canvasPoint.y,
+          endX: canvasPoint.x,
+          endY: canvasPoint.y,
+        });
+        return true;
+      }
+
+      if (activeTool === "rectangle" || activeTool === "circle" || activeTool === "sticky") {
+        setShapeDraw({
+          startX: canvasPoint.x,
+          startY: canvasPoint.y,
+          endX: canvasPoint.x,
+          endY: canvasPoint.y,
+        });
+        return true;
+      }
+
+      return false;
+    },
+    [activeTool]
+  );
+
+  const onMouseUp = useCallback((): boolean => {
+    // Frame creation
+    if (activeTool === "frame" && frameDraw) {
+      const frameRect = computeFrameFromGesture({
+        startX: frameDraw.startX,
+        startY: frameDraw.startY,
+        endX: frameDraw.endX,
+        endY: frameDraw.endY,
+        clickThreshold: FRAME_CLICK_THRESHOLD,
+        defaultWidth: DEFAULT_FRAME_WIDTH,
+        defaultHeight: DEFAULT_FRAME_HEIGHT,
+        minWidth: MIN_FRAME_WIDTH,
+        minHeight: MIN_FRAME_HEIGHT,
+      });
+
+      const minZIndex = Math.min(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
+      const newId = onCreateObject({
+        type: "frame",
+        x: frameRect.x,
+        y: frameRect.y,
+        width: frameRect.width,
+        height: frameRect.height,
+        color: "#F8FAFC",
+        text: "Frame",
+        rotation: 0,
+        zIndex: minZIndex - 1,
+        createdBy: currentUserId,
+      });
+
+      setTimeout(() => {
+        const created = objectsRef.current[newId];
+        if (created) {
+          onPushUndo({ type: "create_object", objectId: newId, object: created });
+        }
+      }, 100);
+
+      setFrameDraw(null);
+      onResetTool(newId);
+      return true;
+    }
+
+    // Shape creation (rectangle / circle / sticky)
+    if ((activeTool === "rectangle" || activeTool === "circle" || activeTool === "sticky") && shapeDraw) {
+      const SHAPE_CLICK_THRESHOLD = 5;
+      const dx = Math.abs(shapeDraw.endX - shapeDraw.startX);
+      const dy = Math.abs(shapeDraw.endY - shapeDraw.startY);
+      const isClick = dx < SHAPE_CLICK_THRESHOLD && dy < SHAPE_CLICK_THRESHOLD;
+
+      let x: number, y: number, w: number, h: number;
+      if (isClick) {
+        if (activeTool === "rectangle") {
+          w = 150; h = 100;
+        } else if (activeTool === "circle") {
+          w = 100; h = 100;
+        } else {
+          w = 150; h = 150;
+        }
+        x = shapeDraw.startX - w / 2;
+        y = shapeDraw.startY - h / 2;
+      } else {
+        x = Math.min(shapeDraw.startX, shapeDraw.endX);
+        y = Math.min(shapeDraw.startY, shapeDraw.endY);
+        w = Math.max(20, dx);
+        h = Math.max(20, dy);
+        if (activeTool === "circle" || activeTool === "sticky") {
+          const side = Math.max(w, h);
+          w = side;
+          h = side;
+        }
+      }
+
+      const objType = activeTool === "sticky" ? "sticky" : activeTool;
+      const maxZ = Math.max(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
+      const parentFrame = getFrameAtPoint(x + w / 2, y + h / 2);
+      const newId = onCreateObject({
+        type: objType,
+        x, y,
+        width: w,
+        height: h,
+        color: activeColor,
+        text: "",
+        rotation: 0,
+        zIndex: maxZ + 1,
+        createdBy: currentUserId,
+        parentFrameId: parentFrame?.id ?? null,
+      });
+
+      setTimeout(() => {
+        const created = objectsRef.current[newId];
+        if (created) {
+          onPushUndo({ type: "create_object", objectId: newId, object: created });
+        }
+      }, 100);
+
+      setShapeDraw(null);
+      onResetTool(newId);
+      return true;
+    }
+
+    return false;
+  }, [activeTool, frameDraw, shapeDraw, activeColor, currentUserId, objectsRef, onCreateObject, onPushUndo, onResetTool, getFrameAtPoint]);
+
+  const cancel = useCallback(() => {
+    setFrameDraw(null);
+    setShapeDraw(null);
+  }, []);
+
+  return {
+    frameDraw,
+    shapeDraw,
+    onMouseMove,
+    onMouseDown,
+    onMouseUp,
+    cancel,
+  };
+}
