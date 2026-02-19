@@ -1,16 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// ── Shared mock stubs ──────────────────────────────────────────
 const mockFrom = vi.fn();
 
-const mockBoardsInsert = vi.fn();
-const mockBoardsUpdate = vi.fn();
-const mockBoardsEq = vi.fn();
+// boards table
+const mockBoardsInsert     = vi.fn();
+const mockBoardsUpdate     = vi.fn();
+const mockBoardsUpdateEq   = vi.fn();
+const mockBoardsSelect     = vi.fn();
+const mockBoardsSelectEq   = vi.fn();
+const mockBoardsSelectMaybeSingle = vi.fn();
 
-const mockBoardMembersInsert = vi.fn();
-const mockBoardMembersSelect = vi.fn();
-const mockBoardMembersEq1 = vi.fn();
-const mockBoardMembersEq2 = vi.fn();
-const mockBoardMembersMaybeSingle = vi.fn();
+// board_members table
+const mockMembersInsert    = vi.fn();
+const mockMembersSelect    = vi.fn();
+const mockMembersEq1       = vi.fn();
+const mockMembersEq2       = vi.fn();
+const mockMembersMaybeSingle = vi.fn();
+
 const mockRpc = vi.fn();
 
 vi.mock("../../services/supabase", () => ({
@@ -24,7 +31,16 @@ vi.mock("../../services/supabase", () => ({
           insert: (...a: any[]) => mockBoardsInsert(...a),
           update: (...a: any[]) => {
             mockBoardsUpdate(...a);
-            return { eq: (...b: any[]) => mockBoardsEq(...b) };
+            return { eq: (...b: any[]) => mockBoardsUpdateEq(...b) };
+          },
+          select: (...a: any[]) => {
+            mockBoardsSelect(...a);
+            return {
+              eq: (...b: any[]) => {
+                mockBoardsSelectEq(...b);
+                return { maybeSingle: (...c: any[]) => mockBoardsSelectMaybeSingle(...c) };
+              },
+            };
           },
           delete: () => ({
             eq: () => ({ eq: () => Promise.resolve({ error: null }) }),
@@ -34,18 +50,16 @@ vi.mock("../../services/supabase", () => ({
 
       if (table === "board_members") {
         return {
-          insert: (...a: any[]) => mockBoardMembersInsert(...a),
+          insert: (...a: any[]) => mockMembersInsert(...a),
           select: (...a: any[]) => {
-            mockBoardMembersSelect(...a);
+            mockMembersSelect(...a);
             return {
               eq: (...b1: any[]) => {
-                mockBoardMembersEq1(...b1);
+                mockMembersEq1(...b1);
                 return {
                   eq: (...b2: any[]) => {
-                    mockBoardMembersEq2(...b2);
-                    return {
-                      maybeSingle: (...c: any[]) => mockBoardMembersMaybeSingle(...c),
-                    };
+                    mockMembersEq2(...b2);
+                    return { maybeSingle: (...c: any[]) => mockMembersMaybeSingle(...c) };
                   },
                 };
               },
@@ -76,17 +90,27 @@ describe("Board service (Supabase)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Default happy-path stubs
     mockBoardsInsert.mockResolvedValue({ error: null });
-    mockBoardMembersInsert.mockResolvedValue({ error: null });
-    mockBoardsEq.mockResolvedValue({ error: null });
-
-    mockBoardMembersMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockMembersInsert.mockResolvedValue({ error: null });
+    mockBoardsUpdateEq.mockResolvedValue({ error: null });
     mockRpc.mockResolvedValue({ error: null });
+
+    // joinBoard: no existing membership by default
+    mockMembersMaybeSingle.mockResolvedValue({ data: null, error: null });
+
+    // boards visibility check: public by default
+    mockBoardsSelectMaybeSingle.mockResolvedValue({
+      data: { id: "board-123", visibility: "public" },
+      error: null,
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
+
+  // ── createBoard ──────────────────────────────────────────────
 
   describe("createBoard", () => {
     it("uses client-generated board id and does not require SELECT on boards insert", async () => {
@@ -101,25 +125,41 @@ describe("Board service (Supabase)", () => {
         id: generatedId,
         title: "Test Board",
         owner_id: "user-123",
+        visibility: "public",   // default
       });
       expect(mockFrom).toHaveBeenCalledWith("board_members");
-      expect(mockBoardMembersInsert).toHaveBeenCalledWith({
+      expect(mockMembersInsert).toHaveBeenCalledWith({
         board_id: generatedId,
         user_id: "user-123",
         role: "owner",
       });
     });
+
+    it("passes explicit visibility to insert", async () => {
+      const generatedId = "00000000-0000-0000-0000-000000000002";
+      vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(generatedId);
+
+      await createBoard("Secret Board", "user-123", "private");
+
+      expect(mockBoardsInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: "private" })
+      );
+    });
   });
+
+  // ── softDeleteBoard ──────────────────────────────────────────
 
   describe("softDeleteBoard", () => {
     it("updates deleted_at field", async () => {
       await softDeleteBoard("board-123");
       expect(mockFrom).toHaveBeenCalledWith("boards");
-      expect(mockBoardsUpdate).toHaveBeenCalledWith(expect.objectContaining({
-        deleted_at: expect.any(String),
-      }));
+      expect(mockBoardsUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted_at: expect.any(String) })
+      );
     });
   });
+
+  // ── updateBoardMetadata ──────────────────────────────────────
 
   describe("updateBoardMetadata", () => {
     it("updates title", async () => {
@@ -129,46 +169,81 @@ describe("Board service (Supabase)", () => {
     });
   });
 
-  describe("joinBoard", () => {
-    it("checks existing membership before insert", async () => {
-      await joinBoard("board-123", "user-456");
+  // ── joinBoard ────────────────────────────────────────────────
 
-      expect(mockFrom).toHaveBeenCalledWith("board_members");
-      expect(mockBoardMembersSelect).toHaveBeenCalledWith("board_id");
-      expect(mockBoardMembersEq1).toHaveBeenCalledWith("board_id", "board-123");
-      expect(mockBoardMembersEq2).toHaveBeenCalledWith("user_id", "user-456");
-      expect(mockBoardMembersInsert).toHaveBeenCalledWith({
+  describe("joinBoard", () => {
+    it("returns { status: 'member' } when already a member", async () => {
+      mockMembersMaybeSingle.mockResolvedValueOnce({
+        data: { role: "editor" },
+        error: null,
+      });
+
+      const result = await joinBoard("board-123", "user-456");
+      expect(result).toEqual({ status: "member", role: "editor" });
+      expect(mockMembersInsert).not.toHaveBeenCalled();
+    });
+
+    it("checks membership then board visibility, inserts on public board", async () => {
+      // Not a member
+      mockMembersMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+      // Board is public
+      mockBoardsSelectMaybeSingle.mockResolvedValueOnce({
+        data: { id: "board-123", visibility: "public" },
+        error: null,
+      });
+      mockMembersInsert.mockResolvedValueOnce({ error: null });
+
+      const result = await joinBoard("board-123", "user-456");
+
+      expect(result).toEqual({ status: "joined" });
+      expect(mockMembersInsert).toHaveBeenCalledWith({
         board_id: "board-123",
         user_id: "user-456",
         role: "editor",
       });
     });
 
-    it("skips insert when membership already exists", async () => {
-      mockBoardMembersMaybeSingle.mockResolvedValueOnce({
-        data: { board_id: "board-123" },
+    it("returns { status: 'private' } for a private board (no insert)", async () => {
+      mockMembersMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+      mockBoardsSelectMaybeSingle.mockResolvedValueOnce({
+        data: { id: "board-priv", visibility: "private" },
         error: null,
       });
 
-      await joinBoard("board-123", "user-456");
-      expect(mockBoardMembersInsert).not.toHaveBeenCalled();
+      const result = await joinBoard("board-priv", "user-456");
+
+      expect(result).toEqual({ status: "private" });
+      expect(mockMembersInsert).not.toHaveBeenCalled();
     });
 
-    it("treats duplicate membership race as success", async () => {
-      mockBoardMembersInsert.mockResolvedValueOnce({ error: { code: "23505" } });
-      await expect(joinBoard("board-123", "user-456")).resolves.toBeUndefined();
+    it("returns { status: 'not_found' } when board does not exist", async () => {
+      mockMembersMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+      mockBoardsSelectMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+      const result = await joinBoard("board-missing", "user-456");
+
+      expect(result).toEqual({ status: "not_found" });
+      expect(mockMembersInsert).not.toHaveBeenCalled();
     });
 
-    it("throws 'Board not found' on foreign key violations", async () => {
-      mockBoardMembersInsert.mockResolvedValueOnce({ error: { code: "23503" } });
-      await expect(joinBoard("board-missing", "user-456")).rejects.toThrow("Board not found");
+    it("treats duplicate insert race (23505) as already-member success", async () => {
+      mockMembersMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+      mockBoardsSelectMaybeSingle.mockResolvedValueOnce({
+        data: { id: "board-123", visibility: "public" },
+        error: null,
+      });
+      mockMembersInsert.mockResolvedValueOnce({ error: { code: "23505" } });
+
+      const result = await joinBoard("board-123", "user-456");
+      expect(result).toEqual({ status: "member", role: "editor" });
     });
   });
+
+  // ── deleteFrameCascade ───────────────────────────────────────
 
   describe("deleteFrameCascade", () => {
     it("deletes frame + contained objects via a single RPC", async () => {
       await deleteFrameCascade("board-123", "frame-123");
-
       expect(mockRpc).toHaveBeenCalledWith("delete_frame_cascade", {
         p_board_id: "board-123",
         p_frame_id: "frame-123",

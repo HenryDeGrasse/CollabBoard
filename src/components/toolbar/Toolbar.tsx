@@ -19,11 +19,18 @@ interface ToolbarProps {
   selectedCount: number;
   selectedColor: string;
   selectedStrokeWidth: number | null;
+  /** Number of selected connectors */
+  selectedConnectorCount: number;
+  /** Common color of selected connectors (null if mixed) */
+  selectedConnectorColor: string | null;
+  /** Common stroke width of selected connectors (null if mixed) */
+  selectedConnectorStrokeWidth: number | null;
   onToolChange: (tool: ToolType) => void;
   onColorChange: (color: string) => void;
   onStrokeWidthChange: (w: number) => void;
   onChangeSelectedColor: (color: string) => void;
   onChangeSelectedStrokeWidth: (w: number) => void;
+  onChangeSelectedConnectorColor: (color: string) => void;
 }
 
 const tools: { id: ToolType; label: string; icon: React.ReactNode; shortcut: string }[] = [
@@ -77,7 +84,7 @@ function ColorDropdown({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-[60] min-w-[140px]">
+        <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-[60] min-w-[140px]">
           <p className="text-[10px] text-gray-400 uppercase tracking-wider px-1 mb-1.5">{label}</p>
           <div className="grid grid-cols-4 gap-1.5">
             {colors.map((color) => (
@@ -171,14 +178,19 @@ export function Toolbar({
   selectedCount,
   selectedColor,
   selectedStrokeWidth,
+  selectedConnectorCount,
+  selectedConnectorColor,
+  selectedConnectorStrokeWidth,
   onToolChange,
   onColorChange,
   onStrokeWidthChange,
   onChangeSelectedColor,
   onChangeSelectedStrokeWidth,
+  onChangeSelectedConnectorColor,
 }: ToolbarProps) {
+  const isConnectorTool = activeTool === "arrow" || activeTool === "line";
   const showCreationColor =
-    activeTool === "sticky" || activeTool === "rectangle" || activeTool === "circle" || activeTool === "line";
+    activeTool === "sticky" || activeTool === "rectangle" || activeTool === "circle" || isConnectorTool;
 
   const creationColors = activeTool === "sticky" ? getStickyColorArray() : getShapeColorArray();
   const allColors = [...new Set([...getStickyColorArray(), ...getShapeColorArray()])];
@@ -219,8 +231,8 @@ export function Toolbar({
         </>
       )}
 
-      {/* Stroke width for line tool */}
-      {activeTool === "line" && (
+      {/* Stroke width for connector tools (arrow / line) */}
+      {isConnectorTool && (
         <StrokeWidthPicker
           value={activeStrokeWidth}
           onChange={onStrokeWidthChange}
@@ -249,6 +261,29 @@ export function Toolbar({
           )}
 
           <span className="text-[10px] text-gray-400 px-1">{selectedCount} selected</span>
+        </>
+      )}
+
+      {/* Style controls for selected connectors (arrows / lines) */}
+      {selectedConnectorCount > 0 && activeTool === "select" && (
+        <>
+          {selectedCount === 0 && <div className="w-px h-6 bg-gray-200 mx-1" />}
+          <ColorDropdown
+            activeColor={selectedConnectorColor ?? "#4B5563"}
+            onColorChange={onChangeSelectedConnectorColor}
+            colors={allColors}
+            label="Connector color"
+          />
+          <StrokeWidthPicker
+            value={selectedConnectorStrokeWidth ?? 2.5}
+            onChange={onChangeSelectedStrokeWidth}
+            label="Connector thickness"
+          />
+          {selectedCount === 0 && (
+            <span className="text-[10px] text-gray-400 px-1">
+              {selectedConnectorCount} connector{selectedConnectorCount !== 1 ? "s" : ""}
+            </span>
+          )}
         </>
       )}
     </div>

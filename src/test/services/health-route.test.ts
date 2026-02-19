@@ -22,7 +22,6 @@ describe("GET /api/health", () => {
   it("returns non-secret configuration diagnostics", async () => {
     process.env.SUPABASE_URL = "http://127.0.0.1:54321";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "secret";
-    process.env.OPENAI_API_KEY = "openai";
 
     const req: any = { method: "GET" };
     const res = createRes();
@@ -34,18 +33,6 @@ describe("GET /api/health", () => {
       ok: true,
       supabaseUrl: "http://127.0.0.1:54321",
       hasServiceKey: true,
-      hasOpenAI: true,
-      langsmith: {
-        tracing: expect.any(Boolean),
-        project: expect.any(String),
-        hasKey: expect.any(Boolean),
-      },
-      aiRouteLatency: expect.objectContaining({
-        windowMinutes: expect.any(Number),
-        sampleCount: expect.any(Number),
-        bySource: expect.any(Object),
-        byIntent: expect.any(Object),
-      }),
       nodeEnv: expect.any(String),
     });
   });

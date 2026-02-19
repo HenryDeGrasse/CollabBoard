@@ -69,7 +69,10 @@ interface BoardProps {
   onDeleteObject: (id: string) => void;
   onDeleteFrame: (frameId: string) => void;
   onCreateConnector: (conn: Omit<Connector, "id">) => string;
+  onUpdateConnector: (id: string, updates: Partial<Pick<Connector, "color" | "strokeWidth">>) => void;
   onDeleteConnector: (id: string) => void;
+  /** Called when the set of selected connector IDs changes */
+  onSelectedConnectorsChange?: (ids: Set<string>) => void;
   onCursorMove: (x: number, y: number) => void;
   onObjectDragBroadcast: (
     objectId: string,
@@ -107,7 +110,9 @@ export function Board({
   onDeleteObject,
   onDeleteFrame,
   onCreateConnector,
+  onUpdateConnector: _onUpdateConnector,
   onDeleteConnector,
+  onSelectedConnectorsChange,
   onCursorMove,
   onObjectDragBroadcast,
   onObjectDragEndBroadcast,
@@ -135,7 +140,11 @@ export function Board({
     height: 0,
     visible: false,
   });
-  const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(new Set());
+  const [selectedConnectorIds, _setSelectedConnectorIds] = useState<Set<string>>(new Set());
+  const setSelectedConnectorIds = useCallback((ids: Set<string>) => {
+    _setSelectedConnectorIds(ids);
+    onSelectedConnectorsChange?.(ids);
+  }, [onSelectedConnectorsChange]);
   const draggingRef = useRef<Set<string>>(new Set());
   // Track which objects are currently "inside a frame" during drag, for hysteresis
   const dragInsideFrameRef = useRef<Set<string>>(new Set());
@@ -220,12 +229,16 @@ export function Board({
     []
   );
 
-  // Line drawing state
-  const [lineDraw, setLineDraw] = useState<{
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
+  // Connector drawing state — unified for both line and arrow tools.
+  // First click sets the start point; second click completes.
+  // If the click lands on an object, the endpoint snaps (pins) to it.
+  const [connectorDraw, setConnectorDraw] = useState<{
+    fromId: string;      // "" = free point
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    style: "arrow" | "line";
   } | null>(null);
 
   // Frame drawing state (drag-to-create)
@@ -268,25 +281,18 @@ export function Board({
   const pendingDragPositionsRef = useRef<Record<string, { x: number; y: number }> | null>(null);
   const pendingDragParentFrameIdsRef = useRef<Record<string, string | null> | null>(null);
 
-  // Arrow tool: object being hovered (for visual feedback)
-  const [arrowHoverObjectId, setArrowHoverObjectId] = useState<string | null>(null);
-
-  // Arrow drawing state
-  const [arrowDraw, setArrowDraw] = useState<{
-    fromId: string;
-    fromX: number;
-    fromY: number;
-    toX: number;
-    toY: number;
-  } | null>(null);
+  // Connector tools (arrow / line): object being hovered (for snap visual feedback)
+  const [connectorHoverObjectId, setConnectorHoverObjectId] = useState<string | null>(null);
 
   const stageWidth = stageSize.width;
   const stageHeight = stageSize.height;
 
-  // Clear arrow hover when tool changes away from arrow
+  const isConnectorTool = activeTool === "arrow" || activeTool === "line";
+
+  // Clear hover when tool changes away from connector tools
   useEffect(() => {
-    if (activeTool !== "arrow") setArrowHoverObjectId(null);
-  }, [activeTool]);
+    if (!isConnectorTool) setConnectorHoverObjectId(null);
+  }, [isConnectorTool]);
 
   // Track space key for pan mode
   useEffect(() => {
@@ -421,6 +427,8 @@ export function Board({
   const connectorsByFrame = useMemo(() => {
     const map: Record<string, typeof connectors[string][]> = {};
     for (const conn of Object.values(connectors)) {
+      // Free-floating endpoints (empty fromId/toId) are never intra-frame
+      if (!conn.fromId || !conn.toId) continue;
       const fromFrame = objects[conn.fromId]?.parentFrameId;
       const toFrame = objects[conn.toId]?.parentFrameId;
       if (fromFrame && fromFrame === toFrame) {
@@ -758,8 +766,8 @@ export function Board({
 
       onCursorMove(canvasPoint.x, canvasPoint.y);
 
-      // Arrow tool: detect hovered object for visual feedback
-      if (activeTool === "arrow") {
+      // Connector tools (arrow / line): detect hovered object for snap visual feedback
+      if (isConnectorTool) {
         // Find topmost object under cursor (by checking bounds + rotation)
         let hoveredId: string | null = null;
         const objs = Object.values(objectsRef.current);
@@ -781,20 +789,13 @@ export function Board({
             break;
           }
         }
-        setArrowHoverObjectId(hoveredId);
+        setConnectorHoverObjectId(hoveredId);
       }
 
-      // Arrow drawing preview
-      if (arrowDraw && activeTool === "arrow") {
-        setArrowDraw((prev) =>
+      // Connector drawing preview (both arrow and line tools)
+      if (connectorDraw && isConnectorTool) {
+        setConnectorDraw((prev) =>
           prev ? { ...prev, toX: canvasPoint.x, toY: canvasPoint.y } : null
-        );
-      }
-
-      // Line drawing preview
-      if (lineDraw && activeTool === "line") {
-        setLineDraw((prev) =>
-          prev ? { ...prev, endX: canvasPoint.x, endY: canvasPoint.y } : null
         );
       }
 
@@ -878,8 +879,8 @@ export function Board({
       onCursorMove,
       getCanvasPoint,
       activeTool,
-      arrowDraw,
-      lineDraw,
+      isConnectorTool,
+      connectorDraw,
       frameDraw,
       shapeDraw,
       frameManualDrag,
@@ -938,55 +939,36 @@ export function Board({
         return;
       }
 
-      if (activeTool === "arrow") {
-        if (arrowDraw) setArrowDraw(null);
-        return;
-      }
-
-      // Line tool: first click sets start, second click creates line
-      if (activeTool === "line") {
-        if (!lineDraw) {
-          setLineDraw({
-            startX: canvasPoint.x,
-            startY: canvasPoint.y,
-            endX: canvasPoint.x,
-            endY: canvasPoint.y,
+      // Arrow + Line tools: both work the same way (click-click with object snap)
+      if (isConnectorTool) {
+        const style: "arrow" | "line" = activeTool === "arrow" ? "arrow" : "line";
+        if (!connectorDraw) {
+          // First click — start a free-floating connector from this canvas point
+          setConnectorDraw({
+            fromId: "",
+            fromX: canvasPoint.x,
+            fromY: canvasPoint.y,
+            toX: canvasPoint.x,
+            toY: canvasPoint.y,
+            style,
           });
         } else {
-          const maxZ = Math.max(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
-          const x = Math.min(lineDraw.startX, canvasPoint.x);
-          const y = Math.min(lineDraw.startY, canvasPoint.y);
-          const width = Math.abs(canvasPoint.x - lineDraw.startX) || 1;
-          const height = Math.abs(canvasPoint.y - lineDraw.startY) || 1;
-          const parentFrame = getFrameAtPoint(x + width / 2, y + height / 2);
-          const newId = onCreateObject({
-            type: "line",
-            x,
-            y,
-            width,
-            height,
+          // Second click on empty canvas — complete to a free point
+          const fromPoint = connectorDraw.fromId === ""
+            ? { x: connectorDraw.fromX, y: connectorDraw.fromY }
+            : undefined;
+          const toPoint = { x: canvasPoint.x, y: canvasPoint.y };
+          onCreateConnector({
+            fromId: connectorDraw.fromId,
+            toId: "",
+            style: connectorDraw.style,
+            fromPoint,
+            toPoint,
             color: activeColor,
-            rotation: 0,
-            zIndex: maxZ + 1,
-            createdBy: currentUserId,
-            parentFrameId: parentFrame?.id ?? null,
-            points: [
-              lineDraw.startX - x,
-              lineDraw.startY - y,
-              canvasPoint.x - x,
-              canvasPoint.y - y,
-            ],
             strokeWidth: activeStrokeWidth,
           });
-          setLineDraw(null);
-          // Push undo after Firebase assigns the object
-          setTimeout(() => {
-            const created = objectsRef.current[newId];
-            if (created) {
-              onPushUndo({ type: "create_object", objectId: newId, object: created });
-            }
-          }, 100);
-          onResetTool(newId);
+          setConnectorDraw(null);
+          onResetTool();
         }
         return;
       }
@@ -995,13 +977,14 @@ export function Board({
     },
     [
       activeTool,
+      isConnectorTool,
       activeColor,
       getCanvasPoint,
       currentUserId,
       editingObjectId,
-      arrowDraw,
-      lineDraw,
+      connectorDraw,
       onCreateObject,
+      onCreateConnector,
       onClearSelection,
       onSetEditingObject,
       onResetTool,
@@ -1533,44 +1516,57 @@ export function Board({
     [isObjectLocked, onSetEditingObject, activeTool]
   );
 
-  // Arrow tool: click on object to start, click on another to connect
-  const handleObjectClickForArrow = useCallback(
+  // Connector tools (arrow / line): click on object to start pinned OR snap end
+  const handleObjectClickForConnector = useCallback(
     (id: string) => {
-      if (activeTool !== "arrow") return;
+      if (!isConnectorTool) return;
 
       const obj = objectsRef.current[id];
       if (!obj) return;
 
       const centerX = obj.x + obj.width / 2;
       const centerY = obj.y + obj.height / 2;
+      const style: "arrow" | "line" = activeTool === "arrow" ? "arrow" : "line";
 
-      if (!arrowDraw) {
-        setArrowDraw({
+      if (!connectorDraw) {
+        // First click — start pinned to this object
+        setConnectorDraw({
           fromId: id,
           fromX: centerX,
           fromY: centerY,
           toX: centerX,
           toY: centerY,
+          style,
         });
       } else {
-        if (arrowDraw.fromId !== id) {
-          onCreateConnector({
-            fromId: arrowDraw.fromId,
-            toId: id,
-            style: "arrow",
-          });
-          onResetTool();
+        // Don't allow connecting an object to itself
+        if (connectorDraw.fromId === id) {
+          setConnectorDraw(null);
+          return;
         }
-        setArrowDraw(null);
+        // Complete the connector pinned to this target object.
+        const fromPoint = connectorDraw.fromId === ""
+          ? { x: connectorDraw.fromX, y: connectorDraw.fromY }
+          : undefined;
+        onCreateConnector({
+          fromId: connectorDraw.fromId,
+          toId: id,
+          style: connectorDraw.style,
+          fromPoint,
+          color: activeColor,
+          strokeWidth: activeStrokeWidth,
+        });
+        setConnectorDraw(null);
+        onResetTool();
       }
     },
-    [activeTool, arrowDraw, onCreateConnector, onResetTool]
+    [isConnectorTool, activeTool, connectorDraw, onCreateConnector, onResetTool]
   );
 
   const handleObjectClick = useCallback(
     (id: string, multi?: boolean) => {
-      if (activeTool === "arrow") {
-        handleObjectClickForArrow(id);
+      if (isConnectorTool) {
+        handleObjectClickForConnector(id);
         return;
       }
       // Only allow selection in select mode
@@ -1594,7 +1590,7 @@ export function Board({
         setSelectedConnectorIds(new Set(connIds));
       }
     },
-    [activeTool, handleObjectClickForArrow, onSelect, selectedIds]
+    [activeTool, isConnectorTool, handleObjectClickForConnector, onSelect, selectedIds]
   );
 
   const handleTextCommit = useCallback(
@@ -1647,16 +1643,17 @@ export function Board({
         return;
       }
 
-      if (activeTool === "arrow" && arrowDraw) {
-        setArrowDraw(null);
-        return;
-      }
+      // NOTE: Do NOT cancel connectorDraw on mousedown — that fires before the
+      // click event, so clearing here would immediately restart the draw
+      // when the click handler runs next (infinite loop).  Cancellation is
+      // handled exclusively by Escape and by the click/tap handlers.
+      if (isConnectorTool) return;
 
       if (activeTool !== "select") return;
 
       selectionStartRef.current = canvasPoint;
     },
-    [activeTool, getCanvasPoint, arrowDraw]
+    [activeTool, getCanvasPoint]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -1916,8 +1913,7 @@ export function Board({
         setSelectedConnectorIds(new Set());
       }
       if (e.key === "Escape") {
-        setArrowDraw(null);
-        setLineDraw(null);
+        setConnectorDraw(null);
         setFrameDraw(null);
         setShapeDraw(null);
         if (editingObjectId) {
@@ -1952,7 +1948,7 @@ export function Board({
   // Cursor style
   const cursorStyle = isPanning
     ? "grab"
-    : activeTool === "arrow" || activeTool === "line"
+    : isConnectorTool
     ? "crosshair"
     : activeTool === "select"
     ? "default"
@@ -2031,12 +2027,12 @@ export function Board({
         }}
       />
 
-      {/* Line tool hint */}
-      {activeTool === "line" && (
+      {/* Connector tool hint (arrow / line) */}
+      {isConnectorTool && (
         <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg pointer-events-none">
-          {lineDraw
-            ? "Click to place the line's end point — Esc to cancel"
-            : "Click to place the line's start point"}
+          {connectorDraw
+            ? "Click to place the end point, or click an object to snap — Esc to cancel"
+            : "Click to place the start point, or click an object to snap"}
         </div>
       )}
 
@@ -2049,14 +2045,7 @@ export function Board({
         </div>
       )}
 
-      {/* Arrow tool hint */}
-      {activeTool === "arrow" && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg pointer-events-none">
-          {arrowDraw
-            ? "Click on another object to connect — Esc to cancel"
-            : "Click on an object to start an arrow"}
-        </div>
-      )}
+
 
       {/* Pan hint */}
       {isPanning && (
@@ -2086,26 +2075,24 @@ export function Board({
         <Layer>
           {/* Intra-frame connectors are rendered inside each frame's clipped group below */}
 
-          {/* Arrow drawing preview */}
-          {arrowDraw && (
+          {/* Connector drawing preview (arrow or line) */}
+          {connectorDraw && connectorDraw.style === "arrow" && (
             <Arrow
-              points={[arrowDraw.fromX, arrowDraw.fromY, arrowDraw.toX, arrowDraw.toY]}
-              stroke="#6B7280"
-              strokeWidth={2}
-              fill="#6B7280"
+              points={[connectorDraw.fromX, connectorDraw.fromY, connectorDraw.toX, connectorDraw.toY]}
+              stroke={activeColor}
+              strokeWidth={activeStrokeWidth}
+              fill={activeColor}
               pointerLength={12}
               pointerWidth={9}
               dash={[6, 4]}
               listening={false}
             />
           )}
-
-          {/* Line drawing preview */}
-          {lineDraw && (
+          {connectorDraw && connectorDraw.style === "line" && (
             <Line
-              points={[lineDraw.startX, lineDraw.startY, lineDraw.endX, lineDraw.endY]}
+              points={[connectorDraw.fromX, connectorDraw.fromY, connectorDraw.toX, connectorDraw.toY]}
               stroke={activeColor}
-              strokeWidth={3}
+              strokeWidth={activeStrokeWidth}
               dash={[6, 4]}
               lineCap="round"
               listening={false}
@@ -2201,7 +2188,7 @@ export function Board({
                   isEditing={editingObjectId === obj.id}
                   isLockedByOther={lock.locked}
                   lockedByColor={lock.lockedByColor}
-                  isArrowHover={arrowHoverObjectId === obj.id}
+                  isArrowHover={connectorHoverObjectId === obj.id}
                   interactable={activeTool === "select"}
                   draftText={getDraftTextForObject(obj.id)?.text}
                   onSelect={handleObjectClick}
@@ -2231,7 +2218,7 @@ export function Board({
                   lockedByName={lock.lockedBy}
                   lockedByColor={lock.lockedByColor}
                   draftText={getDraftTextForObject(obj.id)?.text}
-                  isArrowHover={arrowHoverObjectId === obj.id}
+                  isArrowHover={connectorHoverObjectId === obj.id}
                   interactable={activeTool === "select"}
                   onSelect={handleObjectClick}
                   onDragStart={handleDragStart}
@@ -2316,7 +2303,7 @@ export function Board({
                               isEditing={editingObjectId === cobj.id}
                               isLockedByOther={lock.locked}
                               lockedByColor={lock.lockedByColor}
-                              isArrowHover={arrowHoverObjectId === cobj.id}
+                              isArrowHover={connectorHoverObjectId === cobj.id}
                               interactable={activeTool === "select"}
                               draftText={getDraftTextForObject(cobj.id)?.text}
                               onSelect={handleObjectClick}
@@ -2339,7 +2326,7 @@ export function Board({
                               lockedByName={lock.lockedBy}
                               lockedByColor={lock.lockedByColor}
                               draftText={getDraftTextForObject(cobj.id)?.text}
-                              isArrowHover={arrowHoverObjectId === cobj.id}
+                              isArrowHover={connectorHoverObjectId === cobj.id}
                               interactable={activeTool === "select"}
                               onSelect={handleObjectClick}
                               onDragStart={handleDragStart}
@@ -2369,9 +2356,11 @@ export function Board({
                           !poppedOutDraggedObjectIds.has(conn.fromId) && !poppedOutDraggedObjectIds.has(conn.toId)
                         )
                         .map((conn) => {
-                          const from = objectsWithLivePositions[conn.fromId];
-                          const to = objectsWithLivePositions[conn.toId];
-                          if (!from || !to) return null;
+                          const from = conn.fromId ? objectsWithLivePositions[conn.fromId] : undefined;
+                          const to = conn.toId ? objectsWithLivePositions[conn.toId] : undefined;
+                          // Need at least a resolvable source and target (object or free point)
+                          if (!from && !conn.fromPoint) return null;
+                          if (!to && !conn.toPoint) return null;
                           return (
                             <ConnectorLine
                               key={conn.id}
@@ -2412,7 +2401,7 @@ export function Board({
                     isEditing={editingObjectId === obj.id}
                     isLockedByOther={lock.locked}
                     lockedByColor={lock.lockedByColor}
-                    isArrowHover={arrowHoverObjectId === obj.id}
+                    isArrowHover={connectorHoverObjectId === obj.id}
                   interactable={activeTool === "select"}
                     draftText={getDraftTextForObject(obj.id)?.text}
                     onSelect={handleObjectClick}
@@ -2434,7 +2423,7 @@ export function Board({
                     lockedByName={lock.lockedBy}
                     lockedByColor={lock.lockedByColor}
                     draftText={getDraftTextForObject(obj.id)?.text}
-                    isArrowHover={arrowHoverObjectId === obj.id}
+                    isArrowHover={connectorHoverObjectId === obj.id}
                   interactable={activeTool === "select"}
                     onSelect={handleObjectClick}
                     onDragStart={handleDragStart}
@@ -2583,19 +2572,26 @@ export function Board({
           {/* Top-level connectors: cross-frame, unframed, or with a popped-out endpoint */}
           {Object.values(connectors)
             .filter((conn) => {
-              const from = objects[conn.fromId];
-              const to = objects[conn.toId];
+              const from = conn.fromId ? objects[conn.fromId] : undefined;
+              const to = conn.toId ? objects[conn.toId] : undefined;
               const fromFrame = from?.parentFrameId ?? null;
               const toFrame = to?.parentFrameId ?? null;
               // If either endpoint is being dragged out of its frame, render unclipped
-              if (poppedOutDraggedObjectIds.has(conn.fromId) || poppedOutDraggedObjectIds.has(conn.toId)) return true;
+              if (
+                (conn.fromId && poppedOutDraggedObjectIds.has(conn.fromId)) ||
+                (conn.toId && poppedOutDraggedObjectIds.has(conn.toId))
+              ) return true;
+              // Free-floating endpoints always render at top level
+              if (!conn.fromId || !conn.toId) return true;
               // Anything NOT intra-frame renders on top of frames
               return !(fromFrame != null && fromFrame === toFrame);
             })
             .map((conn) => {
-              const fromObj = objectsWithLivePositions[conn.fromId];
-              const toObj = objectsWithLivePositions[conn.toId];
-              if (!fromObj || !toObj) return null;
+              const fromObj = conn.fromId ? objectsWithLivePositions[conn.fromId] : undefined;
+              const toObj = conn.toId ? objectsWithLivePositions[conn.toId] : undefined;
+              // Skip if a pinned endpoint's object no longer exists
+              if (conn.fromId && !fromObj && !conn.fromPoint) return null;
+              if (conn.toId && !toObj && !conn.toPoint) return null;
               return (
                 <ConnectorLine
                   key={`top-${conn.id}`}

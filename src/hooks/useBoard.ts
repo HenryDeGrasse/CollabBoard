@@ -32,9 +32,16 @@ function dbToObject(row: any): BoardObject {
 function dbToConnector(row: any): Connector {
   return {
     id: row.id,
-    fromId: row.from_id,
-    toId: row.to_id,
+    // from_id / to_id are NULL in the DB when the endpoint is a free canvas
+    // point.  Map NULL → "" so the rest of the app can use empty-string as
+    // the sentinel for "no object pinned".
+    fromId: row.from_id ?? "",
+    toId: row.to_id ?? "",
     style: row.style,
+    fromPoint: row.from_point ?? undefined,
+    toPoint: row.to_point ?? undefined,
+    color: row.color ?? undefined,
+    strokeWidth: row.stroke_width ?? undefined,
   };
 }
 
@@ -48,6 +55,7 @@ export interface UseBoardReturn {
   deleteObject: (id: string) => void;
   deleteFrameCascade: (frameId: string) => void;
   createConnector: (conn: Omit<Connector, "id">) => string;
+  updateConnector: (id: string, updates: Partial<Pick<Connector, "color" | "strokeWidth">>) => void;
   deleteConnector: (id: string) => void;
   restoreObject: (obj: BoardObject) => void;
   restoreObjects: (objs: BoardObject[]) => void;
@@ -326,6 +334,22 @@ export function useBoard(boardId: string): UseBoardReturn {
     [boardId]
   );
 
+  const updateConnector = useCallback(
+    (id: string, updates: Partial<Pick<Connector, "color" | "strokeWidth">>) => {
+      // Optimistic local update
+      setConnectors((prev) => {
+        const existing = prev[id];
+        if (!existing) return prev;
+        return { ...prev, [id]: { ...existing, ...updates } };
+      });
+
+      boardService.updateConnector(boardId, id, updates).catch((err) => {
+        console.error("Failed to update connector:", err);
+      });
+    },
+    [boardId]
+  );
+
   const deleteConnector = useCallback(
     (id: string) => {
       setConnectors((prev) => {
@@ -401,6 +425,7 @@ export function useBoard(boardId: string): UseBoardReturn {
     deleteObject,
     deleteFrameCascade,
     createConnector,
+    updateConnector,
     deleteConnector,
     restoreObject,
     restoreObjects,

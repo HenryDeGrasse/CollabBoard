@@ -26,10 +26,20 @@ export interface BoardObject {
 
 export interface Connector {
   id: string;
+  /** ID of the source object, or empty string when the source is a free point */
   fromId: string;
+  /** ID of the target object, or empty string when the target is a free point */
   toId: string;
   style: "arrow" | "line";
   points?: number[];
+  /** Free-floating source anchor (used when fromId is empty) */
+  fromPoint?: { x: number; y: number };
+  /** Free-floating target anchor (used when toId is empty) */
+  toPoint?: { x: number; y: number };
+  /** Stroke / line color (default "#4B5563") */
+  color?: string;
+  /** Stroke thickness in px (default 2.5) */
+  strokeWidth?: number;
 }
 
 // BoardMetadata is now defined in services/board.ts

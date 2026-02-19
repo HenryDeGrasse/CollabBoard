@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-// We test the logic directly — these are pure functions
-// Duplicated from api/_lib/framePlacement.ts to test in vitest context
-// (Vercel API files aren't processed by Vite)
+// Pure function tests for frame placement grid layout logic
 
 const FRAME_TITLE_HEIGHT = 40;
 const FRAME_PADDING = 20;

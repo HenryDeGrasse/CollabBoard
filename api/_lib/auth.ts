@@ -77,7 +77,8 @@ export async function assertCanWriteBoard(
     throw new AuthError(403, "Not authorized to modify this board");
   }
 
-  if (member.role === "viewer") {
-    throw new AuthError(403, "Viewers cannot modify the board");
+  // Only owner and editor roles can write (viewer role removed)
+  if (!["owner", "editor"].includes(member.role)) {
+    throw new AuthError(403, "Not authorized to modify this board");
   }
 }

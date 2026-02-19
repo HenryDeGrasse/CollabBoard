@@ -21,7 +21,6 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      // Proxy /api calls to vercel dev (port 3000) for local AI agent testing
       "/api": {
         target: "http://localhost:3000",
         changeOrigin: true,

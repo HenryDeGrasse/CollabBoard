@@ -46,7 +46,7 @@ async function loadHandler(route) {
 const server = createServer(async (req, res) => {
   // CORS preflight
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, PATCH, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
@@ -55,7 +55,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // Route: /api/ai-agent -> ai-agent.ts
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const route = url.pathname.replace(/^\/api\//, "").replace(/\/$/, "");
 
@@ -83,15 +82,29 @@ const server = createServer(async (req, res) => {
     _statusCode: 200,
     _headers: {},
     _body: null,
+    _headersSent: false,
     setHeader(k, v) { this._headers[k] = v; res.setHeader(k, v); return this; },
     status(code) { this._statusCode = code; return this; },
     json(data) {
       res.writeHead(this._statusCode, { "Content-Type": "application/json", ...this._headers });
+      this._headersSent = true;
       res.end(JSON.stringify(data));
       return this;
     },
+    // Support streaming: write() sends chunks without ending the response
+    write(data) {
+      if (!this._headersSent) {
+        res.writeHead(this._statusCode, this._headers);
+        this._headersSent = true;
+      }
+      res.write(data);
+      return this;
+    },
     end(data) {
-      res.writeHead(this._statusCode, this._headers);
+      if (!this._headersSent) {
+        res.writeHead(this._statusCode, this._headers);
+        this._headersSent = true;
+      }
       res.end(data);
       return this;
     },
@@ -111,13 +124,11 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "(not set)";
   const isLocal = supabaseUrl.includes("127.0.0.1") || supabaseUrl.includes("localhost");
-  console.log(`🚀 API dev server running at http://localhost:${PORT}`);
-  console.log(`   POST http://localhost:${PORT}/api/ai-agent`);
-  console.log(`   Supabase: ${supabaseUrl} ${isLocal ? "✓ local" : "⚠️  PRODUCTION"}`);
-  console.log(`   OpenAI:   ${process.env.OPENAI_API_KEY ? "✓ set" : "✗ MISSING"}`);
+  console.log(`API dev server running at http://localhost:${PORT}`);
+  console.log(`   Supabase: ${supabaseUrl} ${isLocal ? "local" : "PRODUCTION"}`);
   if (!isLocal) {
-    console.warn("   ⚠️  WARNING: API server is using PRODUCTION Supabase.");
-    console.warn("              Local browser sessions (127.0.0.1) will get 401.");
-    console.warn("              Add SUPABASE_URL=http://127.0.0.1:54321 to .env.local");
+    console.warn("   WARNING: API server is using PRODUCTION Supabase.");
+    console.warn("            Local browser sessions (127.0.0.1) will get 401.");
+    console.warn("            Add SUPABASE_URL=http://127.0.0.1:54321 to .env.local");
   }
 });

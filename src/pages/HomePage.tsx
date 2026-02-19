@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../components/auth/AuthProvider";
 import {
   getUserBoards,
   createBoard,
   joinBoard,
   softDeleteBoard,
+  removeBoardMember,
+  getInviteToken,
   type BoardMetadata,
 } from "../services/board";
 import {
@@ -17,6 +20,11 @@ import {
   ExternalLink,
   LayoutGrid,
   List,
+  MoreHorizontal,
+  Link2,
+  Copy,
+  Globe,
+  Lock,
 } from "lucide-react";
 
 // Inline logo matching the login page — two cursor arrows (navy + mint)
@@ -36,7 +44,7 @@ interface HomePageProps {
 type ViewMode = "grid" | "list";
 
 export function HomePage({ onNavigateToBoard }: HomePageProps) {
-  const { user, displayName, signOut } = useAuth();
+  const { user, session, displayName, signOut } = useAuth();
   const userId = user?.id || "";
   const [boards, setBoards] = useState<BoardMetadata[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,8 +53,24 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState("");
-  const [deletingBoardId, setDeletingBoardId] = useState<string | null>(null);
+  const [newBoardVisibility, setNewBoardVisibility] = useState<"public" | "private">("public");
+  const [pendingBoardAction, setPendingBoardAction] = useState<{ boardId: string; isOwner: boolean } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "error" | "info" } | null>(null);
+
+  // One-time toast passed via localStorage (e.g., removed from board)
+  useEffect(() => {
+    const raw = localStorage.getItem("collabboard_toast");
+    if (!raw) return;
+    localStorage.removeItem("collabboard_toast");
+    try {
+      const parsed = JSON.parse(raw) as { message?: string; type?: "error" | "info" };
+      if (parsed?.message) {
+        setToast({ message: parsed.message, type: parsed.type ?? "info" });
+      }
+    } catch {
+      // ignore malformed payload
+    }
+  }, []);
 
   // Auto-dismiss toast after 3 s
   useEffect(() => {
@@ -99,23 +123,33 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
     if (!userId) return;
     const title = newBoardTitle.trim() || "Untitled Board";
     try {
-      const boardId = await createBoard(title, userId);
+      const boardId = await createBoard(title, userId, newBoardVisibility);
       setShowCreateModal(false);
       setNewBoardTitle("");
+      setNewBoardVisibility("public");
       onNavigateToBoard(boardId);
     } catch (err) {
       console.error("Failed to create board:", err);
     }
-  }, [newBoardTitle, userId, onNavigateToBoard]);
+  }, [newBoardTitle, newBoardVisibility, userId, onNavigateToBoard]);
 
   const handleJoinBoard = useCallback(async () => {
     const id = joinBoardId.trim();
     if (!id || !userId) return;
     try {
-      await joinBoard(id, userId);
+      const result = await joinBoard(id, userId);
+      if (result.status === "not_found") {
+        setToast({ message: "Board not found — double-check the ID and try again.", type: "error" });
+        return;
+      }
+      if (result.status === "private") {
+        // Navigate to the board's private access screen so the user can request access.
+        onNavigateToBoard(id);
+        return;
+      }
       onNavigateToBoard(id);
     } catch (err) {
-      setToast({ message: "Board not found — double-check the ID and try again.", type: "error" });
+      setToast({ message: "Something went wrong — please try again.", type: "error" });
       console.error("Failed to join board:", err);
     }
   }, [joinBoardId, userId, onNavigateToBoard]);
@@ -125,10 +159,48 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
       await softDeleteBoard(boardId);
       setBoards((prev) => prev.filter((b) => b.id !== boardId));
       localStorage.removeItem(`collabboard-thumb-${boardId}`); // clean up thumbnail
+      setToast({ message: "Board removed.", type: "info" });
     } catch (err) {
       console.error("Failed to delete board:", err);
     }
-    setDeletingBoardId(null);
+    setPendingBoardAction(null);
+  }, []);
+
+  const handleLeaveBoard = useCallback(async (boardId: string) => {
+    if (!userId || !session?.access_token) return;
+    try {
+      await removeBoardMember(boardId, userId, session.access_token);
+      setBoards((prev) => prev.filter((b) => b.id !== boardId));
+      localStorage.removeItem(`collabboard-thumb-${boardId}`);
+      setToast({ message: "You left the board.", type: "info" });
+    } catch (err) {
+      console.error("Failed to leave board:", err);
+      setToast({ message: "Couldn't leave board. Please try again.", type: "error" });
+    }
+    setPendingBoardAction(null);
+  }, [userId, session?.access_token]);
+
+  const handleCopyInvite = useCallback(async (boardId: string) => {
+    if (!session?.access_token) return;
+    try {
+      const token = await getInviteToken(boardId, session.access_token);
+      const url = `${window.location.origin}/invite/${token}`;
+      await navigator.clipboard.writeText(url);
+      setToast({ message: "Invite link copied to clipboard.", type: "info" });
+    } catch (err) {
+      console.error("Failed to copy invite link:", err);
+      setToast({ message: "Couldn't copy invite link. Try again.", type: "error" });
+    }
+  }, [session?.access_token]);
+
+  const handleCopyBoardId = useCallback(async (boardId: string) => {
+    try {
+      await navigator.clipboard.writeText(boardId);
+      setToast({ message: "Board ID copied to clipboard.", type: "info" });
+    } catch (err) {
+      console.error("Failed to copy board ID:", err);
+      setToast({ message: "Couldn't copy board ID.", type: "error" });
+    }
   }, []);
 
   const formatDate = (timestamp: number) => {
@@ -257,9 +329,19 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
             <div className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-2"}>
               {myBoards.map((meta) => (
                 viewMode === "grid" ? (
-                  <BoardCard key={meta.id} meta={meta} isOwner onOpen={() => onNavigateToBoard(meta.id)} onDelete={() => setDeletingBoardId(meta.id)} formatDate={formatDate} />
+                  <BoardCard key={meta.id} meta={meta} isOwner
+                    onOpen={() => onNavigateToBoard(meta.id)}
+                    onDelete={() => setPendingBoardAction({ boardId: meta.id, isOwner: true })}
+                    onCopyInvite={() => handleCopyInvite(meta.id)}
+                    onCopyBoardId={() => handleCopyBoardId(meta.id)}
+                    formatDate={formatDate} />
                 ) : (
-                  <BoardRow key={meta.id} meta={meta} isOwner onOpen={() => onNavigateToBoard(meta.id)} onDelete={() => setDeletingBoardId(meta.id)} formatDate={formatDate} />
+                  <BoardRow key={meta.id} meta={meta} isOwner
+                    onOpen={() => onNavigateToBoard(meta.id)}
+                    onDelete={() => setPendingBoardAction({ boardId: meta.id, isOwner: true })}
+                    onCopyInvite={() => handleCopyInvite(meta.id)}
+                    onCopyBoardId={() => handleCopyBoardId(meta.id)}
+                    formatDate={formatDate} />
                 )
               ))}
             </div>
@@ -272,9 +354,17 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
             <div className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-2"}>
               {sharedBoards.map((meta) => (
                 viewMode === "grid" ? (
-                  <BoardCard key={meta.id} meta={meta} isOwner={false} onOpen={() => onNavigateToBoard(meta.id)} formatDate={formatDate} />
+                  <BoardCard key={meta.id} meta={meta} isOwner={false}
+                    onOpen={() => onNavigateToBoard(meta.id)}
+                    onDelete={() => setPendingBoardAction({ boardId: meta.id, isOwner: false })}
+                    onCopyBoardId={() => handleCopyBoardId(meta.id)}
+                    formatDate={formatDate} />
                 ) : (
-                  <BoardRow key={meta.id} meta={meta} isOwner={false} onOpen={() => onNavigateToBoard(meta.id)} formatDate={formatDate} />
+                  <BoardRow key={meta.id} meta={meta} isOwner={false}
+                    onOpen={() => onNavigateToBoard(meta.id)}
+                    onDelete={() => setPendingBoardAction({ boardId: meta.id, isOwner: false })}
+                    onCopyBoardId={() => handleCopyBoardId(meta.id)}
+                    formatDate={formatDate} />
                 )
               ))}
             </div>
@@ -287,10 +377,64 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowCreateModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Create New Board</h2>
-            <input autoFocus type="text" value={newBoardTitle} onChange={(e) => setNewBoardTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()} placeholder="Board title (optional)" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition mb-4" />
+            <input
+              autoFocus
+              type="text"
+              value={newBoardTitle}
+              onChange={(e) => setNewBoardTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()}
+              placeholder="Board title (optional)"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition mb-4"
+            />
+
+            {/* Visibility picker */}
+            <div className="flex gap-2 mb-5">
+              <button
+                onClick={() => setNewBoardVisibility("public")}
+                className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm transition ${
+                  newBoardVisibility === "public"
+                    ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                    : "border-gray-200 text-gray-500 hover:border-gray-300"
+                }`}
+              >
+                <Globe size={14} className="shrink-0" />
+                <div className="text-left">
+                  <div className="font-medium text-xs">Public</div>
+                  <div className="text-[10px] opacity-70">Anyone with link</div>
+                </div>
+              </button>
+              <button
+                onClick={() => setNewBoardVisibility("private")}
+                className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm transition ${
+                  newBoardVisibility === "private"
+                    ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                    : "border-gray-200 text-gray-500 hover:border-gray-300"
+                }`}
+              >
+                <Lock size={14} className="shrink-0" />
+                <div className="text-left">
+                  <div className="font-medium text-xs">Private</div>
+                  <div className="text-[10px] opacity-70">Invite only</div>
+                </div>
+              </button>
+            </div>
+
             <div className="flex gap-3">
-              <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">Cancel</button>
-              <button onClick={handleCreateBoard} className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>Create</button>
+              <button
+                onClick={() => { setShowCreateModal(false); setNewBoardVisibility("public"); }}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateBoard}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md"
+                style={{ backgroundColor: "#0F2044" }}
+                onMouseEnter={e => (e.currentTarget.style.opacity="0.85")}
+                onMouseLeave={e => (e.currentTarget.style.opacity="1")}
+              >
+                Create
+              </button>
             </div>
           </div>
         </div>
@@ -308,15 +452,25 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
         </div>
       )}
 
-      {/* Delete Confirmation */}
-      {deletingBoardId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setDeletingBoardId(null)}>
+      {/* Delete / Leave Confirmation */}
+      {pendingBoardAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setPendingBoardAction(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Delete Board?</h2>
-            <p className="text-sm text-gray-500 mb-4">This board will be removed from your dashboard.</p>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              {pendingBoardAction.isOwner ? "Delete Board?" : "Leave Board?"}
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {pendingBoardAction.isOwner
+                ? "This board will be removed from your dashboard."
+                : "You will be removed from this board, but it will remain for other collaborators."}
+            </p>
             <div className="flex gap-3">
-              <button onClick={() => setDeletingBoardId(null)} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">Cancel</button>
-              <button onClick={() => handleDeleteBoard(deletingBoardId)} className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition shadow-md">Delete</button>
+              <button onClick={() => setPendingBoardAction(null)} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">Cancel</button>
+              {pendingBoardAction.isOwner ? (
+                <button onClick={() => handleDeleteBoard(pendingBoardAction.boardId)} className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition shadow-md">Delete</button>
+              ) : (
+                <button onClick={() => handleLeaveBoard(pendingBoardAction.boardId)} className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-amber-600 rounded-xl hover:bg-amber-700 transition shadow-md">Leave</button>
+              )}
             </div>
           </div>
         </div>
@@ -332,10 +486,144 @@ interface BoardItemProps {
   isOwner: boolean;
   onOpen: () => void;
   onDelete?: () => void;
+  onCopyInvite?: () => void;
+  onCopyBoardId?: () => void;
   formatDate: (ts: number) => string;
 }
 
-function BoardCard({ meta, isOwner, onOpen, onDelete, formatDate }: BoardItemProps) {
+interface BoardActionMenuProps {
+  title: string;
+  isOwner: boolean;
+  onOpen: () => void;
+  onDelete?: () => void;
+  /** Owner-only: copies the board's invite link to the clipboard. */
+  onCopyInvite?: () => void;
+  /** Copies the board ID to the clipboard (available to all members). */
+  onCopyBoardId?: () => void;
+}
+
+/**
+ * Board action menu rendered via a portal so it is never clipped by a parent
+ * `overflow-hidden` container (e.g. the card thumbnail wrapper).
+ *
+ * Exported as `BoardActionMenuTest` for unit-test access.
+ */
+export function BoardActionMenuTest({
+  title,
+  isOwner,
+  onOpen,
+  onDelete,
+  onCopyInvite,
+  onCopyBoardId,
+}: BoardActionMenuProps) {
+  const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Close on any window click
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+
+  const handleTrigger = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setOpen((v) => !v);
+  };
+
+  const close = () => setOpen(false);
+
+  const dropdown = open
+    ? createPortal(
+        <div
+          data-testid="board-action-dropdown"
+          onClick={(e) => e.stopPropagation()}
+          style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
+          className="w-48 bg-white border border-gray-200 rounded-xl shadow-lg p-1"
+        >
+          {/* Primary action */}
+          <button
+            onClick={(e) => { e.stopPropagation(); close(); onOpen(); }}
+            className="w-full text-left px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
+          >
+            <ExternalLink size={13} /> Open
+          </button>
+
+          {/* Share actions */}
+          {(isOwner ? onCopyInvite : null) && (
+            <>
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                onClick={(e) => { e.stopPropagation(); close(); onCopyInvite!(); }}
+                className="w-full text-left px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
+              >
+                <Link2 size={13} /> Copy invite link
+              </button>
+            </>
+          )}
+          {onCopyBoardId && (
+            <>
+              {!isOwner && <div className="my-1 border-t border-gray-100" />}
+              <button
+                onClick={(e) => { e.stopPropagation(); close(); onCopyBoardId(); }}
+                className="w-full text-left px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
+              >
+                <Copy size={13} /> Copy board ID
+              </button>
+            </>
+          )}
+
+          {/* Destructive action */}
+          {onDelete && (
+            <>
+              <div className="my-1 border-t border-gray-100" />
+              <button
+                aria-label={isOwner ? `Delete board ${title}` : `Leave board ${title}`}
+                onClick={(e) => { e.stopPropagation(); close(); onDelete(); }}
+                className={`w-full text-left px-2.5 py-2 text-sm rounded-lg flex items-center gap-2 ${
+                  isOwner ? "text-red-600 hover:bg-red-50" : "text-amber-700 hover:bg-amber-50"
+                }`}
+              >
+                {isOwner ? <Trash2 size={13} /> : <LogOut size={13} />}
+                {isOwner ? "Delete board" : "Leave board"}
+              </button>
+            </>
+          )}
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <div>
+      <button
+        ref={buttonRef}
+        aria-label={`Board actions ${title}`}
+        onClick={handleTrigger}
+        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
+// Internal alias kept for backward-compat with the card/row components below
+function BoardActionMenu(props: BoardActionMenuProps) {
+  return <BoardActionMenuTest {...props} />;
+}
+
+function BoardCard({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardId, formatDate }: BoardItemProps) {
   const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
   const hue1 = hash % 360;
   const hue2 = (hash * 7) % 360;
@@ -366,20 +654,26 @@ function BoardCard({ meta, isOwner, onOpen, onDelete, formatDate }: BoardItemPro
             <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
               <span className="flex items-center gap-1"><Clock size={11} />{formatDate(meta.updatedAt)}</span>
               {!isOwner && <span className="flex items-center gap-1"><Users size={11} />Shared</span>}
+              {meta.visibility === "private"
+                ? <span className="flex items-center gap-1 text-indigo-400"><Lock size={11} />Private</span>
+                : <span className="flex items-center gap-1 text-emerald-500"><Globe size={11} />Public</span>}
             </div>
           </div>
-          {isOwner && onDelete && (
-            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100">
-              <Trash2 size={14} />
-            </button>
-          )}
+          <BoardActionMenu
+            title={meta.title || "Untitled Board"}
+            isOwner={isOwner}
+            onOpen={onOpen}
+            onDelete={onDelete}
+            onCopyInvite={onCopyInvite}
+            onCopyBoardId={onCopyBoardId}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function BoardRow({ meta, isOwner, onOpen, onDelete, formatDate }: BoardItemProps) {
+function BoardRow({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardId, formatDate }: BoardItemProps) {
   const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   return (
@@ -387,12 +681,18 @@ function BoardRow({ meta, isOwner, onOpen, onDelete, formatDate }: BoardItemProp
       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: `hsl(${hash % 360}, 60%, 65%)` }} />
       <div className="flex-1 min-w-0"><h3 className="font-medium text-gray-900 truncate text-sm">{meta.title || "Untitled Board"}</h3></div>
       {!isOwner && <span className="text-xs text-gray-400 flex items-center gap-1 shrink-0"><Users size={11} />Shared</span>}
+      {meta.visibility === "private"
+        ? <span className="text-xs text-indigo-400 flex items-center gap-1 shrink-0"><Lock size={11} />Private</span>
+        : <span className="text-xs text-emerald-500 flex items-center gap-1 shrink-0"><Globe size={11} />Public</span>}
       <span className="text-xs text-gray-400 flex items-center gap-1 shrink-0"><Clock size={11} />{formatDate(meta.updatedAt)}</span>
-      {isOwner && onDelete && (
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100">
-          <Trash2 size={14} />
-        </button>
-      )}
+      <BoardActionMenu
+        title={meta.title || "Untitled Board"}
+        isOwner={isOwner}
+        onOpen={onOpen}
+        onDelete={onDelete}
+        onCopyInvite={onCopyInvite}
+        onCopyBoardId={onCopyBoardId}
+      />
     </div>
   );
 }

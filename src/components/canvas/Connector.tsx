@@ -5,8 +5,10 @@ import type { BoardObject } from "../../types/board";
 
 interface ConnectorProps {
   connector: ConnectorType;
-  fromObj: BoardObject;
-  toObj: BoardObject;
+  /** Source object — undefined when the connector uses a free fromPoint */
+  fromObj: BoardObject | undefined;
+  /** Target object — undefined when the connector uses a free toPoint */
+  toObj: BoardObject | undefined;
   isSelected: boolean;
   onSelect: (id: string) => void;
 }
@@ -82,17 +84,37 @@ function getEdgePoint(
 }
 
 export const ConnectorLine = React.memo(function ConnectorLine({ connector, fromObj, toObj, isSelected, onSelect }: ConnectorProps) {
-  const fromCenter = {
-    x: fromObj.x + fromObj.width / 2,
-    y: fromObj.y + fromObj.height / 2,
-  };
-  const toCenter = {
-    x: toObj.x + toObj.width / 2,
-    y: toObj.y + toObj.height / 2,
-  };
+  // Resolve start point: pinned to object edge, or free-floating anchor
+  const fromEdge: { x: number; y: number } = (() => {
+    if (fromObj) {
+      // Pinned — find edge point facing the target
+      const targetX = toObj
+        ? toObj.x + toObj.width / 2
+        : (connector.toPoint?.x ?? fromObj.x + fromObj.width / 2);
+      const targetY = toObj
+        ? toObj.y + toObj.height / 2
+        : (connector.toPoint?.y ?? fromObj.y + fromObj.height / 2);
+      return getEdgePoint(fromObj, targetX, targetY);
+    }
+    // Free-floating start
+    return connector.fromPoint ?? { x: 0, y: 0 };
+  })();
 
-  const fromEdge = getEdgePoint(fromObj, toCenter.x, toCenter.y);
-  const toEdge = getEdgePoint(toObj, fromCenter.x, fromCenter.y);
+  // Resolve end point: pinned to object edge, or free-floating anchor
+  const toEdge: { x: number; y: number } = (() => {
+    if (toObj) {
+      // Pinned — find edge point facing the source
+      const sourceX = fromObj
+        ? fromObj.x + fromObj.width / 2
+        : (connector.fromPoint?.x ?? toObj.x + toObj.width / 2);
+      const sourceY = fromObj
+        ? fromObj.y + fromObj.height / 2
+        : (connector.fromPoint?.y ?? toObj.y + toObj.height / 2);
+      return getEdgePoint(toObj, sourceX, sourceY);
+    }
+    // Free-floating end
+    return connector.toPoint ?? { x: 0, y: 0 };
+  })();
 
   const points = [fromEdge.x, fromEdge.y, toEdge.x, toEdge.y];
 
@@ -105,8 +127,10 @@ export const ConnectorLine = React.memo(function ConnectorLine({ connector, from
     onSelect(connector.id);
   };
 
-  const strokeColor = isSelected ? "#0F2044" : "#4B5563";
-  const strokeWidth = isSelected ? 3 : 2.5;
+  const baseColor = connector.color || "#4B5563";
+  const baseWidth = connector.strokeWidth ?? 2.5;
+  const strokeColor = isSelected ? "#0F2044" : baseColor;
+  const strokeWidth = isSelected ? baseWidth + 0.5 : baseWidth;
 
   if (connector.style === "arrow") {
     return (

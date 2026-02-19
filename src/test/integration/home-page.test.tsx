@@ -11,21 +11,24 @@ vi.mock("../../components/auth/AuthProvider", () => ({
     displayName: "TestUser",
     signOut: mockSignOut,
     loading: false,
-    session: {},
+    session: { access_token: "token-123" },
   }),
 }));
 
 // Mock board service
-const mockGetUserBoards = vi.fn().mockResolvedValue([]);
-const mockCreateBoard = vi.fn().mockResolvedValue("new-board-id");
-const mockJoinBoard = vi.fn().mockResolvedValue(undefined);
+const mockGetUserBoards   = vi.fn().mockResolvedValue([]);
+const mockCreateBoard     = vi.fn().mockResolvedValue("new-board-id");
+// joinBoard now returns a JoinResult, not void
+const mockJoinBoard       = vi.fn().mockResolvedValue({ status: "joined" });
 const mockSoftDeleteBoard = vi.fn().mockResolvedValue(undefined);
+const mockRemoveBoardMember = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../services/board", () => ({
-  getUserBoards: (...args: any[]) => mockGetUserBoards(...args),
-  createBoard: (...args: any[]) => mockCreateBoard(...args),
-  joinBoard: (...args: any[]) => mockJoinBoard(...args),
-  softDeleteBoard: (...args: any[]) => mockSoftDeleteBoard(...args),
+  getUserBoards:      (...args: any[]) => mockGetUserBoards(...args),
+  createBoard:        (...args: any[]) => mockCreateBoard(...args),
+  joinBoard:          (...args: any[]) => mockJoinBoard(...args),
+  softDeleteBoard:    (...args: any[]) => mockSoftDeleteBoard(...args),
+  removeBoardMember:  (...args: any[]) => mockRemoveBoardMember(...args),
 }));
 
 describe("HomePage integration", () => {
@@ -56,7 +59,8 @@ describe("HomePage integration", () => {
     await user.type(titleInput, "My Board");
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
-    expect(mockCreateBoard).toHaveBeenCalledWith("My Board", "user-123");
+    // createBoard now receives visibility as 3rd arg (default "public")
+    expect(mockCreateBoard).toHaveBeenCalledWith("My Board", "user-123", "public");
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("new-board-id");
     });
@@ -89,8 +93,8 @@ describe("HomePage integration", () => {
     expect(mockJoinBoard).toHaveBeenCalledWith("abc-123", "user-123");
   });
 
-  it("shows 'board not found' toast for any join error", async () => {
-    mockJoinBoard.mockRejectedValueOnce(new Error("Board not found"));
+  it("shows 'board not found' toast when joinBoard returns not_found", async () => {
+    mockJoinBoard.mockResolvedValueOnce({ status: "not_found" });
     const user = userEvent.setup();
     render(<HomePage onNavigateToBoard={mockNavigate} />);
 
@@ -108,8 +112,8 @@ describe("HomePage integration", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("shows same toast for non-UUID input", async () => {
-    mockJoinBoard.mockRejectedValueOnce(new Error('invalid input syntax for type uuid: "not-a-uuid"'));
+  it("navigates to private board screen when joinBoard returns private", async () => {
+    mockJoinBoard.mockResolvedValueOnce({ status: "private" });
     const user = userEvent.setup();
     render(<HomePage onNavigateToBoard={mockNavigate} />);
 
@@ -118,13 +122,42 @@ describe("HomePage integration", () => {
     });
 
     const input = screen.getByPlaceholderText(/board id/i);
-    await user.type(input, "not-a-uuid");
+    await user.type(input, "priv-board-id");
     await user.click(screen.getByRole("button", { name: /^join$/i }));
 
+    expect(mockNavigate).toHaveBeenCalledWith("priv-board-id");
+  });
+
+  it("lets a user leave a shared board from dashboard", async () => {
+    mockGetUserBoards.mockResolvedValueOnce([
+      {
+        id: "shared-1",
+        title: "Shared Board",
+        ownerId: "owner-999",
+        visibility: "public",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        deletedAt: null,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<HomePage onNavigateToBoard={mockNavigate} />);
+
     await waitFor(() => {
-      expect(screen.getByText(/board not found — double-check the id/i)).toBeInTheDocument();
+      expect(screen.getByText(/shared with me/i)).toBeInTheDocument();
+      expect(screen.getByText("Shared Board")).toBeInTheDocument();
     });
-    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByLabelText(/board actions shared board/i));
+    await user.click(screen.getByLabelText(/leave board shared board/i));
+    await user.click(screen.getByRole("button", { name: /^leave$/i }));
+
+    await waitFor(() => {
+      expect(mockRemoveBoardMember).toHaveBeenCalledWith("shared-1", "user-123", "token-123");
+    });
+
+    expect(screen.queryByText("Shared Board")).not.toBeInTheDocument();
   });
 
   it("calls signOut when clicking sign out", async () => {
