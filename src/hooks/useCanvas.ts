@@ -9,7 +9,7 @@ export interface ViewportState {
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 4.0;
-const SCALE_BY = 1.05;
+const SCALE_BY = 1.08;
 
 // Debounce interval for persisting viewport to localStorage (ms).
 const VIEWPORT_SAVE_DEBOUNCE = 300;
@@ -39,9 +39,13 @@ function loadSavedViewport(boardId: string): ViewportState | null {
   return null;
 }
 
+// Delay (ms) after the last wheel event before we consider zooming finished.
+const ZOOM_IDLE_TIMEOUT = 150;
+
 export interface UseCanvasReturn {
   viewport: ViewportState;
   setViewport: React.Dispatch<React.SetStateAction<ViewportState>>;
+  isZooming: boolean;
   onWheel: (e: Konva.KonvaEventObject<WheelEvent>) => void;
   onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
   stageRef: React.RefObject<Konva.Stage | null>;
@@ -58,13 +62,15 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
   });
 
   // Persist viewport changes to localStorage (debounced).
+  // Uses a ref-based approach to avoid running a React effect on every viewport
+  // change, which would create/clear timeouts 60 times/sec during zoom.
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
 
-  useEffect(() => {
+  const scheduleSave = useCallback(() => {
     if (!boardId) return;
-
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
       try {
@@ -76,14 +82,14 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
         // localStorage full or unavailable — ignore.
       }
     }, VIEWPORT_SAVE_DEBOUNCE);
+  }, [boardId]);
 
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, [boardId, viewport]);
+  // Schedule a save whenever viewport changes, but outside the React effect cycle.
+  const prevViewportRef = useRef(viewport);
+  if (prevViewportRef.current !== viewport) {
+    prevViewportRef.current = viewport;
+    scheduleSave();
+  }
 
   // Flush on unmount / page hide so we don't lose the last position.
   useEffect(() => {
@@ -112,23 +118,48 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
   }, [boardId]);
   const stageRef = useRef<Konva.Stage | null>(null);
 
+  // Track whether the user is actively zooming so consumers can enable
+  // performance optimizations (e.g. layer caching).
+  const [isZooming, setIsZooming] = useState(false);
+  const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Batch rapid wheel events (e.g. trackpad zoom) into a single RAF update.
+  const pendingWheelRef = useRef<ViewportState | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) {
+        cancelAnimationFrame(wheelRafRef.current);
+      }
+      if (zoomTimeoutRef.current !== null) {
+        clearTimeout(zoomTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const onWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
 
     const stage = e.target.getStage();
     if (!stage) return;
 
-    const oldScale = stage.scaleX();
+    // Use the pending viewport if one exists (multiple wheel events in same frame),
+    // otherwise read current stage values.
+    const baseScale = pendingWheelRef.current?.scale ?? stage.scaleX();
+    const baseX = pendingWheelRef.current?.x ?? stage.x();
+    const baseY = pendingWheelRef.current?.y ?? stage.y();
+
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
 
     const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
+      x: (pointer.x - baseX) / baseScale,
+      y: (pointer.y - baseY) / baseScale,
     };
 
     const direction = e.evt.deltaY > 0 ? -1 : 1;
-    let newScale = direction > 0 ? oldScale * SCALE_BY : oldScale / SCALE_BY;
+    let newScale = direction > 0 ? baseScale * SCALE_BY : baseScale / SCALE_BY;
     newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
 
     const newPos = {
@@ -136,11 +167,24 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
       y: pointer.y - mousePointTo.y * newScale,
     };
 
-    setViewport({
-      x: newPos.x,
-      y: newPos.y,
-      scale: newScale,
-    });
+    const pending: ViewportState = { x: newPos.x, y: newPos.y, scale: newScale };
+    pendingWheelRef.current = pending;
+
+    // Mark as zooming; clear after ZOOM_IDLE_TIMEOUT ms of no wheel events.
+    setIsZooming(true);
+    if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
+    zoomTimeoutRef.current = setTimeout(() => setIsZooming(false), ZOOM_IDLE_TIMEOUT);
+
+    if (wheelRafRef.current === null) {
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const final = pendingWheelRef.current;
+        pendingWheelRef.current = null;
+        if (final) {
+          setViewport(final);
+        }
+      });
+    }
   }, []);
 
   const onDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
@@ -170,6 +214,7 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
   return {
     viewport,
     setViewport,
+    isZooming,
     onWheel,
     onDragEnd,
     stageRef,

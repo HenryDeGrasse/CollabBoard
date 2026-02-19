@@ -112,16 +112,7 @@ export const StickyNote = React.memo(function StickyNote({
         if (container) container.style.cursor = "default";
       }}
     >
-      {/* Shadow */}
-      <Rect
-        x={3}
-        y={3}
-        width={object.width}
-        height={object.height}
-        fill="rgba(0,0,0,0.1)"
-        cornerRadius={4}
-      />
-      {/* Main body */}
+      {/* Main body with built-in Konva shadow (blur=0 for crisp, fast shadow) */}
       <Rect
         width={object.width}
         height={object.height}
@@ -129,6 +120,11 @@ export const StickyNote = React.memo(function StickyNote({
         cornerRadius={4}
         stroke={borderColor}
         strokeWidth={borderWidth}
+        shadowColor="rgba(0,0,0,0.1)"
+        shadowBlur={0}
+        shadowOffsetX={3}
+        shadowOffsetY={3}
+        shadowForStrokeEnabled={false}
       />
       {/* Fold effect */}
       <Rect

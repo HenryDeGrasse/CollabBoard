@@ -39,16 +39,30 @@ vi.mock("../services/supabase", () => ({
 }));
 
 // Mock Konva (canvas-dependent)
-vi.mock("react-konva", () => ({
-  Stage: vi.fn(({ children }: any) => children),
-  Layer: vi.fn(({ children }: any) => children),
-  Rect: vi.fn(() => null),
-  Circle: vi.fn(() => null),
-  Text: vi.fn(() => null),
-  Group: vi.fn(({ children }: any) => children),
-  Arrow: vi.fn(() => null),
-  Line: vi.fn(() => null),
-}));
+vi.mock("react-konva", () => {
+  const React = require("react");
+  // Layer needs forwardRef so Board.tsx can attach objectsLayerRef and call
+  // cache()/clearCache() during zoom.
+  const Layer = React.forwardRef(({ children }: any, ref: any) => {
+    React.useImperativeHandle(ref, () => ({
+      cache: vi.fn(),
+      clearCache: vi.fn(),
+    }));
+    return children;
+  });
+  Layer.displayName = "Layer";
+
+  return {
+    Stage: vi.fn(({ children }: any) => children),
+    Layer,
+    Rect: vi.fn(() => null),
+    Circle: vi.fn(() => null),
+    Text: vi.fn(() => null),
+    Group: vi.fn(({ children }: any) => children),
+    Arrow: vi.fn(() => null),
+    Line: vi.fn(() => null),
+  };
+});
 
 vi.mock("konva", () => ({
   default: {

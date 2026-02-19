@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from "react";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { Stage, Layer, Group } from "react-konva";
 import Konva from "konva";
 import { Frame, FrameOverlay } from "./Frame";
@@ -119,7 +119,24 @@ export function Board({
   onPushUndo,
   onRotatingChange,
 }: BoardProps) {
-  const { viewport, setViewport, onWheel, stageRef } = canvas;
+  const { viewport, setViewport, isZooming, onWheel, stageRef } = canvas;
+
+  // Ref for the main objects layer — used to cache/uncache during zoom.
+  const objectsLayerRef = useRef<Konva.Layer | null>(null);
+
+  // Cache the objects layer as a bitmap while zooming so Konva draws one image
+  // instead of hundreds of shapes per frame. Uncache when zoom ends so
+  // interactions and updates work normally.
+  useEffect(() => {
+    const layer = objectsLayerRef.current;
+    if (!layer) return;
+    if (isZooming) {
+      layer.cache();
+    } else {
+      layer.clearCache();
+    }
+  }, [isZooming]);
+
   // Stable ref for objects — used inside callbacks to avoid regenerating them
   // on every objects change. The ref is updated synchronously on every render,
   // so it is always current when any callback fires.
@@ -633,8 +650,8 @@ export function Board({
         onMouseUp={handleMouseUp}
         onDragEnd={handleStageDragEnd}
       >
-        {/* Objects layer */}
-        <Layer>
+        {/* Objects layer — cached as bitmap during zoom for performance */}
+        <Layer ref={objectsLayerRef} listening={!isZooming}>
           <DrawingPreviews
             connectorDraw={connectorDraw}
             frameDraw={frameDraw}

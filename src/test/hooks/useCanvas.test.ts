@@ -140,4 +140,320 @@ describe("useCanvas hook", () => {
     const { result } = renderHook(() => useCanvas());
     expect(typeof result.current.onWheel).toBe("function");
   });
+
+  // ── RAF-batched zoom tests ──────────────────────────────────────────
+
+  describe("onWheel RAF batching", () => {
+    let rafCallbacks: ((time: number) => void)[];
+    let rafId: number;
+
+    function makeMockStage(scale = 1, x = 0, y = 0) {
+      const stage = {
+        scaleX: () => scale,
+        x: () => x,
+        y: () => y,
+        getPointerPosition: () => ({ x: 400, y: 300 }),
+      };
+      return stage;
+    }
+
+    function makeWheelEvent(deltaY: number, stage: any) {
+      return {
+        evt: { preventDefault: vi.fn(), deltaY },
+        target: { getStage: () => stage },
+      } as any;
+    }
+
+    beforeEach(() => {
+      rafCallbacks = [];
+      rafId = 0;
+      vi.stubGlobal(
+        "requestAnimationFrame",
+        vi.fn((cb: (time: number) => void) => {
+          rafCallbacks.push(cb);
+          return ++rafId;
+        })
+      );
+      vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    function flushRAF() {
+      const cbs = [...rafCallbacks];
+      rafCallbacks = [];
+      cbs.forEach((cb) => cb(performance.now()));
+    }
+
+    it("does not update viewport synchronously on wheel event", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      // Viewport should still be at defaults — RAF hasn't fired yet
+      expect(result.current.viewport).toEqual({ x: 0, y: 0, scale: 1 });
+    });
+
+    it("updates viewport after RAF fires", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      act(() => {
+        flushRAF();
+      });
+
+      // After RAF, viewport should have zoomed in (deltaY < 0 → zoom in)
+      expect(result.current.viewport.scale).toBeGreaterThan(1);
+    });
+
+    it("batches multiple wheel events in the same frame into one viewport update", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        // Fire 5 rapid wheel events before RAF fires
+        for (let i = 0; i < 5; i++) {
+          result.current.onWheel(makeWheelEvent(-100, stage));
+        }
+      });
+
+      // Only one RAF should have been scheduled
+      expect(rafCallbacks).toHaveLength(1);
+
+      act(() => {
+        flushRAF();
+      });
+
+      // Scale should reflect all 5 zoom-in ticks compounded: 1.08^5
+      const expectedScale = Math.pow(1.08, 5);
+      expect(result.current.viewport.scale).toBeCloseTo(expectedScale, 4);
+    });
+
+    it("compounds zoom-out ticks correctly within a single frame", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        for (let i = 0; i < 3; i++) {
+          result.current.onWheel(makeWheelEvent(100, stage));
+        }
+      });
+
+      act(() => {
+        flushRAF();
+      });
+
+      // Scale should reflect 3 zoom-out ticks: 1 / 1.08^3
+      const expectedScale = Math.pow(1 / 1.08, 3);
+      expect(result.current.viewport.scale).toBeCloseTo(expectedScale, 4);
+    });
+
+    it("clamps scale to MIN_SCALE (0.1)", () => {
+      const { result } = renderHook(() => useCanvas());
+      // Start at a very small scale
+      const stage = makeMockStage(0.11);
+
+      act(() => {
+        // Zoom out many times to push below minimum
+        for (let i = 0; i < 20; i++) {
+          result.current.onWheel(makeWheelEvent(100, stage));
+        }
+      });
+
+      act(() => {
+        flushRAF();
+      });
+
+      expect(result.current.viewport.scale).toBeGreaterThanOrEqual(0.1);
+    });
+
+    it("clamps scale to MAX_SCALE (4.0)", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage(3.9);
+
+      act(() => {
+        for (let i = 0; i < 20; i++) {
+          result.current.onWheel(makeWheelEvent(-100, stage));
+        }
+      });
+
+      act(() => {
+        flushRAF();
+      });
+
+      expect(result.current.viewport.scale).toBeLessThanOrEqual(4.0);
+    });
+
+    it("cancels pending RAF on unmount", () => {
+      const { result, unmount } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      unmount();
+
+      expect(cancelAnimationFrame).toHaveBeenCalled();
+    });
+
+    it("prevents default on wheel event", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+      const evt = makeWheelEvent(-100, stage);
+
+      act(() => {
+        result.current.onWheel(evt);
+      });
+
+      expect(evt.evt.preventDefault).toHaveBeenCalled();
+    });
+
+    it("no-ops when stage is null", () => {
+      const { result } = renderHook(() => useCanvas());
+      const evt = {
+        evt: { preventDefault: vi.fn(), deltaY: -100 },
+        target: { getStage: () => null },
+      } as any;
+
+      act(() => {
+        result.current.onWheel(evt);
+      });
+
+      // No RAF scheduled
+      expect(rafCallbacks).toHaveLength(0);
+      expect(result.current.viewport).toEqual({ x: 0, y: 0, scale: 1 });
+    });
+
+    it("no-ops when pointer position is null", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = {
+        ...makeMockStage(),
+        getPointerPosition: () => null,
+      };
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      expect(rafCallbacks).toHaveLength(0);
+    });
+  });
+
+  // ── isZooming state tests ──────────────────────────────────────────
+
+  describe("isZooming state", () => {
+    let rafCallbacks: ((time: number) => void)[];
+    let rafId: number;
+
+    function makeMockStage(scale = 1, x = 0, y = 0) {
+      return {
+        scaleX: () => scale,
+        x: () => x,
+        y: () => y,
+        getPointerPosition: () => ({ x: 400, y: 300 }),
+      };
+    }
+
+    function makeWheelEvent(deltaY: number, stage: any) {
+      return {
+        evt: { preventDefault: vi.fn(), deltaY },
+        target: { getStage: () => stage },
+      } as any;
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      rafCallbacks = [];
+      rafId = 0;
+      vi.stubGlobal(
+        "requestAnimationFrame",
+        vi.fn((cb: (time: number) => void) => {
+          rafCallbacks.push(cb);
+          return ++rafId;
+        })
+      );
+      vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it("starts with isZooming false", () => {
+      const { result } = renderHook(() => useCanvas());
+      expect(result.current.isZooming).toBe(false);
+    });
+
+    it("sets isZooming to true on wheel event", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      expect(result.current.isZooming).toBe(true);
+    });
+
+    it("resets isZooming to false after 150ms of no wheel events", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      expect(result.current.isZooming).toBe(true);
+
+      // Not yet reset at 149ms
+      act(() => {
+        vi.advanceTimersByTime(149);
+      });
+      expect(result.current.isZooming).toBe(true);
+
+      // Reset at 150ms
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(result.current.isZooming).toBe(false);
+    });
+
+    it("extends the timeout when more wheel events arrive", () => {
+      const { result } = renderHook(() => useCanvas());
+      const stage = makeMockStage();
+
+      act(() => {
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      // 100ms later, another wheel event
+      act(() => {
+        vi.advanceTimersByTime(100);
+        result.current.onWheel(makeWheelEvent(-100, stage));
+      });
+
+      // 100ms after the second event (200ms from first) — still zooming
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(result.current.isZooming).toBe(true);
+
+      // 150ms after the second event — now false
+      act(() => {
+        vi.advanceTimersByTime(50);
+      });
+      expect(result.current.isZooming).toBe(false);
+    });
+  });
 });
