@@ -34,10 +34,9 @@ for (const envFile of [".env.local", ".env"]) {
 // For local dev, use tsx to run this file: npx tsx api/_dev-server.mjs
 const PORT = parseInt(process.env.API_PORT || "3000", 10);
 
-async function loadHandler(route) {
+async function loadModule(route) {
   try {
-    const mod = await import(`./${route}.ts`);
-    return mod.default;
+    return await import(`./${route}.ts`);
   } catch {
     return null;
   }
@@ -58,65 +57,110 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const route = url.pathname.replace(/^\/api\//, "").replace(/\/$/, "");
 
-  const handler = await loadHandler(route);
-  if (!handler) {
+  const mod = await loadModule(route);
+  if (!mod?.default) {
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: `Route not found: ${url.pathname}` }));
     return;
   }
 
+  const handler = mod.default;
+  const isEdge = mod.config?.runtime === "edge";
+
   // Collect body
   let body = "";
   for await (const chunk of req) body += chunk;
 
-  // Build pseudo VercelRequest/VercelResponse
-  const vercelReq = {
-    method: req.method,
-    url: req.url,
-    headers: req.headers,
-    body: body ? JSON.parse(body) : undefined,
-    query: Object.fromEntries(url.searchParams),
-  };
-
-  const vercelRes = {
-    _statusCode: 200,
-    _headers: {},
-    _body: null,
-    _headersSent: false,
-    setHeader(k, v) { this._headers[k] = v; res.setHeader(k, v); return this; },
-    status(code) { this._statusCode = code; return this; },
-    json(data) {
-      res.writeHead(this._statusCode, { "Content-Type": "application/json", ...this._headers });
-      this._headersSent = true;
-      res.end(JSON.stringify(data));
-      return this;
-    },
-    // Support streaming: write() sends chunks without ending the response
-    write(data) {
-      if (!this._headersSent) {
-        res.writeHead(this._statusCode, this._headers);
-        this._headersSent = true;
+  if (isEdge) {
+    // ── Edge-style handler ─────────────────────────────────────────────
+    // Expects a Web API Request, returns a Web API Response.
+    // We build a real Request so req.headers.get() / req.json() work.
+    const webReq = new Request(
+      `http://localhost:${PORT}${req.url}`,
+      {
+        method: req.method,
+        headers: new Headers(req.headers),
+        // GET/HEAD cannot have a body per the Fetch spec
+        body: ["GET", "HEAD"].includes(req.method) ? undefined : (body || undefined),
       }
-      res.write(data);
-      return this;
-    },
-    end(data) {
-      if (!this._headersSent) {
-        res.writeHead(this._statusCode, this._headers);
-        this._headersSent = true;
-      }
-      res.end(data);
-      return this;
-    },
-  };
+    );
 
-  try {
-    await handler(vercelReq, vercelRes);
-  } catch (err) {
-    console.error("Handler error:", err);
-    if (!res.headersSent) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: err.message }));
+    try {
+      const response = await handler(webReq);
+
+      // Copy status + headers then stream the body
+      const nodeHeaders = {};
+      response.headers.forEach((v, k) => { nodeHeaders[k] = v; });
+      res.writeHead(response.status, nodeHeaders);
+
+      if (response.body) {
+        const reader = response.body.getReader();
+        const pump = async () => {
+          const { done, value } = await reader.read();
+          if (done) { res.end(); return; }
+          res.write(value);
+          await pump();
+        };
+        await pump();
+      } else {
+        res.end();
+      }
+    } catch (err) {
+      console.error("Edge handler error:", err);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    }
+  } else {
+    // ── Vercel-style handler ───────────────────────────────────────────
+    // Called as handler(req, res); mutates the response object directly.
+    const vercelReq = {
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      body: body ? JSON.parse(body) : undefined,
+      query: Object.fromEntries(url.searchParams),
+    };
+
+    const vercelRes = {
+      _statusCode: 200,
+      _headers: {},
+      _headersSent: false,
+      setHeader(k, v) { this._headers[k] = v; res.setHeader(k, v); return this; },
+      status(code) { this._statusCode = code; return this; },
+      json(data) {
+        res.writeHead(this._statusCode, { "Content-Type": "application/json", ...this._headers });
+        this._headersSent = true;
+        res.end(JSON.stringify(data));
+        return this;
+      },
+      write(data) {
+        if (!this._headersSent) {
+          res.writeHead(this._statusCode, this._headers);
+          this._headersSent = true;
+        }
+        res.write(data);
+        return this;
+      },
+      end(data) {
+        if (!this._headersSent) {
+          res.writeHead(this._statusCode, this._headers);
+          this._headersSent = true;
+        }
+        res.end(data);
+        return this;
+      },
+    };
+
+    try {
+      await handler(vercelReq, vercelRes);
+    } catch (err) {
+      console.error("Handler error:", err);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
     }
   }
 });
