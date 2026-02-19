@@ -4,6 +4,7 @@
  * Maps GPT-4o tool calls directly to supabaseAdmin DB operations.
  * No HTTP roundtrips — writes go straight to Postgres.
  */
+import OpenAI from "openai";
 import { getSupabaseAdmin } from "./supabaseAdmin.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 
@@ -48,6 +49,81 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
           },
         },
         required: ["objects"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "bulk_create_objects",
+      description:
+        "Create a large number of objects (10+) efficiently in a single call. Use this instead of create_objects when the user wants many objects. " +
+        "Supports unique AI-generated content via contentPrompt (e.g., 'a fun fact about animals'), or patterned text via textPattern (e.g., 'Task {i}'). " +
+        "All objects share the same type, color, and size. Layout is computed automatically.",
+      parameters: {
+        type: "object",
+        properties: {
+          type: {
+            type: "string",
+            enum: ["sticky", "rectangle", "circle", "text", "frame"],
+            description: "Object type for all created objects",
+          },
+          count: {
+            type: "number",
+            description: "Number of objects to create (max 500)",
+          },
+          color: {
+            type: "string",
+            description:
+              "Hex color or color name for all objects. Sticky colors: #FBBF24 (yellow), #F472B6 (pink), #3B82F6 (blue), #22C55E (green), #F97316 (orange), #A855F7 (purple).",
+          },
+          layout: {
+            type: "string",
+            enum: ["grid", "vertical", "horizontal"],
+            description: "How to arrange the objects (default: grid)",
+          },
+          columns: {
+            type: "number",
+            description: "Number of columns for grid layout (default: auto based on count)",
+          },
+          gap: {
+            type: "number",
+            description: "Spacing between objects in pixels (default: 20)",
+          },
+          startX: {
+            type: "number",
+            description: "Starting X position on the canvas (default: 100)",
+          },
+          startY: {
+            type: "number",
+            description: "Starting Y position on the canvas (default: 100)",
+          },
+          width: {
+            type: "number",
+            description: "Width of each object in pixels (uses type default if omitted)",
+          },
+          height: {
+            type: "number",
+            description: "Height of each object in pixels (uses type default if omitted)",
+          },
+          contentPrompt: {
+            type: "string",
+            description:
+              "AI prompt to generate unique text for EACH object. Example: 'a unique fun fact about space'. " +
+              "The server will use AI to generate the requested number of unique items.",
+          },
+          textPattern: {
+            type: "string",
+            description:
+              "Pattern with {i} placeholder for sequential numbering. Example: 'Task {i}' produces 'Task 1', 'Task 2', etc. " +
+              "Used when contentPrompt is not provided.",
+          },
+          parentFrameId: {
+            type: "string",
+            description: "ID of the parent frame if objects should be contained within one",
+          },
+        },
+        required: ["type", "count"],
       },
     },
   },
@@ -464,7 +540,8 @@ export async function executeTool(
   args: Record<string, any>,
   boardId: string,
   userId: string,
-  context: ToolContext = {}
+  context: ToolContext = {},
+  openaiApiKey?: string
 ): Promise<unknown> {
   const supabase = getSupabaseAdmin();
 
@@ -490,7 +567,7 @@ export async function executeTool(
           y: obj.y ?? 0,
           width: obj.width ?? defaults.width,
           height: obj.height ?? defaults.height,
-          color: obj.color ?? defaults.color,
+          color: (obj.color ? resolveColor(obj.color) : null) || defaults.color,
           text: obj.text ?? "",
           rotation: obj.rotation ?? 0,
           z_index: baseZIndex + i,
@@ -522,6 +599,133 @@ export async function executeTool(
       };
     }
 
+    // ── Bulk Create Objects ─────────────────────────────
+    case "bulk_create_objects": {
+      const objType: string = args.type || "sticky";
+      const count: number = Math.min(Math.max(args.count || 0, 1), 500);
+      const layout: string = args.layout || "grid";
+      const gap: number = args.gap ?? 20;
+      const startX: number = args.startX ?? 100;
+      const startY: number = args.startY ?? 100;
+      const contentPrompt: string | undefined = args.contentPrompt;
+      const textPattern: string | undefined = args.textPattern;
+      const parentFrameId: string | null = args.parentFrameId || null;
+
+      const defaults = TYPE_DEFAULTS[objType] || TYPE_DEFAULTS.rectangle;
+      const objWidth: number = args.width ?? defaults.width;
+      const objHeight: number = args.height ?? defaults.height;
+      const color: string = (args.color ? resolveColor(args.color) : null) || defaults.color;
+
+      // Compute columns for grid layout
+      const columns: number =
+        layout === "vertical" ? 1
+        : layout === "horizontal" ? count
+        : args.columns ?? Math.ceil(Math.sqrt(count));
+
+      // Generate positions
+      const positions: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i < count; i++) {
+        const col = i % columns;
+        const row = Math.floor(i / columns);
+        positions.push({
+          x: startX + col * (objWidth + gap),
+          y: startY + row * (objHeight + gap),
+        });
+      }
+
+      // Generate text content
+      let texts: string[] = [];
+      if (contentPrompt && openaiApiKey) {
+        // Server-side LLM call for unique content
+        try {
+          const openai = new OpenAI({ apiKey: openaiApiKey });
+          const resp = await openai.chat.completions.create({
+            model: "gpt-4.1-nano",
+            temperature: 0.9,
+            max_tokens: Math.min(count * 60, 16000),
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You generate short text items. Return ONLY a JSON array of strings, no other text. " +
+                  "Each string should be concise (under 80 characters). No numbering or prefixes.",
+              },
+              {
+                role: "user",
+                content: `Generate exactly ${count} unique items. Each item should be: ${contentPrompt}`,
+              },
+            ],
+          });
+
+          const raw = resp.choices[0]?.message?.content?.trim() ?? "[]";
+          // Strip markdown code fences if present
+          const jsonStr = raw.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (Array.isArray(parsed)) {
+              texts = parsed.map((item: any) => String(item));
+            }
+          } catch {
+            // If JSON parsing fails, split by newlines as fallback
+            texts = raw
+              .split("\n")
+              .map((line: string) => line.replace(/^\d+[\.\)]\s*/, "").trim())
+              .filter((line: string) => line.length > 0);
+          }
+        } catch (err: any) {
+          // If LLM call fails, fall back to pattern or empty
+          texts = [];
+        }
+      }
+
+      if (texts.length === 0 && textPattern) {
+        texts = Array.from({ length: count }, (_, i) =>
+          textPattern.replace(/\{i\}/g, String(i + 1))
+        );
+      }
+
+      // Pad or truncate texts to match count
+      while (texts.length < count) {
+        texts.push(texts.length > 0 ? "" : "");
+      }
+
+      const now = new Date().toISOString();
+      const baseZIndex = Date.now();
+
+      const rows = positions.map((pos, i) => ({
+        board_id: boardId,
+        type: objType,
+        x: pos.x,
+        y: pos.y,
+        width: objWidth,
+        height: objHeight,
+        color,
+        text: texts[i] ?? "",
+        rotation: 0,
+        z_index: baseZIndex + i,
+        created_by: userId,
+        parent_frame_id: parentFrameId,
+        created_at: now,
+        updated_at: now,
+      }));
+
+      const { data, error } = await supabase
+        .from("objects")
+        .insert(rows)
+        .select("id");
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      const createdIds = (data || []).map((r: any) => r.id);
+      return {
+        created: createdIds.length,
+        ids: createdIds,
+        message: `Bulk-created ${createdIds.length} ${objType} object(s)`,
+      };
+    }
+
     // ── Create Connectors ────────────────────────────────
     case "create_connectors": {
       const connectors: any[] = args.connectors || [];
@@ -532,7 +736,7 @@ export async function executeTool(
         style: conn.style || "arrow",
         from_point: conn.fromPoint ?? null,
         to_point: conn.toPoint ?? null,
-        color: conn.color ?? null,
+        color: (conn.color ? resolveColor(conn.color) : null) ?? null,
         stroke_width: conn.strokeWidth ?? null,
       }));
 
@@ -566,7 +770,7 @@ export async function executeTool(
         if (updates.y !== undefined) row.y = updates.y;
         if (updates.width !== undefined) row.width = updates.width;
         if (updates.height !== undefined) row.height = updates.height;
-        if (updates.color !== undefined) row.color = updates.color;
+        if (updates.color !== undefined) row.color = resolveColor(updates.color) ?? updates.color;
         if (updates.text !== undefined) row.text = updates.text;
         if (updates.rotation !== undefined) row.rotation = updates.rotation;
         if (updates.parentFrameId !== undefined) {

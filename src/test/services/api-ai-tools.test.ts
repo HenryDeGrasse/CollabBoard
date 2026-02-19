@@ -47,8 +47,8 @@ beforeEach(() => {
 // ── TOOL_DEFINITIONS ─────────────────────────────────────────
 
 describe("TOOL_DEFINITIONS", () => {
-  it("has 14 tool definitions", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(14);
+  it("has 15 tool definitions", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(15);
     for (const tool of TOOL_DEFINITIONS) {
       expect(tool.type).toBe("function");
       expect(tool.function.name).toBeTruthy();
@@ -152,7 +152,7 @@ describe("executeTool", () => {
     );
     expect(mockSupabase.from).toHaveBeenCalledWith("objects");
     expect(chain.update).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "updated", color: "#FF0000" }),
+      expect.objectContaining({ text: "updated", color: "#ff0000" }),
     );
   });
 
