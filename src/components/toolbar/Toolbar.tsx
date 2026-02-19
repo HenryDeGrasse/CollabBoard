@@ -9,8 +9,11 @@ import {
   Frame,
   ChevronDown,
 } from "lucide-react";
+import type Konva from "konva";
 import type { ToolType } from "../canvas/Board";
+import type { BoardObject, Connector } from "../../types/board";
 import { getStickyColorArray, getShapeColorArray } from "../../utils/colors";
+import { ExportMenu } from "../ui/ExportMenu";
 
 interface ToolbarProps {
   activeTool: ToolType;
@@ -31,6 +34,10 @@ interface ToolbarProps {
   onChangeSelectedColor: (color: string) => void;
   onChangeSelectedStrokeWidth: (w: number) => void;
   onChangeSelectedConnectorColor: (color: string) => void;
+  stageRef?: React.RefObject<Konva.Stage | null>;
+  objects?: Record<string, BoardObject>;
+  connectors?: Record<string, Connector>;
+  boardTitle?: string;
 }
 
 const tools: { id: ToolType; label: string; icon: React.ReactNode; shortcut: string }[] = [
@@ -187,6 +194,10 @@ export function Toolbar({
   onChangeSelectedColor,
   onChangeSelectedStrokeWidth,
   onChangeSelectedConnectorColor,
+  stageRef,
+  objects,
+  connectors,
+  boardTitle,
 }: ToolbarProps) {
   const isConnectorTool = activeTool === "arrow" || activeTool === "line";
   const showCreationColor =
@@ -284,6 +295,19 @@ export function Toolbar({
               {selectedConnectorCount} connector{selectedConnectorCount !== 1 ? "s" : ""}
             </span>
           )}
+        </>
+      )}
+
+      {/* Export menu */}
+      {stageRef && objects && connectors && boardTitle != null && (
+        <>
+          <div className="w-px h-6 bg-gray-200 mx-1" />
+          <ExportMenu
+            stageRef={stageRef}
+            objects={objects}
+            connectors={connectors}
+            boardTitle={boardTitle}
+          />
         </>
       )}
     </div>

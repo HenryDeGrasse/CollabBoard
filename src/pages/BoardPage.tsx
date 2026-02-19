@@ -764,6 +764,10 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         onChangeSelectedColor={handleChangeSelectedColor}
         onChangeSelectedStrokeWidth={handleChangeSelectedStrokeWidth}
         onChangeSelectedConnectorColor={handleChangeSelectedConnectorColor}
+        stageRef={canvas.stageRef}
+        objects={objects}
+        connectors={connectors}
+        boardTitle={boardTitle}
       />
 
       {/* Left-side text style popup — only during text editing */}
