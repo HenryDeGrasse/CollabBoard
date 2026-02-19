@@ -1,4 +1,3 @@
-import React from "react";
 import type { ToolType } from "./Board";
 
 interface ToolHintsProps {

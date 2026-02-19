@@ -113,7 +113,7 @@ export function Board({
   onObjectDragEndBroadcast,
   onSetEditingObject,
   onDraftTextChange,
-  getDraftTextForObject,
+  getDraftTextForObject: _getDraftTextForObject,
   isObjectLocked,
   onResetTool,
   onPushUndo,
@@ -201,7 +201,6 @@ export function Board({
     handleDragStart,
     handleDragMove,
     handleDragEnd,
-    setNodeTopLeft,
   } = useDragSystem({
     objectsRef,
     selectedIds,
@@ -246,7 +245,6 @@ export function Board({
 
   // Frame interaction: header drag, resize tracking
   const {
-    frameManualDrag,
     frameResizeTrackRef,
     handleFrameResizeStart,
     handleFrameHeaderDragStart,
@@ -301,7 +299,6 @@ export function Board({
   const {
     resolvedLiveDragPositions,
     objectsWithLivePositions,
-    withLivePosition,
     poppedOutDraggedObjects,
     poppedOutDraggedObjectIds,
     enteringFrameDraggedObjects,

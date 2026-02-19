@@ -1,4 +1,3 @@
-import React from "react";
 import { Arrow, Line, Rect, Circle as KonvaCircle } from "react-konva";
 import type { ConnectorDrawState } from "../../hooks/useConnectorDraw";
 import type { DrawState } from "../../hooks/useDrawingTools";

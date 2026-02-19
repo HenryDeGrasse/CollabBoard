@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { BoardObject, Connector } from "../types/board";
 import type { ToolType } from "../components/canvas/Board";
 

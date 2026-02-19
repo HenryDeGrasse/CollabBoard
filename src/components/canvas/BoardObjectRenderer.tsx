@@ -15,9 +15,9 @@ export interface BoardObjectRendererProps {
   interactable: boolean;
   draftText?: string;
   onSelect: (id: string, multi?: boolean) => void;
-  onDragStart: (e: any) => void;
-  onDragMove: (e: any) => void;
-  onDragEnd: (e: any) => void;
+  onDragStart: (id: string) => void;
+  onDragMove: (id: string, x: number, y: number) => void;
+  onDragEnd: (id: string, x: number, y: number) => void;
   onDoubleClick: (id: string) => void;
   onUpdateObject: (id: string, updates: Partial<BoardObject>) => void;
   onRotateStart: (id: string) => void;

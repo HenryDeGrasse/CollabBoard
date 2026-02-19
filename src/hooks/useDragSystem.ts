@@ -61,7 +61,7 @@ export interface UseDragSystemReturn {
 
 export function useDragSystem({
   objectsRef,
-  selectedIds,
+  selectedIds: _selectedIds,
   selectedIdsRef,
   stageRef,
   dragInsideFrameRef,
