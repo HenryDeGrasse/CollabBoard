@@ -518,6 +518,160 @@ const TYPE_DEFAULTS: Record<string, { width: number; height: number; color: stri
   frame: { width: 400, height: 300, color: "#E5E7EB" },
 };
 
+const PATCH_BULK_CHUNK_SIZE = 200;
+
+function applyPatchToObjectRow(existingRow: any, patch: Record<string, any>, now: string) {
+  const row = { ...existingRow };
+
+  if (patch.x !== undefined) row.x = patch.x;
+  if (patch.y !== undefined) row.y = patch.y;
+  if (patch.width !== undefined) row.width = patch.width;
+  if (patch.height !== undefined) row.height = patch.height;
+  if (patch.color !== undefined) row.color = resolveColor(patch.color) ?? patch.color;
+  if (patch.text !== undefined) row.text = patch.text;
+  if (patch.rotation !== undefined) row.rotation = patch.rotation;
+  if (patch.parentFrameId !== undefined) {
+    row.parent_frame_id = patch.parentFrameId || null;
+  }
+
+  row.updated_at = now;
+  return row;
+}
+
+async function applyObjectPatchesFallback(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  boardId: string,
+  patches: any[],
+  now: string
+): Promise<{ results: Array<{ id: string; ok: boolean; error?: string }>; succeeded: number }> {
+  const results = await Promise.all(
+    patches.map(async (patch: any) => {
+      const { id, ...updates } = patch;
+      if (!id) {
+        return {
+          id: "",
+          ok: false,
+          error: "Missing object id",
+        } as { id: string; ok: boolean; error?: string };
+      }
+
+      const row: Record<string, any> = {};
+      if (updates.x !== undefined) row.x = updates.x;
+      if (updates.y !== undefined) row.y = updates.y;
+      if (updates.width !== undefined) row.width = updates.width;
+      if (updates.height !== undefined) row.height = updates.height;
+      if (updates.color !== undefined) row.color = resolveColor(updates.color) ?? updates.color;
+      if (updates.text !== undefined) row.text = updates.text;
+      if (updates.rotation !== undefined) row.rotation = updates.rotation;
+      if (updates.parentFrameId !== undefined) {
+        row.parent_frame_id = updates.parentFrameId || null;
+      }
+      row.updated_at = now;
+
+      const { error } = await supabase
+        .from("objects")
+        .update(row)
+        .eq("id", id)
+        .eq("board_id", boardId);
+
+      return { id, ok: !error, error: error?.message } as {
+        id: string;
+        ok: boolean;
+        error?: string;
+      };
+    })
+  );
+
+  return {
+    results,
+    succeeded: results.filter((r) => r.ok).length,
+  };
+}
+
+/**
+ * Apply object patches with a fast bulk path (single upsert per chunk) and a
+ * per-object fallback for exact compatibility when bulk fails.
+ */
+async function applyObjectPatches(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  boardId: string,
+  patches: any[],
+  now: string
+): Promise<{ results: Array<{ id: string; ok: boolean; error?: string }>; succeeded: number }> {
+  if (patches.length === 0) return { results: [], succeeded: 0 };
+
+  const patchIds = Array.from(
+    new Set(
+      patches
+        .map((p) => p?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    )
+  );
+
+  if (patchIds.length === 0) {
+    return applyObjectPatchesFallback(supabase, boardId, patches, now);
+  }
+
+  try {
+    const existingRows: any[] = [];
+    for (let i = 0; i < patchIds.length; i += PATCH_BULK_CHUNK_SIZE) {
+      const idChunk = patchIds.slice(i, i + PATCH_BULK_CHUNK_SIZE);
+      const { data, error: fetchError } = await supabase
+        .from("objects")
+        .select("*")
+        .eq("board_id", boardId)
+        .in("id", idChunk);
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      if (data?.length) existingRows.push(...data);
+    }
+
+    const existingById = new Map(existingRows.map((row: any) => [row.id, row]));
+    const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+    const upsertRows: any[] = [];
+
+    for (const patch of patches) {
+      const id = patch?.id;
+      if (!id || typeof id !== "string") {
+        results.push({ id: "", ok: false, error: "Missing object id" });
+        continue;
+      }
+
+      const existing = existingById.get(id);
+      if (!existing) {
+        // Preserve old behavior: updating a non-existent row is treated as a
+        // no-error no-op.
+        results.push({ id, ok: true });
+        continue;
+      }
+
+      upsertRows.push(applyPatchToObjectRow(existing, patch, now));
+      results.push({ id, ok: true });
+    }
+
+    for (let i = 0; i < upsertRows.length; i += PATCH_BULK_CHUNK_SIZE) {
+      const chunk = upsertRows.slice(i, i + PATCH_BULK_CHUNK_SIZE);
+      if (chunk.length === 0) continue;
+
+      const { error } = await supabase
+        .from("objects")
+        .upsert(chunk, { onConflict: "id" });
+
+      if (error) throw error;
+    }
+
+    return {
+      results,
+      succeeded: results.filter((r) => r.ok).length,
+    };
+  } catch {
+    return applyObjectPatchesFallback(supabase, boardId, patches, now);
+  }
+}
+
 // ─── Tool Execution ────────────────────────────────────────────
 
 export interface ToolResult {
@@ -760,34 +914,15 @@ export async function executeTool(
     // ── Update Objects ───────────────────────────────────
     case "update_objects": {
       const patches: any[] = args.patches || [];
-      const results: { id: string; ok: boolean; error?: string }[] = [];
+      const now = new Date().toISOString();
 
-      for (const patch of patches) {
-        const { id, ...updates } = patch;
-        const row: Record<string, any> = {};
+      const { results, succeeded } = await applyObjectPatches(
+        supabase,
+        boardId,
+        patches,
+        now
+      );
 
-        if (updates.x !== undefined) row.x = updates.x;
-        if (updates.y !== undefined) row.y = updates.y;
-        if (updates.width !== undefined) row.width = updates.width;
-        if (updates.height !== undefined) row.height = updates.height;
-        if (updates.color !== undefined) row.color = resolveColor(updates.color) ?? updates.color;
-        if (updates.text !== undefined) row.text = updates.text;
-        if (updates.rotation !== undefined) row.rotation = updates.rotation;
-        if (updates.parentFrameId !== undefined) {
-          row.parent_frame_id = updates.parentFrameId || null;
-        }
-        row.updated_at = new Date().toISOString();
-
-        const { error } = await supabase
-          .from("objects")
-          .update(row)
-          .eq("id", id)
-          .eq("board_id", boardId);
-
-        results.push({ id, ok: !error, error: error?.message });
-      }
-
-      const succeeded = results.filter((r) => r.ok).length;
       return {
         updated: succeeded,
         results,
@@ -969,35 +1104,36 @@ export async function executeTool(
         .eq("board_id", boardId)
         .in("parent_frame_id", frameIds);
 
-      const results: { id: string; ok: boolean }[] = [];
+      const now = new Date().toISOString();
 
-      for (const frameId of frameIds) {
-        const kids = (children || []).filter((c: any) => c.parent_frame_id === frameId);
-        if (kids.length === 0) {
-          results.push({ id: frameId, ok: true }); // nothing to fit
-          continue;
-        }
+      // Execute all frame updates in parallel — each targets a unique frame ID.
+      const results = await Promise.all(
+        frameIds.map(async (frameId) => {
+          const kids = (children || []).filter((c: any) => c.parent_frame_id === frameId);
+          if (kids.length === 0) {
+            return { id: frameId, ok: true }; // nothing to fit
+          }
 
-        // Compute bounding box of all children (in canvas coords relative to the frame's origin)
-        // Children x/y are absolute canvas coords
-        const minX = Math.min(...kids.map((c: any) => c.x));
-        const minY = Math.min(...kids.map((c: any) => c.y));
-        const maxX = Math.max(...kids.map((c: any) => c.x + c.width));
-        const maxY = Math.max(...kids.map((c: any) => c.y + c.height));
+          // Compute bounding box of all children (in canvas coords)
+          const minX = Math.min(...kids.map((c: any) => c.x));
+          const minY = Math.min(...kids.map((c: any) => c.y));
+          const maxX = Math.max(...kids.map((c: any) => c.x + c.width));
+          const maxY = Math.max(...kids.map((c: any) => c.y + c.height));
 
-        const newX      = minX - padding;
-        const newY      = minY - padding - TITLE_EXTRA;
-        const newWidth  = (maxX - minX) + padding * 2;
-        const newHeight = (maxY - minY) + padding * 2 + TITLE_EXTRA;
+          const newX      = minX - padding;
+          const newY      = minY - padding - TITLE_EXTRA;
+          const newWidth  = (maxX - minX) + padding * 2;
+          const newHeight = (maxY - minY) + padding * 2 + TITLE_EXTRA;
 
-        const { error } = await supabase
-          .from("objects")
-          .update({ x: newX, y: newY, width: newWidth, height: newHeight, updated_at: new Date().toISOString() })
-          .eq("id", frameId)
-          .eq("board_id", boardId);
+          const { error } = await supabase
+            .from("objects")
+            .update({ x: newX, y: newY, width: newWidth, height: newHeight, updated_at: now })
+            .eq("id", frameId)
+            .eq("board_id", boardId);
 
-        results.push({ id: frameId, ok: !error });
-      }
+          return { id: frameId, ok: !error };
+        })
+      );
 
       const ok = results.filter(r => r.ok).length;
       return { fitted: ok, total: frameIds.length, message: `Fitted ${ok}/${frameIds.length} frame(s).` };
@@ -1164,12 +1300,7 @@ export async function executeTool(
           return { error: `Unknown operation "${op}".` };
       }
 
-      for (const p of patches) {
-        const row: Record<string, any> = { updated_at: now };
-        if (p.x !== undefined) row.x = p.x;
-        if (p.y !== undefined) row.y = p.y;
-        await supabase.from("objects").update(row).eq("id", p.id).eq("board_id", boardId);
-      }
+      await applyObjectPatches(supabase, boardId, patches, now);
 
       return { arranged: patches.length, message: `Applied ${op} to ${patches.length} object(s).` };
     }

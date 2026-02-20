@@ -127,15 +127,32 @@ describe("executeTool", () => {
   });
 
   it("update_objects updates object fields", async () => {
-    // update().eq("id", id).eq("board_id", boardId) — first eq returns chain,
-    // second eq must resolve (it is awaited).
-    let eqCallCount = 0;
-    chain.eq.mockImplementation(() => {
-      eqCallCount++;
-      // The second .eq() is the terminal call that gets awaited
-      if (eqCallCount % 2 === 0) return Promise.resolve({ error: null });
-      return chain;
+    // Bulk patch fast path:
+    // 1) select existing rows by IDs
+    // 2) upsert patched rows in one write
+    chain.in.mockResolvedValueOnce({
+      data: [
+        {
+          id: "obj-1",
+          board_id: BOARD_ID,
+          type: "sticky",
+          x: 10,
+          y: 20,
+          width: 150,
+          height: 150,
+          color: "#FBBF24",
+          text: "old",
+          rotation: 0,
+          z_index: 1,
+          created_by: USER_ID,
+          parent_frame_id: null,
+          created_at: "2026-01-01T00:00:00.000Z",
+          updated_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      error: null,
     });
+    chain.upsert.mockResolvedValueOnce({ data: null, error: null });
 
     const result: any = await executeTool(
       "update_objects",
@@ -151,8 +168,11 @@ describe("executeTool", () => {
       expect.objectContaining({ id: "obj-1", ok: true }),
     );
     expect(mockSupabase.from).toHaveBeenCalledWith("objects");
-    expect(chain.update).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "updated", color: "#ff0000" }),
+    expect(chain.upsert).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "obj-1", text: "updated", color: "#ff0000" }),
+      ]),
+      { onConflict: "id" }
     );
   });
 
