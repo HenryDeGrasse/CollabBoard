@@ -157,6 +157,181 @@ export function computeViewBounds(
   };
 }
 
+type BoardContextScope = "full" | "digest";
+
+interface BuiltBoardContext {
+  scope: BoardContextScope;
+  payload: unknown;
+  objectCount: number;
+  connectorCount: number;
+}
+
+function truncateText(value: unknown, maxLen = 80): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1)}…`;
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function compactObject(obj: any) {
+  return {
+    id: obj.id,
+    type: obj.type,
+    text: truncateText(obj.text),
+    color: obj.color,
+    x: Math.round(toNumber(obj.x)),
+    y: Math.round(toNumber(obj.y)),
+    width: Math.round(toNumber(obj.width)),
+    height: Math.round(toNumber(obj.height)),
+    parentFrameId: obj.parentFrameId ?? null,
+  };
+}
+
+export function buildBoardContext(
+  boardState: unknown,
+  complexity: "simple" | "complex",
+  selectedIds?: string[]
+): BuiltBoardContext {
+  const state = (boardState ?? {}) as {
+    objectCount?: number;
+    connectorCount?: number;
+    objects?: any[];
+    connectors?: any[];
+  };
+
+  const objects = Array.isArray(state.objects) ? state.objects : [];
+  const connectors = Array.isArray(state.connectors) ? state.connectors : [];
+  const objectCount = typeof state.objectCount === "number" ? state.objectCount : objects.length;
+  const connectorCount = typeof state.connectorCount === "number" ? state.connectorCount : connectors.length;
+
+  // Keep the full payload for smaller boards where prompt size isn't a concern.
+  if (objectCount <= 250) {
+    return {
+      scope: "full",
+      payload: boardState,
+      objectCount,
+      connectorCount,
+    };
+  }
+
+  const selectedSet = new Set(selectedIds ?? []);
+  const typeCounts: Record<string, number> = {};
+  const childCounts: Record<string, number> = {};
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const obj of objects) {
+    const type = typeof obj.type === "string" ? obj.type : "unknown";
+    typeCounts[type] = (typeCounts[type] ?? 0) + 1;
+
+    if (obj.parentFrameId) {
+      childCounts[obj.parentFrameId] = (childCounts[obj.parentFrameId] ?? 0) + 1;
+    }
+
+    const x = toNumber(obj.x, NaN);
+    const y = toNumber(obj.y, NaN);
+    const width = toNumber(obj.width, NaN);
+    const height = toNumber(obj.height, NaN);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + width);
+      maxY = Math.max(maxY, y + height);
+    }
+  }
+
+  const frameLimit = complexity === "complex" ? 80 : 40;
+  const objectSampleBudget = complexity === "complex" ? 180 : 90;
+  const connectorSampleBudget = complexity === "complex" ? 120 : 50;
+
+  const frames = objects
+    .filter((obj) => obj.type === "frame")
+    .slice(0, frameLimit)
+    .map((frame) => ({
+      id: frame.id,
+      text: truncateText(frame.text),
+      x: Math.round(toNumber(frame.x)),
+      y: Math.round(toNumber(frame.y)),
+      width: Math.round(toNumber(frame.width)),
+      height: Math.round(toNumber(frame.height)),
+      color: frame.color,
+      childCount: childCounts[frame.id] ?? 0,
+    }));
+
+  const selectedObjects = objects
+    .filter((obj) => selectedSet.has(obj.id))
+    .map(compactObject);
+
+  const sampleObjects: any[] = [];
+  const pushSample = (obj: any) => {
+    if (sampleObjects.length >= objectSampleBudget) return;
+    if (selectedSet.has(obj.id)) return;
+    if (obj.type === "frame") return;
+    sampleObjects.push(compactObject(obj));
+  };
+
+  // Prioritise text-bearing objects since they are most likely targets of
+  // language commands ("rename", "find the note that says…", etc.).
+  for (const obj of objects) {
+    if (sampleObjects.length >= objectSampleBudget) break;
+    if (typeof obj.text === "string" && obj.text.trim().length > 0) {
+      pushSample(obj);
+    }
+  }
+  for (const obj of objects) {
+    if (sampleObjects.length >= objectSampleBudget) break;
+    pushSample(obj);
+  }
+
+  const sampledConnectors = connectors.slice(0, connectorSampleBudget).map((conn) => ({
+    id: conn.id,
+    fromId: conn.fromId,
+    toId: conn.toId,
+    style: conn.style,
+    color: conn.color ?? null,
+  }));
+
+  const bounds =
+    Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)
+      ? {
+          minX: Math.round(minX),
+          minY: Math.round(minY),
+          maxX: Math.round(maxX),
+          maxY: Math.round(maxY),
+          width: Math.round(maxX - minX),
+          height: Math.round(maxY - minY),
+        }
+      : null;
+
+  return {
+    scope: "digest",
+    objectCount,
+    connectorCount,
+    payload: {
+      objectCount,
+      connectorCount,
+      typeCounts,
+      bounds,
+      frames,
+      selectedObjects,
+      sampleObjects,
+      sampleConnectors: sampledConnectors,
+      truncated: {
+        objectsOmitted: Math.max(0, objectCount - selectedObjects.length - sampleObjects.length - frames.length),
+        connectorsOmitted: Math.max(0, connectorCount - sampledConnectors.length),
+      },
+      note:
+        "Context is intentionally compact for latency. Call read_board_state when you need exact full board details or IDs not listed in this digest.",
+    },
+  };
+}
+
 interface ConversationTurn {
   user: string;
   assistant: string;
@@ -181,9 +356,21 @@ export async function* runAgent(
 
   const complexity = classifyComplexity(userCommand);
   const model = complexity === "complex" ? MODEL_COMPLEX : MODEL_SIMPLE;
+  const boardContext = buildBoardContext(boardState, complexity, selectedIds);
+  const boardContextJson = JSON.stringify(boardContext.payload);
 
-  // Let the client know which model was selected
-  yield { type: "meta", content: JSON.stringify({ model, complexity }) };
+  // Let the client know which model/context scope was selected
+  yield {
+    type: "meta",
+    content: JSON.stringify({
+      model,
+      complexity,
+      contextScope: boardContext.scope,
+      contextChars: boardContextJson.length,
+      boardObjectCount: boardContext.objectCount,
+      boardConnectorCount: boardContext.connectorCount,
+    }),
+  };
 
   // Build viewport context block if we have the data
   let viewportContext = "";
@@ -218,12 +405,22 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
     ? `\n\n## Currently Selected Objects\nThe user has these object IDs selected: ${selectedIds.join(", ")}.\nWhen the user says "the selected", "these", "them", "those" — they mean these objects.\nTools that accept ids (arrange_objects, duplicate_objects, navigate_to_objects) will default to these if you omit ids.`
     : "";
 
+  const boardContextHeading =
+    boardContext.scope === "digest"
+      ? "## Current Board State Digest (truncated for speed)"
+      : "## Current Board State";
+
+  const digestUsageHint =
+    boardContext.scope === "digest"
+      ? "\nIf you need exact full board details or object IDs not present in this digest, call read_board_state before applying mutations."
+      : "";
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "system",
       content:
-        `## Current Board State\n\`\`\`json\n${JSON.stringify(boardState, null, 2)}\n\`\`\`` +
+        `${boardContextHeading}\n\`\`\`json\n${boardContextJson}\n\`\`\`${digestUsageHint}` +
         viewportContext +
         selectionContext,
     },
