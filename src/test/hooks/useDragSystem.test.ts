@@ -31,7 +31,7 @@ function makeSticky(
 
 /** Create a mock Konva stage with findOne that tracks calls */
 function makeMockStage() {
-  const nodes = new Map<string, { x: (v?: number) => number; y: (v?: number) => number; opacity: (v?: number) => number }>();
+  const nodes = new Map<string, { x: (v?: number) => number; y: (v?: number) => number; opacity: (v?: number) => number; moveToTop: () => void }>();
 
   const getOrCreateNode = (nodeId: string) => {
     if (!nodes.has(nodeId)) {
@@ -42,9 +42,10 @@ function makeMockStage() {
         x: (v?: number) => { if (v !== undefined) _x = v; return _x; },
         y: (v?: number) => { if (v !== undefined) _y = v; return _y; },
         opacity: (v?: number) => { if (v !== undefined) _opacity = v; return _opacity; },
+        moveToTop: () => {},
       });
     }
-    return nodes.get(nodeId)!;
+    return nodes.get(nodeId)!
   };
 
   const stage = {
@@ -189,19 +190,20 @@ describe("useDragSystem", () => {
       });
 
       // The hook should recognize this as a bulk drag scenario.
-      // We verify this by checking that handleDragMove does NOT trigger
-      // scheduleDragStateUpdate (dragPositions stays empty).
+      // Verify by checking that handleDragMove uses setNodeTopLeft (direct
+      // Konva manipulation) rather than only React state. We also push positions
+      // to React state via scheduleDragStateUpdate for pop-out frame previews.
       act(() => {
         result.current.handleDragMove("s0", 200, 300);
       });
 
-      // Flush any pending rAF
+      // Flush rAF-batched state update
       act(() => {
         vi.advanceTimersByTime(20);
       });
 
-      // In bulk drag mode, dragPositions should NOT be updated (skips scheduleDragStateUpdate)
-      expect(result.current.dragPositions).toEqual({});
+      // dragPositions should contain all dragged objects (for pop-out previews)
+      expect(Object.keys(result.current.dragPositions).length).toBeGreaterThan(0);
     });
 
     it("calls setNodeTopLeft for each dragged object during bulk drag move", () => {
@@ -226,7 +228,7 @@ describe("useDragSystem", () => {
       expect(calls).toContain("#node-s0");
     });
 
-    it("does NOT call scheduleDragStateUpdate during bulk drag moves", () => {
+    it("pushes drag positions via scheduleDragStateUpdate during bulk drag moves for pop-out previews", () => {
       const { params } = setupBulkDrag();
       const { result } = renderHook(() => useDragSystem(params));
 
@@ -234,20 +236,19 @@ describe("useDragSystem", () => {
         result.current.handleDragStart("s0");
       });
 
-      // Perform multiple drag moves
+      // Perform a drag move
       act(() => {
-        result.current.handleDragMove("s0", 110, 210);
-        result.current.handleDragMove("s0", 120, 220);
         result.current.handleDragMove("s0", 130, 230);
       });
 
-      // Flush timers
+      // Flush rAF-batched state update
       act(() => {
         vi.advanceTimersByTime(100);
       });
 
-      // dragPositions should remain empty — no React state updates during bulk drag
-      expect(result.current.dragPositions).toEqual({});
+      // dragPositions should contain ALL dragged objects (needed for
+      // pop-out/entering frame previews via useLivePositions)
+      expect(Object.keys(result.current.dragPositions).length).toBeGreaterThan(0);
     });
 
     it("commits all final positions via onUpdateObject on drag end", () => {

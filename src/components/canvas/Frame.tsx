@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from "react";
 import { Group, Rect, Text, Line } from "react-konva";
+import Konva from "konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
 import {
@@ -13,9 +14,8 @@ interface FrameProps {
   isEditing: boolean;
   containedCount: number;
   isSelectMode: boolean;
-  onDragStart: (id: string) => void;
-  onDragMove: (id: string, x: number, y: number) => void;
-  onDragEnd: (id: string, x: number, y: number) => void;
+  onSelect?: (id: string, multi?: boolean) => void;
+  onDragStart?: (id: string) => void;
 }
 
 const MIN_WIDTH = 200;
@@ -28,11 +28,10 @@ export const Frame = React.memo(function Frame({
   isEditing,
   containedCount,
   isSelectMode,
+  onSelect,
   onDragStart,
-  onDragMove,
-  onDragEnd,
 }: FrameProps) {
-  const groupRef = useRef<any>(null);
+  const groupRef = useRef<Konva.Group>(null);
 
   const borderColor = isSelected ? "#4F46E5" : "#94A3B8";
   const borderWidth = isSelected ? 2.5 : 2;
@@ -53,10 +52,10 @@ export const Frame = React.memo(function Frame({
       ref={groupRef}
       x={object.x}
       y={object.y}
-      draggable={isSelected && isSelectMode && !isEditing}
-      onDragStart={() => onDragStart(object.id)}
-      onDragMove={(e) => onDragMove(object.id, e.target.x(), e.target.y())}
-      onDragEnd={(e) => onDragEnd(object.id, e.target.x(), e.target.y())}
+      /* Frames are NOT Konva-draggable. All frame dragging is handled by
+         useFrameInteraction (manual mouse-tracking via the FrameOverlay header).
+         This prevents the dual-drag race condition. */
+      draggable={false}
     >
       {/* Frame background — subtle, sits behind everything */}
       <Rect
@@ -72,6 +71,32 @@ export const Frame = React.memo(function Frame({
         shadowOffsetX={0}
         shadowOffsetY={2}
         listening={false}
+      />
+
+      {/* Body hitbox — allows selecting AND dragging the frame by clicking its
+          empty background. Rendered behind children so child objects receive
+          clicks first (children won't accidentally trigger a frame drag). */}
+      <Rect
+        x={0}
+        y={titleHeight}
+        width={object.width}
+        height={Math.max(0, object.height - titleHeight)}
+        fill="rgba(0,0,0,0)"
+        listening={isSelectMode}
+        onClick={(e) => {
+          e.cancelBubble = true;
+          onSelect?.(object.id, e.evt.shiftKey);
+        }}
+        onTap={(e) => {
+          e.cancelBubble = true;
+          onSelect?.(object.id);
+        }}
+        onMouseDown={(e) => {
+          if (isSelectMode && isSelected) {
+            e.cancelBubble = true;
+            onDragStart?.(object.id);
+          }
+        }}
       />
 
       {/* Title bar background */}

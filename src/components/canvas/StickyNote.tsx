@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from "react";
 import { Group, Rect, Text } from "react-konva";
+import Konva from "konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
 import { RotationHandle } from "./RotationHandle";
@@ -49,7 +50,7 @@ export const StickyNote = React.memo(function StickyNote({
   onRotateMove,
   onRotateEnd,
 }: StickyNoteProps) {
-  const groupRef = useRef<any>(null);
+  const groupRef = useRef<Konva.Group>(null);
   const originalRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const borderColor = isLockedByOther

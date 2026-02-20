@@ -3,6 +3,7 @@ import Konva from "konva";
 import type { BoardObject } from "../types/board";
 import type { ViewportState } from "./useCanvas";
 import type { UndoAction } from "./useUndoRedo";
+import { constrainObjectOutsideFrames } from "../utils/frame-containment";
 
 export interface FrameManualDragState {
   frameId: string;
@@ -10,6 +11,8 @@ export interface FrameManualDragState {
   startMouseY: number;
   startFrameX: number;
   startFrameY: number;
+  /** Offsets for other selected objects being group-dragged along with the primary frame */
+  groupOffsets: Record<string, { dx: number; dy: number }>;
 }
 
 export interface UseFrameInteractionReturn {
@@ -56,7 +59,9 @@ export function useFrameInteraction(
   onObjectDragEndBroadcast: (objectId: string) => void,
   onPushUndo: (action: UndoAction) => void,
   getObjectsInFrame: (frameId: string) => BoardObject[],
-  frameManualDragActiveRef: React.MutableRefObject<boolean>
+  frameManualDragActiveRef: React.MutableRefObject<boolean>,
+  selectedIdsRef: React.MutableRefObject<Set<string>>,
+  getFrameAtPoint: (x: number, y: number) => BoardObject | null
 ): UseFrameInteractionReturn {
   const [frameManualDrag, setFrameManualDrag] = useState<FrameManualDragState | null>(null);
 
@@ -101,29 +106,58 @@ export function useFrameInteraction(
     const canvasX = (pointerPos.x - viewport.x) / viewport.scale;
     const canvasY = (pointerPos.y - viewport.y) / viewport.scale;
 
+    // Collect offsets for other selected objects (group drag support)
+    const groupOffsets: Record<string, { dx: number; dy: number }> = {};
+    const currentSelectedIds = selectedIdsRef.current;
+    if (currentSelectedIds.has(frameId) && currentSelectedIds.size > 1) {
+      currentSelectedIds.forEach((sid) => {
+        if (sid !== frameId) {
+          const sobj = objectsRef.current[sid];
+          if (sobj) {
+            groupOffsets[sid] = { dx: sobj.x - frame.x, dy: sobj.y - frame.y };
+            dragStartPosRef.current[sid] = { x: sobj.x, y: sobj.y };
+          }
+        }
+      });
+    }
+
     setFrameManualDrag({
       frameId,
       startMouseX: canvasX,
       startMouseY: canvasY,
       startFrameX: frame.x,
       startFrameY: frame.y,
+      groupOffsets,
     });
 
     dragStartPosRef.current[frameId] = { x: frame.x, y: frame.y };
 
     const frameOffsets: Record<string, { dx: number; dy: number }> = {};
+    // Collect children of the primary frame
     getObjectsInFrame(frameId).forEach((cobj) => {
       frameOffsets[cobj.id] = { dx: cobj.x - frame.x, dy: cobj.y - frame.y };
       dragStartPosRef.current[cobj.id] = { x: cobj.x, y: cobj.y };
     });
+    // Also collect children of other selected frames in the group
+    for (const [sid] of Object.entries(groupOffsets)) {
+      const sobj = objectsRef.current[sid];
+      if (sobj?.type === "frame") {
+        getObjectsInFrame(sid).forEach((cobj) => {
+          if (!frameOffsets[cobj.id] && !groupOffsets[cobj.id] && cobj.id !== frameId) {
+            frameOffsets[cobj.id] = { dx: cobj.x - frame.x, dy: cobj.y - frame.y };
+            dragStartPosRef.current[cobj.id] = { x: cobj.x, y: cobj.y };
+          }
+        });
+      }
+    }
     frameContainedRef.current = frameOffsets;
-  }, [viewport, stageRef, objectsRef, getObjectsInFrame, dragStartPosRef, frameContainedRef]);
+  }, [viewport, stageRef, objectsRef, getObjectsInFrame, dragStartPosRef, frameContainedRef, selectedIdsRef]);
 
   const onMouseMove = useCallback(
     (canvasPoint: { x: number; y: number }) => {
       if (!frameManualDrag) return;
 
-      const { frameId, startMouseX, startMouseY, startFrameX, startFrameY } = frameManualDrag;
+      const { frameId, startMouseX, startMouseY, startFrameX, startFrameY, groupOffsets } = frameManualDrag;
       const dx = canvasPoint.x - startMouseX;
       const dy = canvasPoint.y - startMouseY;
       const newX = startFrameX + dx;
@@ -133,32 +167,62 @@ export function useFrameInteraction(
         [frameId]: { x: newX, y: newY },
       };
 
+      // Move frame-contained children
       const frameOffsets = frameContainedRef.current;
       for (const [cid, offset] of Object.entries(frameOffsets)) {
         newPositions[cid] = { x: newX + offset.dx, y: newY + offset.dy };
       }
 
+      // Move other selected objects in the group
+      for (const [sid, offset] of Object.entries(groupOffsets)) {
+        newPositions[sid] = { x: newX + offset.dx, y: newY + offset.dy };
+      }
+
       const frameParentMap: Record<string, string | null> = { [frameId]: null };
       for (const cid of Object.keys(newPositions)) {
-        if (cid !== frameId) frameParentMap[cid] = frameId;
+        if (cid !== frameId) {
+          frameParentMap[cid] = objectsRef.current[cid]?.parentFrameId ?? null;
+        }
       }
       scheduleDragStateUpdate(newPositions, frameParentMap);
+
+      // Use setNodeTopLeft for non-frame objects in the group for smooth visual update
+      const stage = stageRef.current;
+      if (stage) {
+        for (const [sid, offset] of Object.entries(groupOffsets)) {
+          const sobj = objectsRef.current[sid];
+          if (sobj && sobj.type !== "frame") {
+            const node = stage.findOne(`#node-${sid}`);
+            if (node) {
+              const sx = newX + offset.dx;
+              const sy = newY + offset.dy;
+              if (sobj.type === "sticky" || sobj.type === "rectangle" || sobj.type === "circle") {
+                node.x(sx + sobj.width / 2);
+                node.y(sy + sobj.height / 2);
+              } else {
+                node.x(sx);
+                node.y(sy);
+              }
+            }
+          }
+        }
+      }
 
       const frameNow = performance.now();
       if (frameNow - lastBroadcastRef.current >= BROADCAST_INTERVAL) {
         lastBroadcastRef.current = frameNow;
-        onObjectDragBroadcast(frameId, newX, newY, null);
-        lastDragBroadcastRef.current[frameId] = { x: newX, y: newY, parentFrameId: null };
-        for (const [cid, pos] of Object.entries(newPositions)) {
-          if (cid === frameId) continue;
-          onObjectDragBroadcast(cid, pos.x, pos.y, frameId);
-          lastDragBroadcastRef.current[cid] = { x: pos.x, y: pos.y, parentFrameId: frameId };
+        for (const [movedId, pos] of Object.entries(newPositions)) {
+          const pf = frameParentMap[movedId] ?? null;
+          onObjectDragBroadcast(movedId, pos.x, pos.y, pf);
+          lastDragBroadcastRef.current[movedId] = { x: pos.x, y: pos.y, parentFrameId: pf };
         }
       }
     },
     [
       frameManualDrag,
       frameContainedRef,
+      objectsRef,
+      stageRef,
       scheduleDragStateUpdate,
       lastBroadcastRef,
       lastDragBroadcastRef,
@@ -170,8 +234,10 @@ export function useFrameInteraction(
   const onMouseUp = useCallback((): boolean => {
     if (!frameManualDrag) return false;
 
-    const { frameId } = frameManualDrag;
+    const { frameId, groupOffsets } = frameManualDrag;
     const draggedPos = dragPositions[frameId];
+    const batchUndoActions: UndoAction[] = [];
+
     if (draggedPos) {
       onUpdateObject(frameId, { x: draggedPos.x, y: draggedPos.y });
 
@@ -180,8 +246,52 @@ export function useFrameInteraction(
         const cpos = dragPositions[cid];
         if (cpos) {
           onUpdateObject(cid, { x: cpos.x, y: cpos.y });
-          onObjectDragBroadcast(cid, cpos.x, cpos.y, frameId);
+          const pf = objectsRef.current[cid]?.parentFrameId ?? null;
+          onObjectDragBroadcast(cid, cpos.x, cpos.y, pf);
           onObjectDragEndBroadcast(cid);
+        }
+      }
+
+      // Commit group-dragged objects (with frame containment detection)
+      const allFrames = Object.values(objectsRef.current).filter((o) => o.type === "frame");
+      for (const sid of Object.keys(groupOffsets)) {
+        const spos = dragPositions[sid];
+        if (spos) {
+          const sobj = objectsRef.current[sid];
+          let finalSX = spos.x;
+          let finalSY = spos.y;
+
+          // Detect frame containment for each group object (non-frame types only)
+          let newParentFrameId: string | null = sobj?.parentFrameId ?? null;
+          if (sobj && sobj.type !== "frame" && allFrames.length > 0) {
+            const centerX = finalSX + sobj.width / 2;
+            const centerY = finalSY + sobj.height / 2;
+            const targetFrame = getFrameAtPoint(centerX, centerY);
+            newParentFrameId = targetFrame?.id ?? null;
+
+            const constrained = constrainObjectOutsideFrames(
+              { x: finalSX, y: finalSY, width: sobj.width, height: sobj.height },
+              allFrames,
+              newParentFrameId
+            );
+            finalSX = constrained.x;
+            finalSY = constrained.y;
+          }
+
+          const oldParent = sobj?.parentFrameId ?? null;
+          onUpdateObject(sid, { x: finalSX, y: finalSY, parentFrameId: newParentFrameId });
+          onObjectDragBroadcast(sid, finalSX, finalSY, newParentFrameId);
+          onObjectDragEndBroadcast(sid);
+
+          const sStart = dragStartPosRef.current[sid];
+          if (sStart && (sStart.x !== finalSX || sStart.y !== finalSY || oldParent !== newParentFrameId)) {
+            batchUndoActions.push({
+              type: "update_object",
+              objectId: sid,
+              before: { x: sStart.x, y: sStart.y, parentFrameId: oldParent },
+              after: { x: finalSX, y: finalSY, parentFrameId: newParentFrameId },
+            });
+          }
         }
       }
 
@@ -189,14 +299,22 @@ export function useFrameInteraction(
       onObjectDragEndBroadcast(frameId);
 
       const startPos = dragStartPosRef.current[frameId];
-      if (startPos) {
-        onPushUndo({
+      if (startPos && (startPos.x !== draggedPos.x || startPos.y !== draggedPos.y)) {
+        batchUndoActions.push({
           type: "update_object",
           objectId: frameId,
           before: { x: startPos.x, y: startPos.y },
           after: { x: draggedPos.x, y: draggedPos.y },
         });
       }
+    }
+
+    if (batchUndoActions.length > 0) {
+      onPushUndo(
+        batchUndoActions.length === 1
+          ? batchUndoActions[0]
+          : { type: "batch", actions: batchUndoActions }
+      );
     }
 
     lastDragBroadcastRef.current = {};
@@ -211,6 +329,7 @@ export function useFrameInteraction(
     frameManualDrag,
     dragPositions,
     frameContainedRef,
+    objectsRef,
     dragStartPosRef,
     lastDragBroadcastRef,
     dragInsideFrameRef,

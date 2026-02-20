@@ -17,12 +17,9 @@ import { HelpPanel } from "../components/ui/HelpPanel";
 import { joinBoard, touchBoard, fetchBoardMetadata, requestBoardAccess } from "../services/board";
 import { DEFAULT_STICKY_COLOR } from "../utils/colors";
 import { Settings } from "lucide-react";
-import {
-  isTextCapableObjectType,
-  resolveObjectTextSize,
-  clampTextSizeForType,
-  getAutoContrastingTextColor,
-} from "../utils/text-style";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { useThumbnailCapture } from "../hooks/useThumbnailCapture";
+import { useTextStyleHandlers } from "../hooks/useTextStyleHandlers";
 
 /* ─── Inline board-title editor ──────────────────────────────── */
 function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: string) => void }) {
@@ -193,6 +190,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     restoreObject,
     restoreObjects,
     restoreConnector,
+    setIdRemapCallback,
     loading,
   } = useBoard(joined ? boardId : "");
 
@@ -221,36 +219,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   }, [setEditingObject]);
 
   // ── Thumbnail capture ────────────────────────────────────────
-  // Konva's toDataURL captures transparent pixels. JPEG converts
-  // transparency → black. Fix: composite onto a white canvas first.
-  const captureThumbnail = useCallback(() => {
-    const stage = canvas.stageRef.current;
-    if (!stage || !boardId) return;
-    try {
-      const rawUrl = stage.toDataURL({ pixelRatio: 0.25 }); // PNG — preserves transparency
-      const img = new Image();
-      img.onload = () => {
-        const cvs = document.createElement("canvas");
-        cvs.width = img.width;
-        cvs.height = img.height;
-        const ctx = cvs.getContext("2d");
-        if (!ctx) return;
-        ctx.fillStyle = "#F8FAFC"; // slate-50 — matches canvas background
-        ctx.fillRect(0, 0, cvs.width, cvs.height);
-        ctx.drawImage(img, 0, 0);
-        try {
-          const dataUrl = cvs.toDataURL("image/jpeg", 0.65);
-          localStorage.setItem(`collabboard-thumb-${boardId}`, dataUrl);
-        } catch { /* storage full or unavailable */ }
-      };
-      img.src = rawUrl;
-    } catch {
-      // Canvas tainted or unavailable — ignore
-    }
-  }, [boardId, canvas.stageRef]);
-
-  // Capture on unmount (e.g. SPA navigation away)
-  useEffect(() => () => captureThumbnail(), [captureThumbnail]);
+  const { captureThumbnail } = useThumbnailCapture(boardId, canvas.stageRef);
   const undoRedo = useUndoRedo(
     createObject,
     updateObject,
@@ -276,6 +245,20 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
 
+  // When createObject's temp ID is replaced by the real DB ID, update selection
+  // so duplicated/pasted objects stay selected.
+  useEffect(() => {
+    setIdRemapCallback((tempId, realId) => {
+      const sel = selectionRef.current;
+      if (sel.selectedIds.has(tempId)) {
+        sel.selectMultiple(
+          Array.from(sel.selectedIds).map((id) => (id === tempId ? realId : id))
+        );
+      }
+    });
+    return () => setIdRemapCallback(null);
+  }, [setIdRemapCallback]);
+
   // Expose board functions for E2E testing
   useEffect(() => {
     (window as any).__COLLABBOARD__ = {
@@ -290,194 +273,19 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   // (join handled above, before useBoard initialization)
 
   // Keyboard shortcuts for tools + undo/redo + copy/paste/duplicate
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
-      ) {
-        return;
-      }
-
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      // Undo: Ctrl+Z
-      if (ctrl && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undoRedo.undo();
-        return;
-      }
-
-      // Redo: Ctrl+Shift+Z or Ctrl+Y
-      if (ctrl && ((e.key === "z" && e.shiftKey) || e.key === "y")) {
-        e.preventDefault();
-        undoRedo.redo();
-        return;
-      }
-
-      // Copy: Ctrl+C
-      if (ctrl && e.key === "c") {
-        e.preventDefault();
-        const sel = selectionRef.current;
-        const objs = objectsRef.current;
-        const conns = connectorsRef.current;
-        const selectedObjs = Array.from(sel.selectedIds)
-          .map((id) => objs[id])
-          .filter(Boolean);
-        const selectedConns = Object.values(conns).filter(
-          (c) => sel.selectedIds.has(c.fromId) && sel.selectedIds.has(c.toId)
-        );
-        clipboardRef.current = {
-          objects: selectedObjs.map((o) => ({ ...o })),
-          connectors: selectedConns.map((c) => ({ ...c })),
-        };
-        return;
-      }
-
-      // Paste: Ctrl+V
-      if (ctrl && e.key === "v") {
-        e.preventDefault();
-        const sel = selectionRef.current;
-        const { objects: clipObjs, connectors: clipConns } = clipboardRef.current;
-        if (clipObjs.length === 0) return;
-
-        const OFFSET = 20;
-        const idMap: Record<string, string> = {};
-
-        for (const obj of clipObjs) {
-          const newId = createObject({
-            type: obj.type,
-            x: obj.x + OFFSET,
-            y: obj.y + OFFSET,
-            width: obj.width,
-            height: obj.height,
-            color: obj.color,
-            text: obj.text,
-            textSize: obj.textSize,
-            textColor: obj.textColor,
-            rotation: obj.rotation,
-            zIndex: obj.zIndex,
-            createdBy: userId,
-            points: obj.points,
-            strokeWidth: obj.strokeWidth,
-          });
-          idMap[obj.id] = newId;
-        }
-
-        for (const conn of clipConns) {
-          const newFromId = idMap[conn.fromId];
-          const newToId = idMap[conn.toId];
-          if (newFromId && newToId) {
-            createConnector({ fromId: newFromId, toId: newToId, style: conn.style });
-          }
-        }
-
-        sel.selectMultiple(Object.values(idMap));
-
-        clipboardRef.current = {
-          objects: clipObjs.map((o) => ({ ...o, x: o.x + OFFSET, y: o.y + OFFSET })),
-          connectors: clipConns,
-        };
-        return;
-      }
-
-      // Duplicate: Ctrl+D
-      if (ctrl && e.key === "d") {
-        e.preventDefault();
-        const sel = selectionRef.current;
-        const objs = objectsRef.current;
-        const conns = connectorsRef.current;
-        const selectedObjs = Array.from(sel.selectedIds)
-          .map((id) => objs[id])
-          .filter(Boolean);
-        if (selectedObjs.length === 0) return;
-
-        const OFFSET = 20;
-        const idMap: Record<string, string> = {};
-
-        for (const obj of selectedObjs) {
-          const newId = createObject({
-            type: obj.type,
-            x: obj.x + OFFSET,
-            y: obj.y + OFFSET,
-            width: obj.width,
-            height: obj.height,
-            color: obj.color,
-            text: obj.text,
-            textSize: obj.textSize,
-            textColor: obj.textColor,
-            rotation: obj.rotation,
-            zIndex: obj.zIndex,
-            createdBy: userId,
-            points: obj.points,
-            strokeWidth: obj.strokeWidth,
-          });
-          idMap[obj.id] = newId;
-        }
-
-        for (const conn of Object.values(conns)) {
-          if (sel.selectedIds.has(conn.fromId) && sel.selectedIds.has(conn.toId)) {
-            const newFromId = idMap[conn.fromId];
-            const newToId = idMap[conn.toId];
-            if (newFromId && newToId) {
-              createConnector({ fromId: newFromId, toId: newToId, style: conn.style });
-            }
-          }
-        }
-
-        sel.selectMultiple(Object.values(idMap));
-        return;
-      }
-
-      // Text size shortcuts: Cmd/Ctrl+Shift+.</>
-      if (ctrl && e.shiftKey && (e.key === "." || e.key === ">" || e.key === "," || e.key === "<")) {
-        e.preventDefault();
-        const delta = e.key === "." || e.key === ">" ? 2 : -2;
-        const sel = selectionRef.current;
-        const objs = objectsRef.current;
-
-        sel.selectedIds.forEach((id) => {
-          const obj = objs[id];
-          if (!obj || !isTextCapableObjectType(obj.type)) return;
-          const base = resolveObjectTextSize(obj);
-          const next = clampTextSizeForType(obj.type, base + delta);
-          updateObject(id, { textSize: next });
-        });
-
-        return;
-      }
-
-      // Tool shortcuts (only without ctrl)
-      if (!ctrl) {
-        switch (e.key.toLowerCase()) {
-          case "v":
-            setActiveTool("select");
-            break;
-          case "s":
-            setActiveTool("sticky");
-            break;
-          case "r":
-            setActiveTool("rectangle");
-            break;
-          case "c":
-            setActiveTool("circle");
-            break;
-          case "a":
-            setActiveTool("arrow");
-            break;
-          case "l":
-            setActiveTool("line");
-            break;
-          case "f":
-            setActiveTool("frame");
-            break;
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [undoRedo, createObject, createConnector, userId]);
+  useKeyboardShortcuts({
+    undoRedo,
+    createObject,
+    createConnector,
+    updateObject,
+    userId,
+    clipboardRef,
+    objectsRef,
+    connectorsRef,
+    selectionRef,
+    canvas,
+    onToolChange: setActiveTool,
+  });
 
   const handleCursorMove = useCallback(
     (x: number, y: number) => {
@@ -504,11 +312,19 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     .map((id) => objects[id])
     .filter(Boolean) as BoardObject[];
 
-  const textStyleTargets = selectedObjects.filter((obj) =>
-    isTextCapableObjectType(obj.type)
-  );
-
-  const canEditSelectedText = textStyleTargets.length > 0;
+  const {
+    canEditSelectedText,
+    selectedTextSize,
+    selectedTextColor,
+    selectedTextVerticalAlign,
+    handleAdjustSelectedTextSize,
+    handleChangeSelectedTextColor,
+    handleChangeTextVerticalAlign,
+  } = useTextStyleHandlers({
+    selectedIds: selection.selectedIds,
+    objects,
+    updateObject,
+  });
 
   // Selected lines' stroke width
   const selectedLines = selectedObjects.filter((o) => o.type === "line");
@@ -557,66 +373,6 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     [selectedConnectorIds, updateConnector]
   );
 
-  const selectedTextSizes = textStyleTargets.map((obj) => resolveObjectTextSize(obj));
-  const selectedTextSize =
-    selectedTextSizes.length > 0 &&
-    selectedTextSizes.every((s) => s === selectedTextSizes[0])
-      ? selectedTextSizes[0]
-      : null;
-
-  const selectedResolvedTextColors = textStyleTargets.map((obj) => {
-    if (obj.textColor) return obj.textColor;
-    if (obj.type === "frame") return "#374151";
-    return getAutoContrastingTextColor(obj.color);
-  });
-
-  const selectedTextColor =
-    selectedResolvedTextColors.length > 0
-      ? selectedResolvedTextColors[0]
-      : "#111827";
-
-  const handleAdjustSelectedTextSize = useCallback(
-    (delta: number) => {
-      selection.selectedIds.forEach((id) => {
-        const obj = objects[id];
-        if (!obj || !isTextCapableObjectType(obj.type)) return;
-
-        const base = resolveObjectTextSize(obj);
-        const next = clampTextSizeForType(obj.type, base + delta);
-        updateObject(id, { textSize: next });
-      });
-    },
-    [selection.selectedIds, objects, updateObject]
-  );
-
-  const handleChangeSelectedTextColor = useCallback(
-    (color: string) => {
-      selection.selectedIds.forEach((id) => {
-        const obj = objects[id];
-        if (!obj || !isTextCapableObjectType(obj.type)) return;
-        updateObject(id, { textColor: color });
-      });
-    },
-    [selection.selectedIds, objects, updateObject]
-  );
-
-  type VAlign = "top" | "middle" | "bottom";
-  const selectedTextVerticalAligns = textStyleTargets.map((o) => o.textVerticalAlign ?? "middle");
-  const selectedTextVerticalAlign: VAlign =
-    selectedTextVerticalAligns.length > 0 && selectedTextVerticalAligns.every((a) => a === selectedTextVerticalAligns[0])
-      ? (selectedTextVerticalAligns[0] as VAlign)
-      : "middle";
-
-  const handleChangeTextVerticalAlign = useCallback(
-    (align: VAlign) => {
-      selection.selectedIds.forEach((id) => {
-        const obj = objects[id];
-        if (!obj || !isTextCapableObjectType(obj.type)) return;
-        updateObject(id, { textVerticalAlign: align });
-      });
-    },
-    [selection.selectedIds, objects, updateObject]
-  );
 
   const handleEmptySuggestion = useCallback((id: string) => {
     switch (id) {

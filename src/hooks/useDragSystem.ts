@@ -14,6 +14,8 @@ const BROADCAST_INTERVAL = 50;
  *  manipulation via setNodeTopLeft. Positions are committed on drag end. */
 const BULK_DRAG_THRESHOLD = 20;
 
+type UpdateObjectUndoAction = Extract<UndoAction, { type: "update_object" }>;
+
 export interface UseDragSystemParams {
   objectsRef: React.MutableRefObject<Record<string, BoardObject>>;
   selectedIds: Set<string>;
@@ -260,7 +262,22 @@ export function useDragSystem({
     // Detect bulk drag mode based on total objects being dragged
     const totalDragged = 1 + Object.keys(groupDragOffsetsRef.current).length + Object.keys(frameOffsets).length;
     isBulkDraggingRef.current = totalDragged >= BULK_DRAG_THRESHOLD;
-  }, [selectedIdsRef, getObjectsInFrame, objectsRef, dragInsideFrameRef]);
+
+    // Promote all dragged nodes above frames so they don't render behind
+    // frame backgrounds during the drag. React re-render on drop restores order.
+    const stageNode = stageRef.current;
+    if (stageNode) {
+      const allDraggedIds = [
+        id,
+        ...Object.keys(groupDragOffsetsRef.current),
+        ...Object.keys(frameOffsets),
+      ];
+      for (const did of allDraggedIds) {
+        const node = stageNode.findOne(`#node-${did}`);
+        if (node) node.moveToTop();
+      }
+    }
+  }, [selectedIdsRef, getObjectsInFrame, objectsRef, dragInsideFrameRef, stageRef]);
 
   const handleDragMove = useCallback(
     (id: string, x: number, y: number) => {
@@ -296,6 +313,27 @@ export function useDragSystem({
           if (stage) setNodeTopLeft(sid, primaryX + offset.dx, primaryY + offset.dy);
         }
 
+        // Push ALL dragged object positions into React state via
+        // scheduleDragStateUpdate (rAF-batched). This is needed for:
+        //  - Frame rendering (clipping groups, overlays are React-driven)
+        //  - Pop-out/entering frame previews (useLivePositions needs dragPositions)
+        // Without this, objects inside frames become invisible when dragged out
+        // during bulk drag because the clipping group hides them.
+        const allPositions: Record<string, { x: number; y: number }> = {};
+        const allParentMap: Record<string, string | null> = {};
+        allPositions[id] = { x: primaryX, y: primaryY };
+        allParentMap[id] = primaryParentFrameId ?? null;
+        for (const [cid, offset] of Object.entries(frameContainedRef.current)) {
+          allPositions[cid] = { x: primaryX + offset.dx, y: primaryY + offset.dy };
+          allParentMap[cid] = objectsRef.current[cid]?.parentFrameId ?? null;
+        }
+        for (const [sid, offset] of Object.entries(groupDragOffsetsRef.current)) {
+          const sobj = objectsRef.current[sid];
+          allPositions[sid] = { x: primaryX + offset.dx, y: primaryY + offset.dy };
+          allParentMap[sid] = sobj?.parentFrameId ?? null;
+        }
+        scheduleDragStateUpdate(allPositions, allParentMap);
+
         // Throttled broadcast — all dragged objects (primary + group + frame children)
         const now = performance.now();
         if (now - lastBroadcastRef.current >= BROADCAST_INTERVAL) {
@@ -329,7 +367,7 @@ export function useDragSystem({
             }
           }
         }
-        return; // Skip scheduleDragStateUpdate — no React re-renders during bulk drag
+        return; // Skip full scheduleDragStateUpdate — frames handled above
       }
 
       // ── Normal drag path ──
@@ -479,29 +517,54 @@ export function useDragSystem({
         const dx = primaryStart ? x - primaryStart.x : 0;
         const dy = primaryStart ? y - primaryStart.y : 0;
 
-        const batchUndoActions: UndoAction[] = [];
+        const batchUndoActions: UpdateObjectUndoAction[] = [];
         const allDragStarts = dragStartPosRef.current;
 
         for (const [oid, oStart] of Object.entries(allDragStarts)) {
-          const finalX = oStart.x + dx;
-          const finalY = oStart.y + dy;
-          onUpdateObject(oid, { x: finalX, y: finalY });
-          if (dx !== 0 || dy !== 0) {
+          const obj = objectsRef.current[oid];
+          let finalX = oStart.x + dx;
+          let finalY = oStart.y + dy;
+
+          // Detect frame containment for each object
+          let newParentFrameId: string | null = obj?.parentFrameId ?? null;
+          if (obj && obj.type !== "frame" && framesRef.current.length > 0) {
+            const centerX = finalX + obj.width / 2;
+            const centerY = finalY + obj.height / 2;
+            const targetFrame = getFrameAtPoint(centerX, centerY);
+            newParentFrameId = targetFrame?.id ?? null;
+
+            const constrained = constrainObjectOutsideFrames(
+              { x: finalX, y: finalY, width: obj.width, height: obj.height },
+              framesRef.current,
+              newParentFrameId
+            );
+            finalX = constrained.x;
+            finalY = constrained.y;
+          }
+
+          const oldParent = obj?.parentFrameId ?? null;
+          onUpdateObject(oid, { x: finalX, y: finalY, parentFrameId: newParentFrameId });
+          if (dx !== 0 || dy !== 0 || oldParent !== newParentFrameId) {
             batchUndoActions.push({
               type: "update_object",
               objectId: oid,
-              before: { x: oStart.x, y: oStart.y },
-              after: { x: finalX, y: finalY },
+              before: { x: oStart.x, y: oStart.y, parentFrameId: oldParent },
+              after: { x: finalX, y: finalY, parentFrameId: newParentFrameId },
             });
           }
         }
 
-        // Broadcast final positions and drag end
-        for (const [oid, oStart] of Object.entries(allDragStarts)) {
-          const finalX = oStart.x + dx;
-          const finalY = oStart.y + dy;
-          const obj = objectsRef.current[oid];
-          onObjectDragBroadcast(oid, finalX, finalY, obj?.parentFrameId ?? null);
+        // Broadcast final positions and drag end.
+        // Use undo actions as source of truth for final positions/parentFrameIds
+        // since onUpdateObject may not have flushed to objectsRef yet.
+        const undoByOid = new Map(batchUndoActions.map((a) => [a.objectId, a]));
+        for (const oid of Object.keys(allDragStarts)) {
+          const ua = undoByOid.get(oid);
+          const after = ua?.after as { x: number; y: number; parentFrameId?: string | null } | undefined;
+          const bx = after?.x ?? (allDragStarts[oid].x + dx);
+          const by = after?.y ?? (allDragStarts[oid].y + dy);
+          const bParent = after?.parentFrameId ?? objectsRef.current[oid]?.parentFrameId ?? null;
+          onObjectDragBroadcast(oid, bx, by, bParent);
           onObjectDragEndBroadcast(oid);
         }
 
@@ -521,6 +584,7 @@ export function useDragSystem({
         frameContainedRef.current = {};
         lastDragBroadcastRef.current = {};
         dragInsideFrameRef.current.clear();
+        clearDragPositionsSoon();
         return;
       }
 
@@ -578,7 +642,7 @@ export function useDragSystem({
         [id]: finalParentFrameId ?? (draggedObj?.parentFrameId ?? null),
       };
 
-      const batchUndoActions: UndoAction[] = [];
+      const batchUndoActions: UpdateObjectUndoAction[] = [];
       if (
         startPos &&
         (startPos.x !== finalX || startPos.y !== finalY || (draggedObj?.parentFrameId ?? null) !== (finalParentFrameId ?? null))
@@ -613,21 +677,41 @@ export function useDragSystem({
       }
       frameContainedRef.current = {};
 
-      // Commit all other group-dragged objects
+      // Commit all other group-dragged objects (with frame containment detection)
       const offsets = groupDragOffsetsRef.current;
       for (const [sid, offset] of Object.entries(offsets)) {
-        const newX = finalX + offset.dx;
-        const newY = finalY + offset.dy;
+        const sobj = objectsRef.current[sid];
+        let newX = finalX + offset.dx;
+        let newY = finalY + offset.dy;
+
+        // Detect frame containment for each group object (non-frame types only)
+        let groupParentFrameId: string | null = sobj?.parentFrameId ?? null;
+        if (sobj && sobj.type !== "frame" && framesRef.current.length > 0) {
+          const centerX = newX + sobj.width / 2;
+          const centerY = newY + sobj.height / 2;
+          const targetFrame = getFrameAtPoint(centerX, centerY);
+          groupParentFrameId = targetFrame?.id ?? null;
+
+          const constrained = constrainObjectOutsideFrames(
+            { x: newX, y: newY, width: sobj.width, height: sobj.height },
+            framesRef.current,
+            groupParentFrameId
+          );
+          newX = constrained.x;
+          newY = constrained.y;
+        }
+
         finalPositions[sid] = { x: newX, y: newY };
-        finalParentFrameMap[sid] = objectsRef.current[sid]?.parentFrameId ?? null;
+        finalParentFrameMap[sid] = groupParentFrameId;
         const sStart = dragStartPosRef.current[sid];
-        onUpdateObject(sid, { x: newX, y: newY });
-        if (sStart && (sStart.x !== newX || sStart.y !== newY)) {
+        const oldParent = sobj?.parentFrameId ?? null;
+        onUpdateObject(sid, { x: newX, y: newY, parentFrameId: groupParentFrameId });
+        if (sStart && (sStart.x !== newX || sStart.y !== newY || oldParent !== groupParentFrameId)) {
           batchUndoActions.push({
             type: "update_object",
             objectId: sid,
-            before: { x: sStart.x, y: sStart.y },
-            after: { x: newX, y: newY },
+            before: { x: sStart.x, y: sStart.y, parentFrameId: oldParent },
+            after: { x: newX, y: newY, parentFrameId: groupParentFrameId },
           });
         }
         delete dragStartPosRef.current[sid];
