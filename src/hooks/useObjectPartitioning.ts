@@ -36,7 +36,13 @@ export function useObjectPartitioning(
   // Sort objects by zIndex for rendering order
   const sortedObjects = useMemo(
     () =>
-      Object.values(objects).sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)),
+      Object.values(objects).sort((a, b) => {
+        const dz = (a.zIndex || 0) - (b.zIndex || 0);
+        // Secondary key: object id (UUID). Deterministic on every client
+        // regardless of realtime insertion order, so tied-zIndex objects
+        // always render in the same order for all collaborators.
+        return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      }),
     [objects]
   );
 

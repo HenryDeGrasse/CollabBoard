@@ -190,7 +190,10 @@ export function Board({
       }
     }
 
-    frames.sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+    frames.sort((a, b) => {
+      const dz = (b.zIndex || 0) - (a.zIndex || 0);
+      return dz !== 0 ? dz : b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+    });
     frameHitOrderRef.current = frames;
     frameChildrenRef.current = childrenByFrame;
   }, [objects]);
@@ -709,7 +712,10 @@ export function Board({
               const enteringIds = new Set(entering.map((o) => o.id));
               const clippedObjects = [...contained, ...entering]
                 .filter((o) => o.type !== "line")
-                .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+                .sort((a, b) => {
+                  const dz = (a.zIndex || 0) - (b.zIndex || 0);
+                  return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+                });
               const framePos =
                 resolvedLiveDragPositions[frameObj.id] || { x: frameObj.x, y: frameObj.y };
               const frameHeaderHeight = getFrameHeaderHeight(frameObj);

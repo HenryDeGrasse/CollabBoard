@@ -172,7 +172,10 @@ export function useDrawingTools(
       }
 
       const objType = activeTool === "sticky" ? "sticky" : activeTool;
-      const maxZ = Math.max(0, ...Object.values(objectsRef.current).map((o) => o.zIndex || 0));
+      // Use Date.now() as zIndex so concurrent users creating objects in the
+      // same instant each get a distinct timestamp, virtually eliminating the
+      // "same zIndex" collision that causes z-order disagreement across clients.
+      // BIGINT in Postgres safely holds the ~1.7 trillion ms epoch value.
       const parentFrame = getFrameAtPoint(x + w / 2, y + h / 2);
       const newId = onCreateObject({
         type: objType,
@@ -182,7 +185,7 @@ export function useDrawingTools(
         color: activeColor,
         text: "",
         rotation: 0,
-        zIndex: maxZ + 1,
+        zIndex: Date.now(),
         createdBy: currentUserId,
         parentFrameId: parentFrame?.id ?? null,
       });

@@ -292,7 +292,10 @@ export function useDragSystem({
         framesObjectsGenRef.current = objectsRef.current;
         framesRef.current = Object.values(objectsRef.current)
           .filter((o) => o.type === "frame")
-          .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+          .sort((a, b) => {
+            const dz = (b.zIndex || 0) - (a.zIndex || 0);
+            return dz !== 0 ? dz : b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+          });
       }
       const cachedFrames = framesRef.current;
 

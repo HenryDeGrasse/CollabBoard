@@ -285,7 +285,10 @@ export function useLivePositions(
       }
     }
 
-    popped.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+    popped.sort((a, b) => {
+      const dz = (a.zIndex || 0) - (b.zIndex || 0);
+      return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
     return popped;
   }, [objects, liveDragPositions, liveDraggedIds, dragInsideFrameRef]);
 
@@ -306,7 +309,10 @@ export function useLivePositions(
       ? [...sortedFrames].reverse()
       : Object.values(objects)
           .filter((o) => o.type === "frame")
-          .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+          .sort((a, b) => {
+            const dz = (b.zIndex || 0) - (a.zIndex || 0);
+            return dz !== 0 ? dz : b.id < a.id ? -1 : b.id > a.id ? 1 : 0;
+          });
 
     if (frames.length === 0) return [];
 
