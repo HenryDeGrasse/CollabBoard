@@ -523,6 +523,23 @@ export function useDragSystem({
         const batchUndoActions: UpdateObjectUndoAction[] = [];
         const allDragStarts = dragStartPosRef.current;
 
+        // Bring directly-dragged non-frame objects to front, preserving their
+        // relative z-order so multi-select group ordering is unchanged.
+        const bulkFrameChildIds = new Set(Object.keys(frameContainedRef.current));
+        const bulkDirectObjs = Object.keys(allDragStarts)
+          .map((oid) => objectsRef.current[oid])
+          .filter((obj): obj is BoardObject =>
+            !!obj && obj.type !== "frame" && !bulkFrameChildIds.has(obj.id)
+          )
+          .sort((a, b) => {
+            const dz = (a.zIndex || 0) - (b.zIndex || 0);
+            return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+          });
+        const bulkDragEndBaseZ = Date.now();
+        const bulkNewZByOid = new Map<string, number>(
+          bulkDirectObjs.map((obj, i) => [obj.id, bulkDragEndBaseZ + i])
+        );
+
         for (const [oid, oStart] of Object.entries(allDragStarts)) {
           const obj = objectsRef.current[oid];
           let finalX = oStart.x + dx;
@@ -546,14 +563,19 @@ export function useDragSystem({
           }
 
           const oldParent = obj?.parentFrameId ?? null;
-          onUpdateObject(oid, { x: finalX, y: finalY, parentFrameId: newParentFrameId });
-          if (dx !== 0 || dy !== 0 || oldParent !== newParentFrameId) {
-            batchUndoActions.push({
-              type: "update_object",
-              objectId: oid,
-              before: { x: oStart.x, y: oStart.y, parentFrameId: oldParent },
-              after: { x: finalX, y: finalY, parentFrameId: newParentFrameId },
-            });
+          const newZ = bulkNewZByOid.get(oid);
+          const posUpdates: Partial<BoardObject> = { x: finalX, y: finalY, parentFrameId: newParentFrameId };
+          if (newZ !== undefined) posUpdates.zIndex = newZ;
+          onUpdateObject(oid, posUpdates);
+
+          if (dx !== 0 || dy !== 0 || oldParent !== newParentFrameId || newZ !== undefined) {
+            const before: Partial<BoardObject> = { x: oStart.x, y: oStart.y, parentFrameId: oldParent };
+            const after: Partial<BoardObject> = { x: finalX, y: finalY, parentFrameId: newParentFrameId };
+            if (newZ !== undefined && obj?.zIndex !== undefined) {
+              before.zIndex = obj.zIndex;
+              after.zIndex = newZ;
+            }
+            batchUndoActions.push({ type: "update_object", objectId: oid, before, after });
           }
         }
 
@@ -636,7 +658,14 @@ export function useDragSystem({
         finalY = constrained.y;
       }
 
-      onUpdateObject(id, { x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null });
+      // Bring directly-dragged non-frame objects to front on drop so the
+      // last-moved object always wins the z-order race across collaborators.
+      const dragEndBaseZ = Date.now();
+      const primaryNewZ = draggedObj?.type !== "frame" ? dragEndBaseZ : undefined;
+
+      const primaryUpdates: Partial<BoardObject> = { x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null };
+      if (primaryNewZ !== undefined) primaryUpdates.zIndex = primaryNewZ;
+      onUpdateObject(id, primaryUpdates);
 
       const finalPositions: Record<string, { x: number; y: number }> = {
         [id]: { x: finalX, y: finalY },
@@ -648,14 +677,21 @@ export function useDragSystem({
       const batchUndoActions: UpdateObjectUndoAction[] = [];
       if (
         startPos &&
-        (startPos.x !== finalX || startPos.y !== finalY || (draggedObj?.parentFrameId ?? null) !== (finalParentFrameId ?? null))
+        (startPos.x !== finalX || startPos.y !== finalY ||
+          (draggedObj?.parentFrameId ?? null) !== (finalParentFrameId ?? null) ||
+          primaryNewZ !== undefined)
       ) {
-        batchUndoActions.push({
-          type: "update_object",
-          objectId: id,
-          before: { x: startPos.x, y: startPos.y, parentFrameId: draggedObj?.parentFrameId ?? null },
-          after: { x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null },
-        });
+        const primaryBefore: Partial<BoardObject> = {
+          x: startPos.x, y: startPos.y, parentFrameId: draggedObj?.parentFrameId ?? null,
+        };
+        const primaryAfter: Partial<BoardObject> = {
+          x: finalX, y: finalY, parentFrameId: finalParentFrameId ?? null,
+        };
+        if (primaryNewZ !== undefined && draggedObj?.zIndex !== undefined) {
+          primaryBefore.zIndex = draggedObj.zIndex;
+          primaryAfter.zIndex = primaryNewZ;
+        }
+        batchUndoActions.push({ type: "update_object", objectId: id, before: primaryBefore, after: primaryAfter });
       }
       delete dragStartPosRef.current[id];
 
@@ -680,8 +716,22 @@ export function useDragSystem({
       }
       frameContainedRef.current = {};
 
-      // Commit all other group-dragged objects (with frame containment detection)
+      // Commit all other group-dragged objects (with frame containment detection).
+      // Non-frame group objects are brought to front together with the primary,
+      // preserving their relative z-order so multi-select groups stay consistent.
       const offsets = groupDragOffsetsRef.current;
+      const groupNonFrameObjs = Object.keys(offsets)
+        .map((sid) => objectsRef.current[sid])
+        .filter((obj): obj is BoardObject => !!obj && obj.type !== "frame")
+        .sort((a, b) => {
+          const dz = (a.zIndex || 0) - (b.zIndex || 0);
+          return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+        });
+      // primary already gets dragEndBaseZ; group objects start at dragEndBaseZ + 1
+      const groupNewZByOid = new Map<string, number>(
+        groupNonFrameObjs.map((obj, i) => [obj.id, dragEndBaseZ + 1 + i])
+      );
+
       for (const [sid, offset] of Object.entries(offsets)) {
         const sobj = objectsRef.current[sid];
         let newX = finalX + offset.dx;
@@ -708,14 +758,18 @@ export function useDragSystem({
         finalParentFrameMap[sid] = groupParentFrameId;
         const sStart = dragStartPosRef.current[sid];
         const oldParent = sobj?.parentFrameId ?? null;
-        onUpdateObject(sid, { x: newX, y: newY, parentFrameId: groupParentFrameId });
-        if (sStart && (sStart.x !== newX || sStart.y !== newY || oldParent !== groupParentFrameId)) {
-          batchUndoActions.push({
-            type: "update_object",
-            objectId: sid,
-            before: { x: sStart.x, y: sStart.y, parentFrameId: oldParent },
-            after: { x: newX, y: newY, parentFrameId: groupParentFrameId },
-          });
+        const sNewZ = groupNewZByOid.get(sid);
+        const sUpdates: Partial<BoardObject> = { x: newX, y: newY, parentFrameId: groupParentFrameId };
+        if (sNewZ !== undefined) sUpdates.zIndex = sNewZ;
+        onUpdateObject(sid, sUpdates);
+        if (sStart && (sStart.x !== newX || sStart.y !== newY || oldParent !== groupParentFrameId || sNewZ !== undefined)) {
+          const sBefore: Partial<BoardObject> = { x: sStart.x, y: sStart.y, parentFrameId: oldParent };
+          const sAfter: Partial<BoardObject> = { x: newX, y: newY, parentFrameId: groupParentFrameId };
+          if (sNewZ !== undefined && sobj?.zIndex !== undefined) {
+            sBefore.zIndex = sobj.zIndex;
+            sAfter.zIndex = sNewZ;
+          }
+          batchUndoActions.push({ type: "update_object", objectId: sid, before: sBefore, after: sAfter });
         }
         delete dragStartPosRef.current[sid];
       }
