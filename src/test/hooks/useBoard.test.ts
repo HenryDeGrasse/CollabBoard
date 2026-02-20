@@ -6,6 +6,7 @@ const mockFetchBoardObjects = vi.fn();
 const mockFetchBoardConnectors = vi.fn();
 const mockFetchBoardMetadata = vi.fn();
 const mockUpdateObject = vi.fn();
+const mockUpdateObjectsBulk = vi.fn();
 const mockCreateObject = vi.fn();
 const mockDeleteObject = vi.fn();
 const mockDeleteFrameCascade = vi.fn();
@@ -23,6 +24,7 @@ vi.mock("../../services/board", () => ({
   fetchBoardConnectors: (...args: any[]) => mockFetchBoardConnectors(...args),
   fetchBoardMetadata: (...args: any[]) => mockFetchBoardMetadata(...args),
   updateObject: (...args: any[]) => mockUpdateObject(...args),
+  updateObjectsBulk: (...args: any[]) => mockUpdateObjectsBulk(...args),
   createObject: (...args: any[]) => mockCreateObject(...args),
   deleteObject: (...args: any[]) => mockDeleteObject(...args),
   deleteFrameCascade: (...args: any[]) => mockDeleteFrameCascade(...args),
@@ -68,6 +70,7 @@ describe("useBoard", () => {
     mockFetchBoardConnectors.mockResolvedValue({});
     mockFetchBoardMetadata.mockResolvedValue({ id: "board-1", title: "Test Board", ownerId: "user-1", createdAt: Date.now(), updatedAt: Date.now(), deletedAt: null });
     mockUpdateObject.mockResolvedValue(undefined);
+    mockUpdateObjectsBulk.mockResolvedValue(undefined);
     mockCreateObject.mockResolvedValue("obj-2");
     mockDeleteObject.mockResolvedValue(undefined);
     mockDeleteFrameCascade.mockResolvedValue(undefined);
@@ -107,20 +110,25 @@ describe("useBoard", () => {
     });
 
     // Should not hit backend immediately for each drag tick
-    expect(mockUpdateObject).not.toHaveBeenCalled();
+    expect(mockUpdateObjectsBulk).not.toHaveBeenCalled();
 
     act(() => {
       vi.advanceTimersByTime(39);
     });
-    expect(mockUpdateObject).not.toHaveBeenCalled();
+    expect(mockUpdateObjectsBulk).not.toHaveBeenCalled();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
 
     // Single backend write with latest merged values
-    expect(mockUpdateObject).toHaveBeenCalledTimes(1);
-    expect(mockUpdateObject).toHaveBeenCalledWith("board-1", "obj-1", { x: 20, y: 30 });
+    expect(mockUpdateObjectsBulk).toHaveBeenCalledTimes(1);
+    expect(mockUpdateObjectsBulk).toHaveBeenCalledWith(
+      "board-1",
+      expect.arrayContaining([
+        expect.objectContaining({ id: "obj-1", x: 20, y: 30 }),
+      ])
+    );
   });
 
   it("ignores stale realtime updates while local changes are pending", async () => {

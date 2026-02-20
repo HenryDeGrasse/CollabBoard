@@ -478,6 +478,38 @@ export async function updateObject(
   if (error) throw error;
 }
 
+const BULK_UPSERT_CHUNK_SIZE = 200;
+
+/**
+ * Bulk-upsert full object rows in chunks.
+ *
+ * Used by drag/resize flushes so many pending position updates can be written
+ * in a handful of round-trips instead of N individual update calls.
+ */
+export async function updateObjectsBulk(
+  boardId: string,
+  objects: BoardObject[]
+): Promise<void> {
+  if (objects.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  const rows = objects.map((obj) => {
+    const row = objectToDb({ ...obj, boardId } as any);
+    row.id = obj.id;
+    row.board_id = boardId;
+    row.updated_at = nowIso;
+    return row;
+  });
+
+  for (let i = 0; i < rows.length; i += BULK_UPSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + BULK_UPSERT_CHUNK_SIZE);
+    const { error } = await supabase
+      .from("objects")
+      .upsert(chunk, { onConflict: "id" });
+    if (error) throw error;
+  }
+}
+
 export async function deleteObject(boardId: string, objectId: string): Promise<void> {
   const { error } = await supabase
     .from("objects")

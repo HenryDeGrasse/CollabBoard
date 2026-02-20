@@ -45,6 +45,8 @@ function dbToConnector(row: any): Connector {
   };
 }
 
+export type IdRemapCallback = (tempId: string, realId: string) => void;
+
 export interface UseBoardReturn {
   objects: Record<string, BoardObject>;
   connectors: Record<string, Connector>;
@@ -60,6 +62,8 @@ export interface UseBoardReturn {
   restoreObject: (obj: BoardObject) => void;
   restoreObjects: (objs: BoardObject[]) => void;
   restoreConnector: (conn: Connector) => void;
+  /** Register a callback invoked when a temp ID from createObject is replaced by the real DB ID */
+  setIdRemapCallback: (cb: IdRemapCallback | null) => void;
   loading: boolean;
 }
 
@@ -72,7 +76,13 @@ export function useBoard(boardId: string): UseBoardReturn {
   const [loading, setLoading] = useState(true);
   const subscribedRef = useRef(false);
   const pendingObjectUpdatesRef = useRef<Record<string, Partial<BoardObject>>>({});
+  const idRemapCallbackRef = useRef<IdRemapCallback | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushInFlightRef = useRef(false);
+  const flushQueuedRef = useRef(false);
+
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
 
   const flushPendingObjectUpdates = useCallback(() => {
     if (flushTimerRef.current) {
@@ -80,14 +90,54 @@ export function useBoard(boardId: string): UseBoardReturn {
       flushTimerRef.current = null;
     }
 
+    if (flushInFlightRef.current) {
+      // Backpressure: only keep one queued flush while a write is in flight.
+      flushQueuedRef.current = true;
+      return;
+    }
+
     const pending = pendingObjectUpdatesRef.current;
+    const pendingIds = Object.keys(pending);
+    if (pendingIds.length === 0) return;
+
     pendingObjectUpdatesRef.current = {};
 
-    Object.entries(pending).forEach(([id, updates]) => {
-      boardService.updateObject(boardId, id, updates).catch((err) => {
-        console.error("Failed to update object:", err);
+    const rowsToUpsert: BoardObject[] = [];
+    for (const id of pendingIds) {
+      const existing = objectsRef.current[id];
+      if (!existing) continue;
+      rowsToUpsert.push({ ...existing, ...pending[id], id });
+    }
+
+    if (rowsToUpsert.length === 0) return;
+
+    flushInFlightRef.current = true;
+    boardService
+      .updateObjectsBulk(boardId, rowsToUpsert)
+      .catch((err) => {
+        console.error("Failed to bulk update objects:", err);
+        // Fallback to per-object updates so we preserve correctness if the
+        // bulk path fails for any reason.
+        pendingIds.forEach((id) => {
+          const updates = pending[id];
+          if (!updates) return;
+          boardService.updateObject(boardId, id, updates).catch((innerErr) => {
+            console.error("Failed to update object:", innerErr);
+          });
+        });
+      })
+      .finally(() => {
+        flushInFlightRef.current = false;
+
+        if (flushQueuedRef.current || Object.keys(pendingObjectUpdatesRef.current).length > 0) {
+          flushQueuedRef.current = false;
+          if (!flushTimerRef.current) {
+            flushTimerRef.current = setTimeout(() => {
+              flushPendingObjectUpdates();
+            }, UPDATE_FLUSH_MS);
+          }
+        }
       });
-    });
   }, [boardId]);
 
   const scheduleObjectUpdateFlush = useCallback(() => {
@@ -212,6 +262,8 @@ export function useBoard(boardId: string): UseBoardReturn {
           next[realId] = { ...fullObj, id: realId };
           return next;
         });
+        // Notify listeners (e.g. selection) about the ID remap
+        idRemapCallbackRef.current?.(tempId, realId);
       }).catch((err) => {
         console.error("Failed to create object:", err);
         // Rollback optimistic update
@@ -416,6 +468,10 @@ export function useBoard(boardId: string): UseBoardReturn {
     [boardId]
   );
 
+  const setIdRemapCallback = useCallback((cb: IdRemapCallback | null) => {
+    idRemapCallbackRef.current = cb;
+  }, []);
+
   return {
     objects,
     connectors,
@@ -431,6 +487,7 @@ export function useBoard(boardId: string): UseBoardReturn {
     restoreObject,
     restoreObjects,
     restoreConnector,
+    setIdRemapCallback,
     loading,
   };
 }
