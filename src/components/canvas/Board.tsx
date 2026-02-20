@@ -170,10 +170,33 @@ export function Board({
     partitionedObjects,
   } = useObjectPartitioning(objects, connectors);
 
+  // Stable frame + children indexes for hot drag-path lookups.
+  // Built once per objects change so getFrameAtPoint/getObjectsInFrame avoid
+  // repeated Object.values/filter/sort work on every pointer move.
+  const frameHitOrderRef = useRef<BoardObject[]>([]);
+  const frameChildrenRef = useRef<Record<string, BoardObject[]>>({});
+  useEffect(() => {
+    const frames: BoardObject[] = [];
+    const childrenByFrame: Record<string, BoardObject[]> = {};
+
+    for (const obj of Object.values(objects)) {
+      if (obj.type === "frame") {
+        frames.push(obj);
+      } else if (obj.parentFrameId) {
+        if (!childrenByFrame[obj.parentFrameId]) {
+          childrenByFrame[obj.parentFrameId] = [];
+        }
+        childrenByFrame[obj.parentFrameId].push(obj);
+      }
+    }
+
+    frames.sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+    frameHitOrderRef.current = frames;
+    frameChildrenRef.current = childrenByFrame;
+  }, [objects]);
+
   const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
-    const frames = Object.values(objectsRef.current)
-      .filter((o) => o.type === "frame")
-      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+    const frames = frameHitOrderRef.current;
 
     for (const frame of frames) {
       const titleHeight = getFrameHeaderHeight(frame);
@@ -185,7 +208,7 @@ export function Board({
   }, []);
 
   const getObjectsInFrame = useCallback((frameId: string) => {
-    return Object.values(objectsRef.current).filter((o) => o.parentFrameId === frameId && o.type !== "frame");
+    return frameChildrenRef.current[frameId] || [];
   }, []);
 
   // Drag system: positions, rAF batching, broadcast, handlers
@@ -258,7 +281,8 @@ export function Board({
     lastBroadcastRef, lastDragBroadcastRef, BROADCAST_INTERVAL,
     dragInsideFrameRef, scheduleDragStateUpdate, clearDragPositionsSoon,
     onUpdateObject, onObjectDragBroadcast, onObjectDragEndBroadcast,
-    onPushUndo, getObjectsInFrame, frameManualDragActiveRef
+    onPushUndo, getObjectsInFrame, frameManualDragActiveRef,
+    selectedIdsRef, getFrameAtPoint
   );
 
   // Input handling: space/pan, right-click pan, resize, keyboard, selection rect
@@ -306,7 +330,7 @@ export function Board({
     enteringFrameDraggedObjects,
     remoteEnteringDraggedObjectIds,
     remotePoppedOutDraggedObjectIds,
-  } = useLivePositions(objects, dragPositions, dragParentFrameIds, remoteDragPositions, dragInsideFrameRef);
+  } = useLivePositions(objects, dragPositions, dragParentFrameIds, remoteDragPositions, dragInsideFrameRef, objectsByFrame, partitionedObjects.frames);
 
   const getCanvasPoint = useCallback(
     (stage: Konva.Stage) => {
@@ -699,9 +723,8 @@ export function Board({
                     isEditing={editingObjectId === obj.id}
                     containedCount={contained.length}
                     isSelectMode={activeTool === "select"}
-                    onDragStart={handleDragStart}
-                    onDragMove={handleDragMove}
-                    onDragEnd={handleDragEnd}
+                    onSelect={handleObjectClick}
+                    onDragStart={handleFrameHeaderDragStart}
                   />
 
                   {/* Clipped contained objects + connectors + entering previews */}
