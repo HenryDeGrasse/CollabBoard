@@ -198,6 +198,21 @@ export function Board({
     frameChildrenRef.current = childrenByFrame;
   }, [objects]);
 
+  // When a remote collaborator starts dragging an object, imperatively promote
+  // that Konva node to the top of the layer so it doesn't disappear under
+  // higher-zIndex objects during the drag. The local drag path already calls
+  // node.moveToTop() inside handleDragStart in useDragSystem; this covers the
+  // remote case. React's re-render after the drag-end DB write (with the new
+  // zIndex) restores the correct persistent order for all clients.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    for (const id of Object.keys(remoteDragPositions)) {
+      const node = stage.findOne(`#node-${id}`);
+      if (node) node.moveToTop();
+    }
+  }, [remoteDragPositions, stageRef]);
+
   const getFrameAtPoint = useCallback((x: number, y: number): BoardObject | null => {
     const frames = frameHitOrderRef.current;
 
