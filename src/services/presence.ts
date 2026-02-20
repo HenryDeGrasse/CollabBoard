@@ -42,10 +42,9 @@ export function createPresenceChannel(
     height?: number
   ) => void
 ) {
-  // Append a random suffix so React Strict Mode double-invoked effects
-  // each get a unique channel topic (see createBoardRealtimeChannels).
-  const suffix = Math.random().toString(36).slice(2, 8);
-  const channel = supabase.channel(`board-presence:${boardId}:${suffix}`, {
+  // Presence + broadcast MUST use a shared topic across collaborators.
+  // (Do not append a random suffix here, or peers won't see each other.)
+  const channel = supabase.channel(`board-presence:${boardId}`, {
     config: { presence: { key: userId } },
   });
 

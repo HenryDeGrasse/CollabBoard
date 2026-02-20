@@ -51,7 +51,7 @@ describe("createPresenceChannel", () => {
 
   it("creates a channel with correct name", () => {
     createPresenceChannel("board-1", "user-1", "Alice", "#EF4444", vi.fn());
-    expect(supabase.channel).toHaveBeenCalledWith(expect.stringMatching(/^board-presence:board-1:/), expect.any(Object));
+    expect(supabase.channel).toHaveBeenCalledWith("board-presence:board-1", expect.any(Object));
   });
 
   it("subscribes and tracks presence on SUBSCRIBED", () => {
