@@ -52,7 +52,11 @@ export function useLivePositions(
   dragPositions: Record<string, { x: number; y: number }>,
   dragParentFrameIds: Record<string, string | null>,
   remoteDragPositions: Record<string, RemoteDragPosition>,
-  dragInsideFrameRef: React.MutableRefObject<Set<string>>
+  dragInsideFrameRef: React.MutableRefObject<Set<string>>,
+  /** Pre-computed map from useObjectPartitioning: frameId → contained children */
+  objectsByFrame?: Record<string, BoardObject[]>,
+  /** Pre-sorted frames from useObjectPartitioning (zIndex ascending) */
+  sortedFrames?: BoardObject[]
 ): UseLivePositionsReturn {
   const liveDragPositions = useMemo(() => {
     const merged: Record<string, LiveDragPosition> = {};
@@ -90,6 +94,14 @@ export function useLivePositions(
     return merged;
   }, [remoteDragPositions, dragParentFrameIds]);
 
+  // IDs currently carrying live drag positions (local or remote).
+  // Shared by pop-out + entering-frame calculations so we don't scan the
+  // entire objects map when only a handful of objects are moving.
+  const liveDraggedIds = useMemo(
+    () => Object.keys(liveDragPositions),
+    [liveDragPositions]
+  );
+
   // Resolve live positions for rendering:
   // - explicit drag packets (local/remote) always win
   // - if a frame moves but some child packets are delayed/dropped,
@@ -102,7 +114,10 @@ export function useLivePositions(
       ...liveDragPositions,
     };
 
-    const frames = Object.values(objects).filter((o) => o.type === "frame");
+    // Use pre-computed frame list if available, otherwise fall back to filter.
+    const frames = sortedFrames
+      ? sortedFrames
+      : Object.values(objects).filter((o) => o.type === "frame");
     if (frames.length === 0) return resolved;
 
     for (const frame of frames) {
@@ -113,8 +128,14 @@ export function useLivePositions(
       const dy = liveFrame.y - frame.y;
       if (dx === 0 && dy === 0) continue;
 
-      for (const obj of Object.values(objects)) {
-        if (obj.type === "frame" || obj.parentFrameId !== frame.id) continue;
+      // Use pre-computed objectsByFrame index for O(children) instead of O(all objects).
+      const children = objectsByFrame
+        ? (objectsByFrame[frame.id] || [])
+        : Object.values(objects).filter(
+            (o) => o.type !== "frame" && o.parentFrameId === frame.id
+          );
+
+      for (const obj of children) {
         if (resolved[obj.id]) continue;
 
         resolved[obj.id] = {
@@ -125,7 +146,7 @@ export function useLivePositions(
     }
 
     return resolved;
-  }, [liveDragPositions, objects]);
+  }, [liveDragPositions, objects, objectsByFrame, sortedFrames]);
 
   // Pre-compute objects with live drag positions applied.
   // Caches merged objects between renders to preserve referential equality
@@ -223,36 +244,50 @@ export function useLivePositions(
   );
 
   const poppedOutDraggedObjects = useMemo(() => {
-    // Skip expensive iteration if no objects have live drag positions
-    if (Object.keys(liveDragPositions).length === 0) return [];
+    if (liveDraggedIds.length === 0) return [];
 
-    return Object.values(objects)
-      .filter((obj) => !!obj.parentFrameId && !!liveDragPositions[obj.id])
-      .map((obj) => {
-        const live = liveDragPositions[obj.id]!;
-        const parent = obj.parentFrameId ? objects[obj.parentFrameId] : undefined;
-        if (!parent || parent.type !== "frame") return null;
+    const popped: BoardObject[] = [];
 
-        // Hysteresis: objects currently inside use lower exit threshold (0.45)
-        const wasInside = dragInsideFrameRef.current.has(obj.id);
-        const threshold = wasInside ? 0.45 : 0.5;
-        const shouldPop = shouldPopOutFromFrame(
-          { x: live.x, y: live.y, width: obj.width, height: obj.height },
-          { x: parent.x, y: parent.y, width: parent.width, height: parent.height },
-          threshold
-        );
+    for (const id of liveDraggedIds) {
+      const obj = objects[id];
+      if (!obj || !obj.parentFrameId) continue;
 
-        if (shouldPop) {
-          dragInsideFrameRef.current.delete(obj.id);
-          return { ...obj, x: live.x, y: live.y };
-        } else {
-          dragInsideFrameRef.current.add(obj.id);
-          return null;
-        }
-      })
-      .filter((obj): obj is BoardObject => !!obj)
-      .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-  }, [objects, liveDragPositions, dragInsideFrameRef]);
+      const live = liveDragPositions[id];
+      if (!live) continue;
+
+      const parent = objects[obj.parentFrameId];
+      if (!parent || parent.type !== "frame") continue;
+
+      // Hysteresis: objects currently inside use lower exit threshold (0.45)
+      const wasInside = dragInsideFrameRef.current.has(id);
+      const threshold = wasInside ? 0.45 : 0.5;
+      const shouldPop = shouldPopOutFromFrame(
+        {
+          x: live.x,
+          y: live.y,
+          width: live.width ?? obj.width,
+          height: live.height ?? obj.height,
+        },
+        { x: parent.x, y: parent.y, width: parent.width, height: parent.height },
+        threshold
+      );
+
+      if (shouldPop) {
+        dragInsideFrameRef.current.delete(id);
+        popped.push({
+          ...obj,
+          ...live,
+          width: live.width ?? obj.width,
+          height: live.height ?? obj.height,
+        });
+      } else {
+        dragInsideFrameRef.current.add(id);
+      }
+    }
+
+    popped.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+    return popped;
+  }, [objects, liveDragPositions, liveDraggedIds, dragInsideFrameRef]);
 
   // IDs of objects currently being dragged out of their frame (for connector rendering)
   const poppedOutDraggedObjectIds = useMemo(
@@ -263,58 +298,93 @@ export function useLivePositions(
   // While dragging uncontained objects into a frame, show a live in-frame preview.
   // Hysteresis: entering uses higher threshold (0.55), staying in uses lower (0.45).
   const enteringFrameDraggedObjects = useMemo(() => {
-    // Skip expensive iteration if no objects have live drag positions
-    if (Object.keys(liveDragPositions).length === 0) return [];
+    if (liveDraggedIds.length === 0) return [];
 
-    const frames = Object.values(objects)
-      .filter((o) => o.type === "frame")
-      .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+    // Reuse pre-sorted frames (ascending zIndex) from useObjectPartitioning,
+    // reversed to descending so topmost frame wins the containment test.
+    const frames = sortedFrames
+      ? [...sortedFrames].reverse()
+      : Object.values(objects)
+          .filter((o) => o.type === "frame")
+          .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
 
-    // Skip if no frames to enter
     if (frames.length === 0) return [];
 
-    return Object.values(objects)
-      .filter((obj) => !obj.parentFrameId && !!liveDragPositions[obj.id] && obj.type !== "frame")
-      .map((obj) => {
-        const live = liveDragPositions[obj.id]!;
+    const frameById = new Map(frames.map((f) => [f.id, f]));
+    const entering: EnteringFrameEntry[] = [];
 
-        // If drag source provided an explicit frame membership preview, trust it.
-        const forcedFrameId = liveParentFrameIds[obj.id];
-        if (forcedFrameId) {
-          const forcedFrame = frames.find((f) => f.id === forcedFrameId);
-          if (forcedFrame) {
-            dragInsideFrameRef.current.add(obj.id);
-            return {
-              frameId: forcedFrame.id,
-              object: { ...obj, x: live.x, y: live.y } as BoardObject,
-            };
-          }
+    for (const id of liveDraggedIds) {
+      const obj = objects[id];
+      if (!obj || obj.parentFrameId || obj.type === "frame") continue;
+
+      const live = liveDragPositions[id];
+      if (!live) continue;
+
+      // If drag source provided an explicit frame membership preview, trust it.
+      const forcedFrameId = liveParentFrameIds[id];
+      if (forcedFrameId) {
+        const forcedFrame = frameById.get(forcedFrameId);
+        if (forcedFrame) {
+          dragInsideFrameRef.current.add(id);
+          entering.push({
+            frameId: forcedFrame.id,
+            object: {
+              ...obj,
+              ...live,
+              width: live.width ?? obj.width,
+              height: live.height ?? obj.height,
+            },
+          });
+          continue;
         }
+      }
 
-        const wasInside = dragInsideFrameRef.current.has(obj.id);
-        const threshold = wasInside ? 0.45 : 0.55;
+      const wasInside = dragInsideFrameRef.current.has(id);
+      const threshold = wasInside ? 0.45 : 0.55;
 
-        const targetFrame = frames.find((frame) => {
-          return !shouldPopOutFromFrame(
-            { x: live.x, y: live.y, width: obj.width, height: obj.height },
-            { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
-            threshold
-          );
+      let targetFrame: BoardObject | undefined;
+      for (const frame of frames) {
+        const inFrame = !shouldPopOutFromFrame(
+          {
+            x: live.x,
+            y: live.y,
+            width: live.width ?? obj.width,
+            height: live.height ?? obj.height,
+          },
+          { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+          threshold
+        );
+        if (inFrame) {
+          targetFrame = frame;
+          break;
+        }
+      }
+
+      if (targetFrame) {
+        dragInsideFrameRef.current.add(id);
+        entering.push({
+          frameId: targetFrame.id,
+          object: {
+            ...obj,
+            ...live,
+            width: live.width ?? obj.width,
+            height: live.height ?? obj.height,
+          },
         });
+      } else {
+        dragInsideFrameRef.current.delete(id);
+      }
+    }
 
-        if (targetFrame) {
-          dragInsideFrameRef.current.add(obj.id);
-          return {
-            frameId: targetFrame.id,
-            object: { ...obj, x: live.x, y: live.y } as BoardObject,
-          };
-        } else {
-          dragInsideFrameRef.current.delete(obj.id);
-          return null;
-        }
-      })
-      .filter((entry): entry is EnteringFrameEntry => !!entry);
-  }, [objects, liveDragPositions, liveParentFrameIds, dragInsideFrameRef]);
+    return entering;
+  }, [
+    objects,
+    liveDragPositions,
+    liveDraggedIds,
+    liveParentFrameIds,
+    dragInsideFrameRef,
+    sortedFrames,
+  ]);
 
   const remoteEnteringDraggedObjectIds = useMemo(() => {
     const ids = new Set<string>();
@@ -340,13 +410,13 @@ export function useLivePositions(
 
   // Clean up dragInsideFrameRef when drag positions are cleared
   useEffect(() => {
-    const liveIds = new Set(Object.keys(liveDragPositions));
+    const liveIds = new Set(liveDraggedIds);
     dragInsideFrameRef.current.forEach((id) => {
       if (!liveIds.has(id)) {
         dragInsideFrameRef.current.delete(id);
       }
     });
-  }, [liveDragPositions, dragInsideFrameRef]);
+  }, [liveDraggedIds, dragInsideFrameRef]);
 
   return {
     liveDragPositions,
