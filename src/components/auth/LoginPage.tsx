@@ -156,7 +156,7 @@ export function LoginPage() {
                   disabled={loading}
                   className="w-full py-4 mt-2 bg-newsprint-fg text-newsprint-bg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg sharp-corners text-sm font-mono font-bold uppercase tracking-widest transition-colors duration-200 disabled:opacity-50"
                 >
-                  {loading ? "PROCESSING..." : mode === "signin" ? "SUBSCRIBE" : "SUBSCRIBE"}
+                  {loading ? "PROCESSING..." : mode === "signin" ? "LOG IN" : "CREATE ACCOUNT"}
                 </button>
                 <div className="text-center pt-2">
                   <button 
@@ -164,7 +164,7 @@ export function LoginPage() {
                     onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setInfo(""); }}
                     className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg transition-colors px-2 py-1 sharp-corners border border-transparent hover:border-newsprint-fg"
                   >
-                    {mode === "signin" ? "OR START A NEW SUBSCRIPTION" : "ALREADY SUBSCRIBED? SIGN IN"}
+                    {mode === "signin" ? "OR CREATE ACCOUNT" : "ALREADY HAVE AN ACCOUNT? LOG IN"}
                   </button>
                 </div>
               </form>

@@ -146,7 +146,7 @@ describe("LoginPage integration", () => {
 
     await user.type(screen.getByPlaceholderText(/email address/i), "test@example.com");
     await user.type(screen.getByPlaceholderText(/^password$/i), "secret123");
-    await user.click(screen.getByRole("button", { name: /^subscribe$/i }));
+    await user.click(screen.getByRole("button", { name: /^log in$/i }));
 
     expect(mockSignInWithPassword).toHaveBeenCalledWith({
       email: "test@example.com",
@@ -158,7 +158,7 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.click(screen.getByRole("button", { name: /^subscribe$/i }));
+    await user.click(screen.getByRole("button", { name: /^log in$/i }));
     expect(screen.getByText(/please enter your email/i)).toBeInTheDocument();
   });
 
@@ -167,18 +167,18 @@ describe("LoginPage integration", () => {
     render(<LoginPage />);
 
     // Start in sign-in mode
-    expect(screen.getByRole("button", { name: /^subscribe$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^log in$/i })).toBeInTheDocument();
 
-    // Switch to sign-up — click the "Start a new subscription" link
-    const signUpLink = screen.getByRole("button", { name: /subscription/i });
+    // Switch to sign-up — click the "Create account" link
+    const signUpLink = screen.getByRole("button", { name: /create account/i });
     await user.click(signUpLink);
-    expect(screen.getByRole("button", { name: /^subscribe$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^create account$/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/display name/i)).toBeInTheDocument();
 
-    // Switch back — click the "Sign in" link
-    const signInLink = screen.getByRole("button", { name: /sign in/i });
+    // Switch back — click the "Log in" link
+    const signInLink = screen.getByRole("button", { name: /log in/i });
     await user.click(signInLink);
-    expect(screen.getByRole("button", { name: /^subscribe$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^log in$/i })).toBeInTheDocument();
   });
 
   it("saves intended board path to localStorage before Google OAuth redirect", async () => {
