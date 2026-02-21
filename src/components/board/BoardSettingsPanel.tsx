@@ -262,7 +262,7 @@ export function BoardSettingsPanel({
 
             {/* Invite link */}
             <section>
-              <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-muted mb-3 border-b border-newsprint-muted pb-1">
+              <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg mb-3 border-b border-newsprint-fg pb-1">
                 Invite Link
               </h3>
               <p className="text-xs font-body text-newsprint-fg mb-4">
@@ -277,14 +277,14 @@ export function BoardSettingsPanel({
                 </div>
               ) : inviteUrl ? (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2 bg-neutral-100 border border-newsprint-fg px-3 py-3 sharp-corners">
+                  <div className="flex items-center gap-2 bg-newsprint-bg border-2 border-newsprint-fg px-3 py-3 sharp-corners shadow-[2px_2px_0px_0px_#111111]">
                     <span className="flex-1 text-xs text-newsprint-fg truncate font-mono">{inviteUrl}</span>
                     <button
                       onClick={handleCopyInvite}
-                      className={`shrink-0 flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-2 sharp-corners border transition-colors ${
+                      className={`shrink-0 flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-2 sharp-corners border-2 border-newsprint-fg transition-colors ${
                         copied === "invite"
-                          ? "bg-newsprint-fg text-newsprint-bg border-newsprint-fg"
-                          : "bg-white border-newsprint-fg text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg"
+                          ? "bg-neutral-300 text-newsprint-fg border-newsprint-muted"
+                          : "bg-newsprint-fg text-newsprint-bg hover:bg-newsprint-fg/90"
                       }`}
                     >
                       <Copy size={12} strokeWidth={1.5} />

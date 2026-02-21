@@ -513,6 +513,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         activeColor={activeColor}
         activeStrokeWidth={activeStrokeWidth}
         selectedCount={selection.selectedIds.size}
+        selectedObjectIds={selection.selectedIds}
         selectedColor={
           selection.selectedIds.size > 0
             ? (objects[Array.from(selection.selectedIds)[0]]?.color || "")
