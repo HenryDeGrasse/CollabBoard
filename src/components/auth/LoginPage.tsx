@@ -106,7 +106,7 @@ export function LoginPage() {
           {/* Header */}
           <div className="px-10 pt-12 pb-6 border-b-4 border-newsprint-fg text-center">
             <h1 className="text-4xl sm:text-5xl font-black font-serif text-newsprint-fg uppercase tracking-tighter leading-none mb-2">
-              The Daily<br />Board
+              The Collab<br />Board
             </h1>
             <p className="text-xs font-mono uppercase tracking-widest text-neutral-600 font-bold">
               Vol. 1 — Collaboration Edition
