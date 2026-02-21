@@ -15,6 +15,7 @@ function freshChain() {
   c.in = vi.fn().mockReturnValue(c);
   c.or = vi.fn().mockReturnValue(c);
   c.ilike = vi.fn().mockReturnValue(c);
+  c.limit = vi.fn().mockReturnValue(c);
   c.single = vi.fn().mockResolvedValue(mockResult);
   c.maybeSingle = vi.fn().mockResolvedValue(mockResult);
   return c;
@@ -208,7 +209,7 @@ describe("executeTool", () => {
   });
 
   it("search_objects returns matching objects", async () => {
-    chain.ilike.mockResolvedValueOnce({
+    chain.limit.mockResolvedValueOnce({
       data: [
         {
           id: "obj-1",

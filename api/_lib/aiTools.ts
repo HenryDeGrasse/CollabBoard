@@ -533,9 +533,9 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "search_objects",
       description:
-        "Find objects on the board by text content, type, or color. Returns matching object IDs and properties. " +
+        "Find objects on the board by text content, type, color, or parent frame. Returns matching object IDs and properties. " +
         "Use when the user says 'find', 'search for', 'which objects have', 'show me all', or before acting on " +
-        "objects you need to locate first.",
+        "objects you need to locate first. Prefer this over read_board_state when you only need a subset of objects.",
       parameters: {
         type: "object",
         properties: {
@@ -551,6 +551,14 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
           color: {
             type: "string",
             description: "Only return objects of this color (hex or name).",
+          },
+          parentFrameId: {
+            type: "string",
+            description: "Only return objects contained within this frame ID.",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results to return (default: 100).",
           },
         },
       },
@@ -626,13 +634,22 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             },
             description: "Main branches radiating from the center",
           },
-          sourceObjectIds: {
+          sourceIds: {
             type: "array",
-            items: { type: "string" },
+            items: {
+              type: "object",
+              properties: {
+                branchLabel: { type: "string", description: "Which branch to place these objects under (must match a label in branches)" },
+                objectIds: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into this branch" },
+              },
+              required: ["branchLabel", "objectIds"],
+            },
             description:
-              "Optional. Existing object IDs to REPOSITION into the mind map instead of creating new nodes. " +
-              "The objects keep their text, color, and size — only their positions are updated. " +
-              "Use when the user says 'reorganize', 'convert', or 'turn into'. When provided, branches array is ignored.",
+              "Optional. Existing object IDs to REPOSITION into specific mind map branches instead of creating new nodes. " +
+              "Each entry maps objectIds to a branchLabel defined in the branches array. " +
+              "Objects keep their text, color, and size — only their positions are updated. " +
+              "Use when the user says 'organize', 'reorganize', 'categorize', 'group', 'sort', 'separate', 'convert', or 'turn into'. " +
+              "When provided, the children arrays in branches are ignored — existing objects are used instead.",
           },
           startX: { type: "number" },
           startY: { type: "number" },
@@ -681,12 +698,20 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             },
             description: "Ordered list of steps in the flow",
           },
-          sourceObjectIds: {
+          sourceIds: {
             type: "array",
-            items: { type: "string" },
+            items: {
+              type: "object",
+              properties: {
+                stepLabel: { type: "string", description: "Label for this step in the flowchart" },
+                objectIds: { type: "array", items: { type: "string" }, description: "IDs of existing objects to place at this step (first ID becomes the step node)" },
+              },
+              required: ["stepLabel", "objectIds"],
+            },
             description:
               "Optional. Existing object IDs to REPOSITION into the flowchart instead of creating new step nodes. " +
-              "Objects are placed in the given order. When provided, steps array is ignored.",
+              "Each entry maps objectIds to a labeled step. Objects are placed in sequential order. " +
+              "When provided, the steps array is ignored.",
           },
           startX: { type: "number" },
           startY: { type: "number" },
@@ -2223,9 +2248,11 @@ export async function executeTool(
       const searchText:  string | undefined = args.text;
       const searchType:  string | undefined = args.type;
       const searchColor: string | undefined = args.color;
+      const searchParent: string | undefined = args.parentFrameId;
+      const searchLimit: number = typeof args.limit === "number" && args.limit > 0 ? Math.min(args.limit, 500) : 100;
 
-      if (!searchText && !searchType && !searchColor) {
-        return { error: "Provide at least one of: text, type, color." };
+      if (!searchText && !searchType && !searchColor && !searchParent) {
+        return { error: "Provide at least one of: text, type, color, parentFrameId." };
       }
 
       let query = supabase
@@ -2233,12 +2260,15 @@ export async function executeTool(
         .select("id, type, x, y, width, height, color, text, parent_frame_id")
         .eq("board_id", boardId);
 
-      if (searchType)  query = query.eq("type", searchType);
-      if (searchText)  query = query.ilike("text", `%${searchText}%`);
+      if (searchType)   query = query.eq("type", searchType);
+      if (searchText)   query = query.ilike("text", `%${searchText}%`);
+      if (searchParent) query = query.eq("parent_frame_id", searchParent);
       if (searchColor) {
         const hex = resolveColor(searchColor) ?? searchColor;
         query = query.ilike("color", hex);
       }
+
+      query = query.limit(searchLimit);
 
       const { data: results, error } = await query;
       if (error) return { error: error.message };
@@ -2364,7 +2394,7 @@ export async function executeTool(
 
     // ── Create Mind Map ──────────────────────────────────────
     case "createMindMap": {
-      const { centerTopic, branches, sourceObjectIds } = args;
+      const { centerTopic, branches, sourceIds: mmSourceIds } = args;
 
       const innerRadius = 250;
       const outerRadius = 450;
@@ -2375,45 +2405,106 @@ export async function executeTool(
       const cx = args.startX ?? defaultCX;
       const cy = args.startY ?? defaultCY;
 
-      // ── Reposition mode: move existing objects into mind map layout ──
-      if (Array.isArray(sourceObjectIds) && sourceObjectIds.length > 0) {
+      // ── Reposition mode: move existing objects into specific branches ──
+      if (Array.isArray(mmSourceIds) && mmSourceIds.length > 0 && Array.isArray(branches) && branches.length > 0) {
+        const allObjIds = mmSourceIds.flatMap((s: any) => s.objectIds || []);
         const { data: srcObjs } = await supabase
           .from("objects")
           .select("id, x, y, width, height")
           .eq("board_id", boardId)
-          .in("id", sourceObjectIds);
+          .in("id", allObjIds);
 
         if (!srcObjs || srcObjs.length === 0) {
-          return { error: "None of the sourceObjectIds were found on this board." };
+          return { error: "None of the sourceIds objects were found on this board." };
         }
+        const objMap = new Map(srcObjs.map((o: any) => [o.id, o]));
+        const sourceMap = new Map(mmSourceIds.map((s: any) => [s.branchLabel, s.objectIds || []]));
+
+        const now = new Date().toISOString();
+        let zIndex = Date.now();
+        const centerW = 200;
+        const centerH = 80;
+        const branchW = 160;
+        const branchH = 60;
 
         const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
         const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
         const connectorRows: any[] = [];
+        let totalCreated = 0;
 
-        const firstId = srcObjs[0].id;
-        const firstObj = srcObjs[0];
-        const centerX = cx - Math.round((firstObj.width || 160) / 2);
-        const centerY = cy - Math.round((firstObj.height || 60) / 2);
-        patches.push({ id: firstId, x: centerX, y: centerY, parentFrameId: null });
-        allPositions.push({ x: centerX, y: centerY, width: firstObj.width || 160, height: firstObj.height || 60 });
+        const { data: centerData, error: centerErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "rectangle",
+            x: cx - centerW / 2, y: cy - centerH / 2,
+            width: centerW, height: centerH,
+            color: "#3B82F6", text: centerTopic || "Central Topic",
+            rotation: 0, z_index: zIndex++,
+            created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
 
-        const remaining = srcObjs.slice(1);
-        const n = remaining.length;
+        if (centerErr || !centerData) return { error: centerErr?.message || "Failed to create center node" };
+        const centerId = centerData.id;
+        totalCreated++;
+        allPositions.push({ x: cx - centerW / 2, y: cy - centerH / 2, width: centerW, height: centerH });
+
+        const n = branches.length;
         for (let i = 0; i < n; i++) {
-          const obj = remaining[i];
+          const branch = branches[i];
           const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-          const bx = cx + Math.round(innerRadius * Math.cos(angle)) - Math.round((obj.width || 160) / 2);
-          const by = cy + Math.round(innerRadius * Math.sin(angle)) - Math.round((obj.height || 60) / 2);
-          patches.push({ id: obj.id, x: bx, y: by, parentFrameId: null });
-          allPositions.push({ x: bx, y: by, width: obj.width || 160, height: obj.height || 60 });
+          const bx = cx + Math.round(innerRadius * Math.cos(angle)) - branchW / 2;
+          const by = cy + Math.round(innerRadius * Math.sin(angle)) - branchH / 2;
+          const color = (branch.color ? resolveColor(branch.color) : null) || branchColors[i % branchColors.length];
+
+          const { data: bData, error: bErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "sticky",
+              x: bx, y: by, width: branchW, height: branchH,
+              color, text: branch.label || "",
+              rotation: 0, z_index: zIndex++,
+              created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+
+          if (bErr || !bData) continue;
+          totalCreated++;
+          allPositions.push({ x: bx, y: by, width: branchW, height: branchH });
 
           connectorRows.push({
             board_id: boardId,
-            from_id: firstId, to_id: obj.id,
+            from_id: centerId, to_id: bData.id,
             style: "arrow", color: null, stroke_width: null,
             from_point: null, to_point: null,
           });
+
+          const idsForBranch: string[] = sourceMap.get(branch.label) || [];
+          if (idsForBranch.length > 0) {
+            const subAngleSpread = Math.PI / (n > 2 ? n : 3);
+            for (let j = 0; j < idsForBranch.length; j++) {
+              const objId = idsForBranch[j];
+              const obj = objMap.get(objId);
+              if (!obj) continue;
+
+              const subAngleOffset = (j - (idsForBranch.length - 1) / 2) * (subAngleSpread / Math.max(idsForBranch.length, 1));
+              const subAngle = angle + subAngleOffset;
+              const sx = cx + Math.round(outerRadius * Math.cos(subAngle)) - Math.round((obj.width || 150) / 2);
+              const sy = cy + Math.round(outerRadius * Math.sin(subAngle)) - Math.round((obj.height || 150) / 2);
+
+              patches.push({ id: objId, x: sx, y: sy, parentFrameId: null });
+              allPositions.push({ x: sx, y: sy, width: obj.width || 150, height: obj.height || 150 });
+
+              connectorRows.push({
+                board_id: boardId,
+                from_id: bData.id, to_id: objId,
+                style: "arrow", color: null, stroke_width: null,
+                from_point: null, to_point: null,
+              });
+            }
+          }
         }
 
         const moved = await repositionObjects(supabase, boardId, patches);
@@ -2425,10 +2516,11 @@ export async function executeTool(
         const _viewport = computeNavigationViewport(allPositions, context.screenSize);
 
         return {
+          created: totalCreated,
           repositioned: moved,
           connectors: connectorRows.length,
-          centerId: firstId,
-          message: `Reorganized ${moved} existing objects into a mind map with ${connectorRows.length} connectors.`,
+          centerId,
+          message: `Created mind map with ${totalCreated} new nodes. Repositioned ${moved} existing objects into branches with ${connectorRows.length} connectors.`,
           ...(_viewport ? { _viewport } : {}),
         };
       }
@@ -2551,20 +2643,22 @@ export async function executeTool(
 
     // ── Create Flowchart ─────────────────────────────────────
     case "createFlowchart": {
-      const { title, steps, direction = "top-to-bottom", sourceObjectIds: fcSourceIds } = args;
+      const { title, steps, direction = "top-to-bottom", sourceIds: fcSourceIds } = args;
       const isVertical = direction === "top-to-bottom";
 
-      // ── Reposition mode ──
+      // ── Reposition mode: move existing objects into flowchart steps ──
       if (Array.isArray(fcSourceIds) && fcSourceIds.length > 0) {
+        const allObjIds = fcSourceIds.flatMap((s: any) => s.objectIds || []);
         const { data: srcObjs } = await supabase
           .from("objects")
           .select("id, x, y, width, height")
           .eq("board_id", boardId)
-          .in("id", fcSourceIds);
+          .in("id", allObjIds);
 
         if (!srcObjs || srcObjs.length === 0) {
-          return { error: "None of the sourceObjectIds were found on this board." };
+          return { error: "None of the sourceIds objects were found on this board." };
         }
+        const objMap = new Map(srcObjs.map((o: any) => [o.id, o]));
 
         const stepGapR = 80;
         const defaultX = context.viewportCenter?.x ?? 200;
@@ -2575,22 +2669,29 @@ export async function executeTool(
         const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
         const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
         const connectorRows: any[] = [];
+        let prevId: string | null = null;
 
-        for (let i = 0; i < srcObjs.length; i++) {
-          const obj = srcObjs[i];
+        for (let i = 0; i < fcSourceIds.length; i++) {
+          const step = fcSourceIds[i];
+          const ids: string[] = step.objectIds || [];
+          const firstId = ids[0];
+          const obj = firstId ? objMap.get(firstId) : null;
+          if (!obj) continue;
+
           const w = obj.width || 200;
           const h = obj.height || 80;
           patches.push({ id: obj.id, x: cursorX, y: cursorY, parentFrameId: null });
           allPositions.push({ x: cursorX, y: cursorY, width: w, height: h });
 
-          if (i > 0) {
+          if (prevId) {
             connectorRows.push({
               board_id: boardId,
-              from_id: srcObjs[i - 1].id, to_id: obj.id,
+              from_id: prevId, to_id: obj.id,
               style: "arrow", color: null, stroke_width: null,
               from_point: null, to_point: null,
             });
           }
+          prevId = obj.id;
 
           if (isVertical) cursorY += h + stepGapR;
           else cursorX += w + stepGapR;
