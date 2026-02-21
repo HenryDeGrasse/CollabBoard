@@ -20,6 +20,8 @@ interface ToolbarProps {
   activeColor: string;
   activeStrokeWidth: number;
   selectedCount: number;
+  /** IDs of selected objects (for deriving sticky vs shape color set) */
+  selectedObjectIds?: Set<string>;
   selectedColor: string;
   selectedStrokeWidth: number | null;
   /** Number of selected connectors */
@@ -183,6 +185,7 @@ export function Toolbar({
   activeColor,
   activeStrokeWidth,
   selectedCount,
+  selectedObjectIds,
   selectedColor,
   selectedStrokeWidth,
   selectedConnectorCount,
@@ -203,8 +206,13 @@ export function Toolbar({
   const showCreationColor =
     activeTool === "sticky" || activeTool === "rectangle" || activeTool === "circle" || isConnectorTool;
 
-  const creationColors = activeTool === "sticky" ? getStickyColorArray() : getShapeColorArray();
-  const allColors = [...new Set([...getStickyColorArray(), ...getShapeColorArray()])];
+  const stickyColors = getStickyColorArray();
+  const shapeColors = getShapeColorArray();
+  const allColors = [...new Set([...stickyColors, ...shapeColors])];
+
+  // We use the unified color palette for all objects (stickies, shapes, connectors)
+  const creationColors = allColors;
+  const selectedFillColors = allColors;
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 bg-newsprint-bg border border-newsprint-fg sharp-corners p-1 shadow-[4px_4px_0px_0px_#111111]">
@@ -258,7 +266,7 @@ export function Toolbar({
           <ColorDropdown
             activeColor={selectedColor}
             onColorChange={onChangeSelectedColor}
-            colors={allColors}
+            colors={selectedFillColors}
             label="Fill color"
           />
 
