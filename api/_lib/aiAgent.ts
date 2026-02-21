@@ -96,8 +96,9 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 4. Read the board state first if you need to understand existing content or find object IDs.
 5. Keep responses concise — the user sees objects appear in real time on the board.
 6. If the user's request is ambiguous, make reasonable assumptions and proceed.
-7. For creating 10+ objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt (e.g., "a fun fact about animals") or patterned text via textPattern (e.g., "Task {i}").
-8. For structured templates like SWOT, 2x2 matrices, Kanban boards, or Retrospectives, you MUST use the specialized layout tools (createQuadrant or createColumnLayout) instead of manually placing frames and sticky notes.`;
+7. For creating multiple objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt.
+8. For structured templates like SWOT, 2x2 matrices, Kanban boards, or Retrospectives, you MUST use the specialized layout tools (createQuadrant or createColumnLayout) instead of manually placing frames and sticky notes.
+9. To add items inside an existing frame or column, ALWAYS use bulk_create_objects with the parentFrameId. It will automatically calculate the correct x/y coordinates inside the frame, so you don't need to guess the startX/startY.`;
 
 export interface AgentStreamEvent {
   type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";

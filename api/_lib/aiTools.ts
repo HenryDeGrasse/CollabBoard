@@ -19,7 +19,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "createQuadrant",
-      description: "Create a 2x2 quadrant layout (like SWOT or Eisenhower matrix) with a bounding frame, axis lines, quadrant headers, and colored sticky notes in a single action.",
+      description: "Create a 2x2 quadrant layout (like SWOT or Eisenhower matrix). Returns the master frameId which can be used to add more items later.",
       parameters: {
         type: "object",
         properties: {
@@ -56,7 +56,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "createColumnLayout",
-      description: "Create a column-based layout (like Kanban, Retrospective, or User Journey) with a bounding frame, column headers, and vertical sticky notes in a single action.",
+      description: "Create a column-based layout (like Kanban or Retrospective). Returns the master frameId and a 'columnIds' map (title -> column frameId) which you can use as parentFrameId in bulk_create_objects to add more stickies to specific columns.",
       parameters: {
         type: "object",
         properties: {
@@ -85,7 +85,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "create_objects",
       description:
-        "Create one or more objects on the board. Use this to add sticky notes, rectangles, circles, text labels, or frames. Returns the created object IDs. For layout tasks, place objects with specific x/y coordinates to form grids, rows, or structured arrangements.",
+        "Create one or more objects on the board. Use this to add sticky notes, rectangles, circles, text labels, or frames. Returns the created object IDs. For layout tasks, place objects with specific x/y coordinates to form grids, rows, or structured arrangements. To add items inside an EXISTING frame, you MUST use bulk_create_objects instead, as it automatically computes the x/y positions.",
       parameters: {
         type: "object",
         properties: {
@@ -382,6 +382,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
       description:
         "Resize one or more frames so they tightly wrap all objects inside them. " +
         "Pass frame IDs, or omit ids to fit ALL frames on the board. " +
+        "Nested frames are supported and fit inside-out automatically. " +
         "Use after adding or moving objects inside a frame, or when the user says " +
         "'resize the frame to fit', 'tighten the frame', 'fit contents'.",
       parameters: {
@@ -828,8 +829,8 @@ export async function executeTool(
       const count: number = Math.min(Math.max(args.count || 0, 1), 500);
       const layout: string = args.layout || "grid";
       const gap: number = args.gap ?? 20;
-      const startX: number = args.startX ?? 100;
-      const startY: number = args.startY ?? 100;
+      let startX: number = args.startX ?? 100;
+      let startY: number = args.startY ?? 100;
       const contentPrompt: string | undefined = args.contentPrompt;
       const textPattern: string | undefined = args.textPattern;
       const parentFrameId: string | null = args.parentFrameId || null;
@@ -838,6 +839,32 @@ export async function executeTool(
       const objWidth: number = args.width ?? defaults.width;
       const objHeight: number = args.height ?? defaults.height;
       const color: string = (args.color ? resolveColor(args.color) : null) || defaults.color;
+
+      // Automatically compute placement inside the parent frame if provided
+      if (parentFrameId) {
+        const { data: frameAndKids } = await supabase
+          .from("objects")
+          .select("id, type, x, y, width, height")
+          .eq("board_id", boardId)
+          .or(`id.eq.${parentFrameId},parent_frame_id.eq.${parentFrameId}`);
+        
+        if (frameAndKids && frameAndKids.length > 0) {
+          const frame = frameAndKids.find((o: any) => o.id === parentFrameId);
+          const kids = frameAndKids.filter((o: any) => o.id !== parentFrameId);
+          
+          if (frame) {
+            startX = frame.x + 30; // 30px padding from left edge
+            if (kids.length > 0) {
+              // Place below the lowest existing child
+              const maxY = Math.max(...kids.map((k: any) => k.y + k.height));
+              startY = maxY + gap;
+            } else {
+              // Place near the top, leaving room for the frame title
+              startY = frame.y + 60;
+            }
+          }
+        }
+      }
 
       // Compute columns for grid layout
       const columns: number =
@@ -955,7 +982,7 @@ export async function executeTool(
       const startX = args.startX ?? 100;
       const startY = args.startY ?? 100;
       const now = new Date().toISOString();
-      const baseZIndex = Date.now();
+      let zIndex = Date.now();
       
       const tlItems: string[] = items?.topLeft || [];
       const trItems: string[] = items?.topRight || [];
@@ -965,7 +992,7 @@ export async function executeTool(
       const stickyWidth = 150;
       const stickyHeight = 150;
       const gap = 20;
-      const quadrantPadding = 40;
+      const quadrantPadding = 30;
       
       const getGridSize = (count: number) => {
         const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
@@ -983,27 +1010,30 @@ export async function executeTool(
       const maxLeftCols = Math.max(tlGrid.cols, blGrid.cols);
       const maxRightCols = Math.max(trGrid.cols, brGrid.cols);
 
-      const qWidthLeft = maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2;
-      const qWidthRight = maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2;
-      const qHeightTop = maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 50;
-      const qHeightBottom = maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 50;
+      const qWidthLeft = Math.max(maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2, 300);
+      const qWidthRight = Math.max(maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2, 300);
+      const qHeightTop = Math.max(maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 60, 300); // +60 for inner title
+      const qHeightBottom = Math.max(maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 60, 300);
 
-      const totalWidth = qWidthLeft + qWidthRight;
-      const totalHeight = qHeightTop + qHeightBottom;
+      const totalWidth = qWidthLeft + qWidthRight + gap;
+      const totalHeight = qHeightTop + qHeightBottom + gap;
 
-      const pos = await findOpenCanvasSpace(boardId, totalWidth, totalHeight, startX, startY);
-      let zIndex = baseZIndex;
+      const pos = await findOpenCanvasSpace(boardId, totalWidth + 40, totalHeight + 80, startX, startY);
 
-      // Insert frame first to get its DB-generated ID
-      const { data: frameData, error: frameErr } = await supabase
+      let parentFrameId: string | null = null;
+      let totalCreated = 0;
+      const quadrantIds: Record<string, string> = {};
+
+      // Insert master frame first
+      const { data: masterData, error: masterErr } = await supabase
         .from("objects")
         .insert({
           board_id: boardId,
           type: "frame",
           x: pos.x,
           y: pos.y,
-          width: totalWidth,
-          height: totalHeight,
+          width: totalWidth + 40,
+          height: totalHeight + 80,
           color: "#F9F9F7",
           text: title || "Quadrant Layout",
           rotation: 0,
@@ -1015,87 +1045,90 @@ export async function executeTool(
         .select("id")
         .single();
 
-      if (frameErr || !frameData) return { error: frameErr?.message || "Failed to create frame" };
-      const frameId = frameData.id;
+      if (masterErr || !masterData) return { error: masterErr?.message || "Failed to create master frame" };
+      parentFrameId = masterData.id;
+      totalCreated++;
 
-      // Build all child rows (no explicit id — Postgres auto-generates)
       const children: any[] = [];
-
-      // Vertical axis
-      children.push({
-        board_id: boardId, type: "rectangle",
-        x: pos.x + qWidthLeft - 2, y: pos.y + 60,
-        width: 4, height: totalHeight - 60,
-        color: "#E5E5E0", parent_frame_id: frameId, rotation: 0,
-        z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
-      });
-
-      // Horizontal axis
-      children.push({
-        board_id: boardId, type: "rectangle",
-        x: pos.x, y: pos.y + qHeightTop - 2,
-        width: totalWidth, height: 4,
-        color: "#E5E5E0", parent_frame_id: frameId, rotation: 0,
-        z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
-      });
-
       if (xAxisLabel) {
         children.push({
           board_id: boardId, type: "text",
-          x: pos.x + totalWidth / 2 - 100, y: pos.y + totalHeight - 40,
+          x: pos.x + (totalWidth + 40) / 2 - 100, y: pos.y + totalHeight + 80 - 40,
           width: 200, height: 40, text: xAxisLabel,
-          color: "#111111", parent_frame_id: frameId, rotation: 0,
+          color: "#111111", parent_frame_id: parentFrameId, rotation: 0,
           z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
         });
       }
       if (yAxisLabel) {
         children.push({
           board_id: boardId, type: "text",
-          x: pos.x - 80, y: pos.y + totalHeight / 2 - 100,
+          x: pos.x - 60, y: pos.y + (totalHeight + 80) / 2 - 100,
           width: 200, height: 40, text: yAxisLabel,
-          color: "#111111", parent_frame_id: frameId, rotation: -90,
+          color: "#111111", parent_frame_id: parentFrameId, rotation: -90,
           z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
         });
       }
-
-      const addQuadrant = (qTitle: string, qItems: string[], qX: number, qY: number, color: string, qCols: number) => {
-        if (qTitle) {
-          children.push({
-            board_id: boardId, type: "text",
-            x: qX + quadrantPadding, y: qY + 20,
-            width: 200, height: 40, text: qTitle,
-            color: "#111111", parent_frame_id: frameId, rotation: 0,
-            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
-          });
-        }
-        qItems.forEach((itemText, i) => {
-          const col = i % qCols;
-          const row = Math.floor(i / qCols);
-          children.push({
-            board_id: boardId, type: "sticky",
-            x: qX + quadrantPadding + col * (stickyWidth + gap),
-            y: qY + 70 + row * (stickyHeight + gap),
-            width: stickyWidth, height: stickyHeight, text: itemText,
-            color, parent_frame_id: frameId, rotation: 0,
-            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
-          });
-        });
-      };
-
-      addQuadrant(quadrantLabels?.topLeft, tlItems, pos.x, pos.y + 60, "#9DD9A3", tlGrid.cols);
-      addQuadrant(quadrantLabels?.topRight, trItems, pos.x + qWidthLeft, pos.y + 60, "#FAD84E", trGrid.cols);
-      addQuadrant(quadrantLabels?.bottomLeft, blItems, pos.x, pos.y + qHeightTop, "#7FC8E8", blGrid.cols);
-      addQuadrant(quadrantLabels?.bottomRight, brItems, pos.x + qWidthLeft, pos.y + qHeightTop, "#F5A8C4", brGrid.cols);
-
       if (children.length > 0) {
         const { error: childErr } = await supabase.from("objects").insert(children);
         if (childErr) return { error: childErr.message };
+        totalCreated += children.length;
+      }
+
+      // Helper to generate quadrant frames + stickies
+      const buildQuadrant = async (qTitle: string, qItems: string[], qX: number, qY: number, qWidth: number, qHeight: number, color: string, qCols: number, key: string) => {
+        const { data: qData, error: qErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "frame",
+            x: qX, y: qY, width: qWidth, height: qHeight,
+            color: "#F9F9F7", text: qTitle || key,
+            parent_frame_id: parentFrameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (qErr || !qData) throw new Error(qErr?.message || "Failed to create quadrant frame");
+        const qFrameId = qData.id;
+        quadrantIds[key] = qFrameId;
+        totalCreated++;
+
+        if (qItems.length > 0) {
+          const stickyRows = qItems.map((itemText, i) => {
+            const col = i % qCols;
+            const row = Math.floor(i / qCols);
+            return {
+              board_id: boardId, type: "sticky",
+              x: qX + quadrantPadding + col * (stickyWidth + gap),
+              y: qY + 60 + row * (stickyHeight + gap), // +60 for quadrant title
+              width: stickyWidth, height: stickyHeight, text: itemText,
+              color, parent_frame_id: qFrameId, rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            };
+          });
+          const { error: stickyErr } = await supabase.from("objects").insert(stickyRows);
+          if (stickyErr) throw new Error(stickyErr.message);
+          totalCreated += stickyRows.length;
+        }
+      };
+
+      try {
+        const startInnerX = pos.x + 20;
+        const startInnerY = pos.y + 60;
+        
+        await buildQuadrant(quadrantLabels?.topLeft, tlItems, startInnerX, startInnerY, qWidthLeft, qHeightTop, "#9DD9A3", tlGrid.cols, "topLeft");
+        await buildQuadrant(quadrantLabels?.topRight, trItems, startInnerX + qWidthLeft + gap, startInnerY, qWidthRight, qHeightTop, "#FAD84E", trGrid.cols, "topRight");
+        await buildQuadrant(quadrantLabels?.bottomLeft, blItems, startInnerX, startInnerY + qHeightTop + gap, qWidthLeft, qHeightBottom, "#7FC8E8", blGrid.cols, "bottomLeft");
+        await buildQuadrant(quadrantLabels?.bottomRight, brItems, startInnerX + qWidthLeft + gap, startInnerY + qHeightTop + gap, qWidthRight, qHeightBottom, "#F5A8C4", brGrid.cols, "bottomRight");
+      } catch (err: any) {
+        return { error: err.message };
       }
 
       return {
-        created: 1 + children.length,
-        frameId,
-        message: `Created quadrant layout with ${1 + children.length} objects.`,
+        created: totalCreated,
+        frameId: parentFrameId,
+        quadrantIds,
+        message: `Created quadrant layout with ${totalCreated} objects.`,
       };
     }
 
@@ -1126,6 +1159,7 @@ export async function executeTool(
       const colors = ["#E5E5E0", "#7FC8E8", "#FAD84E", "#9DD9A3", "#F5A8C4"];
       let parentFrameId: string | null = null;
       let totalCreated = 0;
+      const columnIds: Record<string, string> = {};
 
       // Insert master frame first if title is provided
       if (title) {
@@ -1168,6 +1202,7 @@ export async function executeTool(
 
         if (colErr || !colData) return { error: colErr?.message || "Failed to create column frame" };
         const colFrameId = colData.id;
+        columnIds[col.title || `Column ${colIdx + 1}`] = colFrameId;
         totalCreated++;
 
         const items: string[] = Array.isArray(col.items) ? col.items : [];
@@ -1188,6 +1223,7 @@ export async function executeTool(
       return {
         created: totalCreated,
         frameId: parentFrameId ?? undefined,
+        columnIds,
         message: `Created column layout with ${totalCreated} objects.`,
       };
     }
@@ -1409,46 +1445,85 @@ export async function executeTool(
       }
       if (frameIds.length === 0) return { message: "No frames found on the board." };
 
-      // Fetch all objects that are children of these frames
-      const { data: children } = await supabase
+      // Fetch ALL objects to correctly compute nested bounding boxes and inside-out updates
+      const { data: allObjects } = await supabase
         .from("objects")
-        .select("id, x, y, width, height, parent_frame_id")
-        .eq("board_id", boardId)
-        .in("parent_frame_id", frameIds);
+        .select("id, type, x, y, width, height, parent_frame_id")
+        .eq("board_id", boardId);
+        
+      const objects = allObjects || [];
+      const objMap = new Map(objects.map(o => [o.id, o]));
+      
+      // Group children by parent
+      const childrenByParent = new Map<string, any[]>();
+      for (const obj of objects) {
+        if (obj.parent_frame_id) {
+          if (!childrenByParent.has(obj.parent_frame_id)) childrenByParent.set(obj.parent_frame_id, []);
+          childrenByParent.get(obj.parent_frame_id)!.push(obj);
+        }
+      }
+
+      // Determine depth of each frame for inside-out processing
+      const getDepth = (id: string, visited = new Set<string>()): number => {
+        if (visited.has(id)) return 0; // prevent cycles
+        visited.add(id);
+        const obj = objMap.get(id);
+        if (!obj || !obj.parent_frame_id) return 0;
+        return 1 + getDepth(obj.parent_frame_id, visited);
+      };
+
+      const framesToFit = frameIds
+        .map(id => ({ id, depth: getDepth(id) }))
+        .sort((a, b) => b.depth - a.depth); // Deepest first (inside-out)
 
       const now = new Date().toISOString();
+      let fittedCount = 0;
+      let skippedCount = 0;
 
-      // Execute all frame updates in parallel — each targets a unique frame ID.
-      const results = await Promise.all(
-        frameIds.map(async (frameId) => {
-          const kids = (children || []).filter((c: any) => c.parent_frame_id === frameId);
-          if (kids.length === 0) {
-            return { id: frameId, ok: true }; // nothing to fit
-          }
+      // Process sequentially inside-out so parent frames can wrap their newly-resized children
+      for (const { id: frameId } of framesToFit) {
+        const kids = childrenByParent.get(frameId) || [];
+        if (kids.length === 0) {
+          skippedCount++;
+          continue;
+        }
 
-          // Compute bounding box of all children (in canvas coords)
-          const minX = Math.min(...kids.map((c: any) => c.x));
-          const minY = Math.min(...kids.map((c: any) => c.y));
-          const maxX = Math.max(...kids.map((c: any) => c.x + c.width));
-          const maxY = Math.max(...kids.map((c: any) => c.y + c.height));
+        // Get the CURRENT state of kids from objMap (which we update dynamically)
+        const currentKids = kids.map(k => objMap.get(k.id)!);
 
-          const newX      = minX - padding;
-          const newY      = minY - padding - TITLE_EXTRA;
-          const newWidth  = (maxX - minX) + padding * 2;
-          const newHeight = (maxY - minY) + padding * 2 + TITLE_EXTRA;
+        const minX = Math.min(...currentKids.map(c => c.x));
+        const minY = Math.min(...currentKids.map(c => c.y));
+        const maxX = Math.max(...currentKids.map(c => c.x + c.width));
+        const maxY = Math.max(...currentKids.map(c => c.y + c.height));
 
-          const { error } = await supabase
-            .from("objects")
-            .update({ x: newX, y: newY, width: newWidth, height: newHeight, updated_at: now })
-            .eq("id", frameId)
-            .eq("board_id", boardId);
+        const newX      = minX - padding;
+        const newY      = minY - padding - TITLE_EXTRA;
+        const newWidth  = (maxX - minX) + padding * 2;
+        const newHeight = (maxY - minY) + padding * 2 + TITLE_EXTRA;
 
-          return { id: frameId, ok: !error };
-        })
-      );
+        // Update DB
+        await supabase
+          .from("objects")
+          .update({ x: newX, y: newY, width: newWidth, height: newHeight, updated_at: now })
+          .eq("id", frameId);
+          
+        // Update local map so parent frames see the new size
+        const frameObj = objMap.get(frameId);
+        if (frameObj) {
+          frameObj.x = newX;
+          frameObj.y = newY;
+          frameObj.width = newWidth;
+          frameObj.height = newHeight;
+        }
+        
+        fittedCount++;
+      }
 
-      const ok = results.filter(r => r.ok).length;
-      return { fitted: ok, total: frameIds.length, message: `Fitted ${ok}/${frameIds.length} frame(s).` };
+      let msg = `Fitted ${fittedCount}/${frameIds.length} frame(s).`;
+      if (skippedCount > 0) {
+        msg += ` Skipped ${skippedCount} frame(s) because they had no children.`;
+      }
+      return { fitted: fittedCount, skipped: skippedCount, total: frameIds.length, message: msg };
     }
 
     // ── Clear board ───────────────────────────────────────
