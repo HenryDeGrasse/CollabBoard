@@ -11,6 +11,8 @@ interface HistoryEntry {
   response: string | null;
   status: "pending" | "streaming" | "done" | "error";
   toolActions?: string[];
+  /** Compact summary of tool results for follow-up context. */
+  toolSummary?: string;
   model?: string;
   complexity?: string;
   /** Board state captured immediately before this command was sent. */
@@ -20,11 +22,25 @@ interface HistoryEntry {
 // Friendly labels for tool names
 const TOOL_LABELS: Record<string, string> = {
   create_objects: "Creating objects",
+  bulk_create_objects: "Creating objects",
   create_connectors: "Adding connectors",
   update_objects: "Updating objects",
+  update_objects_by_filter: "Updating objects",
   delete_objects: "Removing objects",
+  delete_objects_by_filter: "Removing objects",
   delete_connectors: "Removing connectors",
   read_board_state: "Reading board",
+  search_objects: "Searching board",
+  clear_board: "Clearing board",
+  navigate_to_objects: "Navigating",
+  arrange_objects: "Arranging objects",
+  duplicate_objects: "Duplicating objects",
+  fit_frames_to_contents: "Fitting frames",
+  createQuadrant: "Building quadrant layout",
+  createColumnLayout: "Building column layout",
+  createWireframe: "Building wireframe",
+  createMindMap: "Building mind map",
+  createFlowchart: "Building flowchart",
 };
 
 interface Viewport {
@@ -68,6 +84,8 @@ export function AICommandInput({
   const abortRef = useRef<AbortController | null>(null);
   // Refs so the sendCommand closure always reads latest values without
   // recreating the callback on every selection/viewport change.
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
   const selectedIdsRef = useRef<string[]>(selectedIds);
   selectedIdsRef.current = selectedIds;
   const onNavigateRef = useRef(onNavigate);
@@ -128,7 +146,10 @@ export function AICommandInput({
       const priorTurns = history
         .filter((e) => e.status === "done" && e.response)
         .slice(-10)
-        .map((e) => ({ user: e.command, assistant: e.response! }));
+        .map((e) => ({
+          user: e.command,
+          assistant: e.response! + (e.toolSummary ? `\n[Actions: ${e.toolSummary.trim()}]` : ""),
+        }));
 
       // Add pending entry (snapshot stored so the undo button can use it later)
       setHistory((prev) => [
@@ -163,7 +184,7 @@ export function AICommandInput({
             boardId,
             command: userCommand,
             conversationHistory: priorTurns,
-            viewport,
+            viewport: viewportRef.current,
             screenSize: {
               width: window.innerWidth,
               height: window.innerHeight,
@@ -217,6 +238,16 @@ export function AICommandInput({
                 content: string;
               };
 
+              // Handle navigate outside the state updater to avoid
+              // triggering setState on BoardPage during our own update.
+              if (event.type === "navigate") {
+                try {
+                  const vp = JSON.parse(event.content) as Viewport;
+                  onNavigateRef.current?.(vp);
+                } catch { /* ignore parse errors */ }
+                continue;
+              }
+
               setHistory((prev) => {
                 const lastIdx = prev.length - 1;
                 if (lastIdx < 0) return prev;
@@ -242,15 +273,6 @@ export function AICommandInput({
                     ];
                     break;
 
-                  case "navigate": {
-                    // Agent wants to pan/zoom the camera — fire and don't mutate history
-                    try {
-                      const vp = JSON.parse(event.content) as Viewport;
-                      onNavigateRef.current?.(vp);
-                    } catch { /* ignore parse errors */ }
-                    return prev; // no history change needed
-                  }
-
                   case "meta": {
                     const meta = JSON.parse(event.content) as { model: string; complexity: string };
                     last.model = meta.model;
@@ -258,9 +280,16 @@ export function AICommandInput({
                     break;
                   }
 
-                  case "tool_result":
-                    // Tool results are implicit — board updates via realtime
+                  case "tool_result": {
+                    // Capture compact summary for follow-up conversation context
+                    try {
+                      const parsed = JSON.parse(event.content) as { tool: string; result: any };
+                      const msg = parsed.result?.message ?? "";
+                      const summary = `${parsed.tool}: ${typeof msg === "string" ? msg.slice(0, 120) : JSON.stringify(parsed.result).slice(0, 120)}`;
+                      last.toolSummary = ((last.toolSummary || "") + summary + "; ").slice(0, 500);
+                    } catch { /* ignore parse errors */ }
                     break;
+                  }
 
                   case "done":
                     last.status = "done";

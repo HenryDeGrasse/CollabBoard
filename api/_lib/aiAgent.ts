@@ -62,44 +62,225 @@ export function classifyComplexity(command: string): "simple" | "complex" {
 export const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
 export const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
 
-export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collaborative whiteboard application. You help users create, modify, and organize objects on their board.
+// ─── Fast-path handlers ────────────────────────────────────────
+// Bypass the general agent loop for well-known template requests.
+// These run a cheap content-generation call + deterministic template tool.
 
-## Your capabilities:
-- Create objects: sticky notes, rectangles, circles, text labels, and frames
-- Create connectors (arrows/lines) between objects
-- Update existing objects (move, resize, recolor, rename)
-- Delete objects and connectors
-- Read the current board state to understand what's on the canvas
+interface FastPathMatch {
+  pattern: RegExp;
+  handler: (
+    match: RegExpMatchArray,
+    command: string,
+    boardId: string,
+    userId: string,
+    openaiApiKey: string,
+    context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+  ) => AsyncGenerator<AgentStreamEvent>;
+}
 
-## Layout guidelines:
-- The canvas is large (effectively infinite). Place objects with enough spacing.
-- For grid layouts, use ~20px gaps between objects.
-- Sticky notes default to 150×150px. Rectangles default to 200×150px. Frames default to 800×600px.
-- Frames are containers — place objects inside them by setting parentFrameId.
-- Frame titles appear at the top. Make frames taller/wider than their contents with ~40px padding on each side and ~60px top padding for the title.
-- Use x/y coordinates to create structured layouts (rows, columns, grids).
-- Place items starting around x:100, y:100 for a clean board. Check existing objects to avoid overlap.
-- When filling a column frame (e.g. Kanban or Retro), always use layout: "vertical" in bulk_create_objects so stickies stack downward and do not overflow the column width.
+const FAST_PATHS: FastPathMatch[] = [
+  {
+    pattern: /\b(?:create|make|build|set\s*up|generate)\b.*\bswot\b(?:\s+(?:analysis|matrix))?(?:\s+(?:for|about|on)\s+(.+))?/i,
+    handler: fastPathSWOT,
+  },
+  {
+    pattern: /\b(?:create|make|build|set\s*up|generate)\b.*\b(?:kanban)\s*(?:board)?(?:\s+(?:for|about|on)\s+(.+))?/i,
+    handler: fastPathKanban,
+  },
+  {
+    pattern: /\b(?:create|make|build|set\s*up|generate)\b.*\b(?:retro(?:spective)?)\s*(?:board)?(?:\s+(?:for|about|on)\s+(.+))?/i,
+    handler: fastPathRetro,
+  },
+];
 
-## Color conventions:
-- Sticky colors: yellow (#FAD84E), pink (#F5A8C4), blue (#7FC8E8), green (#9DD9A3), grey (#E5E5E0), offwhite (#F9F9F7)
-- Shape colors: black (#111111), red (#CC0000), blue (#3B82F6), darkgrey (#404040), grey (#E5E5E0)
-- Frame default: #F9F9F7 (offwhite)
+async function* fastPathSWOT(
+  match: RegExpMatchArray,
+  _command: string,
+  boardId: string,
+  userId: string,
+  openaiApiKey: string,
+  context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+): AsyncGenerator<AgentStreamEvent> {
+  const topic = match[1]?.trim() || "the project";
 
-## Common patterns:
-- **Mind map**: Central topic shape with connectors radiating to sub-topic shapes
-- **Flowchart**: Shapes connected with arrows in a top-to-bottom or left-to-right flow
+  yield { type: "meta", content: JSON.stringify({ model: MODEL_SIMPLE, complexity: "fast-path", contextScope: "none", boardObjectCount: 0, boardConnectorCount: 0, contextChars: 0 }) };
+  yield { type: "tool_start", content: "createQuadrant" };
 
-## Rules:
-1. Always use tool calls to modify the board — never just describe changes without executing them.
-2. After creating objects that need to be connected, use the returned IDs in create_connectors.
-3. For complex layouts, create objects first, then add connectors.
-4. Read the board state first if you need to understand existing content or find object IDs.
-5. Keep responses concise — the user sees objects appear in real time on the board.
-6. If the user's request is ambiguous, make reasonable assumptions and proceed.
-7. For creating multiple objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt.
-8. For structured templates like SWOT, 2x2 matrices, Kanban boards, or Retrospectives, you MUST use the specialized layout tools (createQuadrant or createColumnLayout) instead of manually placing frames and sticky notes.
-9. To add items inside an existing frame or column, ALWAYS use bulk_create_objects with the parentFrameId. It will automatically calculate the correct x/y coordinates inside the frame, so you don't need to guess the startX/startY.`;
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0.7,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Generate SWOT analysis items. Return JSON: {\"strengths\":[...],\"weaknesses\":[...],\"opportunities\":[...],\"threats\":[...]} with 3-5 concise items (under 60 chars each) per category. No numbering." },
+      { role: "user", content: `SWOT analysis for: ${topic}` },
+    ],
+  });
+
+  let content: any = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+
+  const result = await executeTool("createQuadrant", {
+    title: `SWOT Analysis: ${topic}`,
+    quadrantLabels: { topLeft: "Strengths", topRight: "Weaknesses", bottomLeft: "Opportunities", bottomRight: "Threats" },
+    items: {
+      topLeft: content.strengths || ["Add strengths"],
+      topRight: content.weaknesses || ["Add weaknesses"],
+      bottomLeft: content.opportunities || ["Add opportunities"],
+      bottomRight: content.threats || ["Add threats"],
+    },
+    startX: context.viewportCenter?.x ? context.viewportCenter.x - 400 : undefined,
+    startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+
+  yield { type: "tool_result", content: JSON.stringify({ tool: "createQuadrant", result }) };
+
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
+  if ((nav as any)?._viewport) {
+    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  }
+
+  yield { type: "text", content: `Created a SWOT analysis for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "done", content: "" };
+}
+
+async function* fastPathKanban(
+  match: RegExpMatchArray,
+  _command: string,
+  boardId: string,
+  userId: string,
+  openaiApiKey: string,
+  context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+): AsyncGenerator<AgentStreamEvent> {
+  const topic = match[1]?.trim() || "Project Tasks";
+
+  yield { type: "meta", content: JSON.stringify({ model: MODEL_SIMPLE, complexity: "fast-path", contextScope: "none", boardObjectCount: 0, boardConnectorCount: 0, contextChars: 0 }) };
+  yield { type: "tool_start", content: "createColumnLayout" };
+
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0.7,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Generate Kanban board items. Return JSON: {\"backlog\":[...],\"todo\":[...],\"in_progress\":[...],\"done\":[...]} with 2-4 concise task items (under 60 chars each) per column. No numbering." },
+      { role: "user", content: `Kanban board for: ${topic}` },
+    ],
+  });
+
+  let content: any = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+
+  const result = await executeTool("createColumnLayout", {
+    title: `Kanban: ${topic}`,
+    columns: [
+      { title: "Backlog", items: content.backlog || [] },
+      { title: "To Do", items: content.todo || [] },
+      { title: "In Progress", items: content.in_progress || [] },
+      { title: "Done", items: content.done || [] },
+    ],
+    startX: context.viewportCenter?.x ? context.viewportCenter.x - 400 : undefined,
+    startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+
+  yield { type: "tool_result", content: JSON.stringify({ tool: "createColumnLayout", result }) };
+
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
+  if ((nav as any)?._viewport) {
+    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  }
+
+  yield { type: "text", content: `Created a Kanban board for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "done", content: "" };
+}
+
+async function* fastPathRetro(
+  match: RegExpMatchArray,
+  _command: string,
+  boardId: string,
+  userId: string,
+  openaiApiKey: string,
+  context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+): AsyncGenerator<AgentStreamEvent> {
+  const topic = match[1]?.trim() || "Sprint";
+
+  yield { type: "meta", content: JSON.stringify({ model: MODEL_SIMPLE, complexity: "fast-path", contextScope: "none", boardObjectCount: 0, boardConnectorCount: 0, contextChars: 0 }) };
+  yield { type: "tool_start", content: "createColumnLayout" };
+
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0.7,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Generate retrospective items. Return JSON: {\"went_well\":[...],\"to_improve\":[...],\"action_items\":[...]} with 2-4 concise items (under 60 chars each) per category. No numbering." },
+      { role: "user", content: `Sprint retrospective for: ${topic}` },
+    ],
+  });
+
+  let content: any = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+
+  const result = await executeTool("createColumnLayout", {
+    title: `Retrospective: ${topic}`,
+    columns: [
+      { title: "Went Well", items: content.went_well || [] },
+      { title: "To Improve", items: content.to_improve || [] },
+      { title: "Action Items", items: content.action_items || [] },
+    ],
+    startX: context.viewportCenter?.x ? context.viewportCenter.x - 300 : undefined,
+    startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+
+  yield { type: "tool_result", content: JSON.stringify({ tool: "createColumnLayout", result }) };
+
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
+  if ((nav as any)?._viewport) {
+    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  }
+
+  yield { type: "text", content: `Created a retrospective board for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "done", content: "" };
+}
+
+export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collaborative whiteboard app. You modify the board exclusively through tool calls.
+
+## Defaults
+- Sticky: 150x150, Rectangle: 200x150, Frame: 800x600. Frames need ~40px side padding, ~60px top for title.
+- Colors — Sticky: yellow #FAD84E, pink #F5A8C4, blue #7FC8E8, green #9DD9A3, grey #E5E5E0. Shape: black #111111, red #CC0000, blue #3B82F6. Frame: #F9F9F7.
+- Place new objects near the user's viewport center (provided below), not at (0,0) or (100,100).
+- Use ~20px gaps. Use layout:"vertical" in bulk_create_objects when filling column frames.
+
+## Tool selection
+- **Many similar objects** -> bulk_create_objects (auto-layout, contentPrompt for unique text)
+- **SWOT / 2x2 matrix** -> createQuadrant
+- **Kanban / Retro / columns** -> createColumnLayout
+- **Mind map / brainstorm** -> createMindMap
+- **Flowchart / process** -> createFlowchart
+- **Wireframe / mockup** -> createWireframe
+- **Add items inside a frame** -> bulk_create_objects with parentFrameId
+- **Find specific objects** -> search_objects (prefer over read_board_state)
+- **Need full board picture** -> read_board_state (use sparingly on large boards)
+
+## Working with existing objects (CRITICAL)
+When the user asks to organize, categorize, group, sort, separate, reorganize, convert, or rearrange existing objects into a layout:
+
+1. First, call search_objects (or read_board_state if needed) to get the IDs of existing objects.
+2. Analyze the objects' text content to determine how they should be categorized or ordered.
+3. Call the appropriate layout tool with the \`sourceIds\` parameter, mapping each object ID to the correct branch/column/step.
+4. NEVER duplicate existing objects. The sourceIds parameter REPOSITIONS them — it does not create copies.
+
+The sourceIds parameter is available on: createMindMap, createFlowchart, createColumnLayout, and createQuadrant (as quadrantSourceIds).
+
+## Rules
+1. Always execute changes via tool calls — never just describe them.
+2. After creating objects, connect them with create_connectors using the returned IDs.
+3. Keep responses concise — the user sees objects appear in real time.
+4. Make reasonable assumptions for ambiguous requests and proceed.
+5. Use specialized layout tools (createQuadrant, createColumnLayout, createMindMap, createFlowchart, createWireframe) instead of manually placing frames and stickies.`;
 
 export interface AgentStreamEvent {
   type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";
@@ -350,6 +531,29 @@ export async function* runAgent(
   conversationHistory?: ConversationTurn[],
   selectedIds?: string[]
 ): AsyncGenerator<AgentStreamEvent> {
+  // Compute viewport bounds once — reused for placement defaults and context block
+  const viewBounds = viewport && screenSize ? computeViewBounds(viewport, screenSize) : null;
+  const viewportCenter = viewBounds
+    ? { x: viewBounds.centerX, y: viewBounds.centerY }
+    : undefined;
+
+  // ── Fast paths: bypass general agent loop for well-known templates ──
+  // Only try fast paths when there's no conversation history (fresh request)
+  // and no selected objects (not a follow-up edit).
+  if (!conversationHistory?.length && !selectedIds?.length) {
+    for (const fp of FAST_PATHS) {
+      const match = userCommand.match(fp.pattern);
+      if (match) {
+        yield* fp.handler(match, userCommand, boardId, userId, openaiApiKey, {
+          screenSize: screenSize ?? undefined,
+          selectedIds: selectedIds ?? undefined,
+          viewportCenter,
+        });
+        return;
+      }
+    }
+  }
+
   // wrapOpenAI automatically traces every LLM call to LangSmith as a child
   // span when LANGSMITH_TRACING=true. It's a no-op when tracing is off.
   const openai = wrapOpenAI(new OpenAI({ apiKey: openaiApiKey }));
@@ -374,8 +578,8 @@ export async function* runAgent(
 
   // Build viewport context block if we have the data
   let viewportContext = "";
-  if (viewport && screenSize) {
-    const vb = computeViewBounds(viewport, screenSize);
+  if (viewBounds) {
+    const vb = viewBounds;
     viewportContext = `
 ## User's Current Viewport
 The user is currently looking at this region of the canvas (canvas coordinates):
@@ -537,6 +741,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
             const result = await executeTool(tc.name, args, boardId, userId, {
               screenSize: screenSize ?? undefined,
               selectedIds: selectedIds ?? undefined,
+              viewportCenter,
             }, openaiApiKey);
             return { id: tc.id, name: tc.name, result };
           } catch (err: any) {

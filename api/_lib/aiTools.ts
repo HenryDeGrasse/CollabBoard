@@ -45,6 +45,18 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
               bottomRight: { type: "array", items: { type: "string" }, description: "Items for the bottom-right quadrant" }
             }
           },
+          quadrantSourceIds: {
+            type: "object",
+            properties: {
+              topLeft: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the top-left quadrant" },
+              topRight: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the top-right quadrant" },
+              bottomLeft: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the bottom-left quadrant" },
+              bottomRight: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the bottom-right quadrant" }
+            },
+            description:
+              "Optional. Existing object IDs to REPOSITION into each quadrant instead of creating new items. " +
+              "When provided, the items object is ignored. Use when the user says 'reorganize', 'convert', or 'turn into'."
+          },
           startX: { type: "number", description: "Starting X position on the canvas" },
           startY: { type: "number", description: "Starting Y position on the canvas" }
         },
@@ -73,6 +85,20 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             },
             description: "Array of columns with their respective titles and items"
           },
+          sourceIds: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                columnTitle: { type: "string", description: "Which column to place these objects in (must match a title in columns)" },
+                objectIds: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into this column" }
+              },
+              required: ["columnTitle", "objectIds"]
+            },
+            description:
+              "Optional. Existing object IDs to REPOSITION into columns instead of creating new items. " +
+              "When provided, the items arrays in columns are ignored. Use when the user says 'reorganize', 'convert', or 'turn into'."
+          },
           startX: { type: "number", description: "Starting X position on the canvas" },
           startY: { type: "number", description: "Starting Y position on the canvas" }
         },
@@ -85,7 +111,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "create_objects",
       description:
-        "Create one or more objects on the board. Use this to add sticky notes, rectangles, circles, text labels, or frames. Returns the created object IDs. For layout tasks, place objects with specific x/y coordinates to form grids, rows, or structured arrangements. To add items inside an EXISTING frame, you MUST use bulk_create_objects instead, as it automatically computes the x/y positions.",
+        "Create one or more objects on the board. Use this to add sticky notes, rectangles, circles, text labels, or frames. Returns the created object IDs plus each object's final x/y/width/height. For layout tasks, place objects with specific x/y coordinates to form grids, rows, or structured arrangements. To add items inside an EXISTING frame, you MUST use bulk_create_objects instead — it automatically computes x/y positions relative to the frame. If you use parentFrameId here, the x/y coordinates you supply must fall within the frame's content area (frame.x to frame.x+frame.width, frame.y+60 to frame.y+frame.height); otherwise the object will appear outside the frame visually.",
       parameters: {
         type: "object",
         properties: {
@@ -507,9 +533,9 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "search_objects",
       description:
-        "Find objects on the board by text content, type, or color. Returns matching object IDs and properties. " +
+        "Find objects on the board by text content, type, color, or parent frame. Returns matching object IDs and properties. " +
         "Use when the user says 'find', 'search for', 'which objects have', 'show me all', or before acting on " +
-        "objects you need to locate first.",
+        "objects you need to locate first. Prefer this over read_board_state when you only need a subset of objects.",
       parameters: {
         type: "object",
         properties: {
@@ -526,7 +552,171 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             type: "string",
             description: "Only return objects of this color (hex or name).",
           },
+          parentFrameId: {
+            type: "string",
+            description: "Only return objects contained within this frame ID.",
+          },
+          limit: {
+            type: "number",
+            description: "Maximum number of results to return (default: 100).",
+          },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createWireframe",
+      description:
+        "Create a wireframe/mockup for a UI screen. Generates a frame with rectangular sections representing UI components. " +
+        "Use for 'wireframe', 'mockup', 'UI layout', 'page design', 'app screen'. The layout engine handles all positioning automatically.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Screen/page name (e.g. 'Homepage', 'Login Page')" },
+          sections: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Section name (e.g. 'Header', 'Hero Banner', 'Sidebar')" },
+                heightRatio: { type: "number", description: "Relative height (1 = standard row ~60px). Header=0.5, Hero=2, Content=3, Footer=0.5. Default: 1" },
+                split: {
+                  type: "string",
+                  enum: ["full", "left-sidebar", "right-sidebar", "two-column", "three-column"],
+                  description: "How this row is split horizontally. Default: 'full'",
+                },
+                splitLabels: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Labels for each column in the split (e.g. ['Sidebar', 'Main Content'])",
+                },
+              },
+              required: ["label"],
+            },
+            description: "Ordered list of UI sections from top to bottom",
+          },
+          width: { type: "number", description: "Frame width in px (default: 375 mobile, 768 tablet, 800 desktop)" },
+          deviceType: { type: "string", enum: ["mobile", "tablet", "desktop"], description: "Device form factor. Default: desktop" },
+          startX: { type: "number" },
+          startY: { type: "number" },
+        },
+        required: ["title", "sections"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createMindMap",
+      description:
+        "Create a mind map with a central topic and radiating branches. Handles radial positioning and connectors automatically. " +
+        "Use for 'mind map', 'brainstorm', 'idea map', 'concept map', 'topic web'.",
+      parameters: {
+        type: "object",
+        properties: {
+          centerTopic: { type: "string", description: "The central topic text" },
+          branches: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Branch topic text" },
+                children: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Sub-topic texts hanging off this branch",
+                },
+                color: { type: "string", description: "Color for this branch's stickies (hex or name)" },
+              },
+              required: ["label"],
+            },
+            description: "Main branches radiating from the center",
+          },
+          sourceIds: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                branchLabel: { type: "string", description: "Which branch to place these objects under (must match a label in branches)" },
+                objectIds: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into this branch" },
+              },
+              required: ["branchLabel", "objectIds"],
+            },
+            description:
+              "Optional. Existing object IDs to REPOSITION into specific mind map branches instead of creating new nodes. " +
+              "Each entry maps objectIds to a branchLabel defined in the branches array. " +
+              "Objects keep their text, color, and size — only their positions are updated. " +
+              "Use when the user says 'organize', 'reorganize', 'categorize', 'group', 'sort', 'separate', 'convert', or 'turn into'. " +
+              "When provided, the children arrays in branches are ignored — existing objects are used instead.",
+          },
+          startX: { type: "number" },
+          startY: { type: "number" },
+        },
+        required: ["centerTopic"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createFlowchart",
+      description:
+        "Create a flowchart with sequential and branching steps. Handles layout and connectors automatically. " +
+        "Use for 'flowchart', 'flow chart', 'process flow', 'workflow', 'decision tree', 'user flow'.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Flowchart title" },
+          direction: { type: "string", enum: ["top-to-bottom", "left-to-right"], description: "Layout direction. Default: top-to-bottom" },
+          steps: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Step text" },
+                type: {
+                  type: "string",
+                  enum: ["process", "decision", "start", "end"],
+                  description: "Step shape: process=rectangle, decision=circle, start/end=small rectangle. Default: process",
+                },
+                branches: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      label: { type: "string", description: "Branch label (e.g. 'Yes', 'No')" },
+                      targetStepIndex: { type: "number", description: "0-based index of the step this branch connects to" },
+                    },
+                    required: ["label", "targetStepIndex"],
+                  },
+                  description: "For decision steps: branches to other steps. If omitted, the step connects to the next sequential step.",
+                },
+              },
+              required: ["label"],
+            },
+            description: "Ordered list of steps in the flow",
+          },
+          sourceIds: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                stepLabel: { type: "string", description: "Label for this step in the flowchart" },
+                objectIds: { type: "array", items: { type: "string" }, description: "IDs of existing objects to place at this step (first ID becomes the step node)" },
+              },
+              required: ["stepLabel", "objectIds"],
+            },
+            description:
+              "Optional. Existing object IDs to REPOSITION into the flowchart instead of creating new step nodes. " +
+              "Each entry maps objectIds to a labeled step. Objects are placed in sequential order. " +
+              "When provided, the steps array is ignored.",
+          },
+          startX: { type: "number" },
+          startY: { type: "number" },
+        },
+        required: ["title"],
       },
     },
   },
@@ -568,7 +758,8 @@ const HEX_TO_COLOR_NAME: Record<string, string> = Object.fromEntries(
 
 /** Resolve a user-supplied color string to a hex code. */
 function resolveColor(input: string): string | null {
-  const lower = input.trim().toLowerCase();
+  const cleanedInput = input.replace(/\s*\(.*?\)\s*$/, '');
+  const lower = cleanedInput.trim().toLowerCase();
   if (lower.startsWith("#")) return lower; // already hex
   return COLOR_NAME_TO_HEX[lower] ?? null;
 }
@@ -752,6 +943,35 @@ export interface ToolResult {
 interface ToolContext {
   screenSize?: { width: number; height: number };
   selectedIds?: string[];
+  viewportCenter?: { x: number; y: number };
+}
+
+function computeNavigationViewport(
+  objects: Array<{ x: number; y: number; width: number; height: number }>,
+  screenSize?: { width: number; height: number }
+): { x: number; y: number; scale: number } | null {
+  if (objects.length === 0) return null;
+
+  const minX = Math.min(...objects.map((o) => o.x));
+  const minY = Math.min(...objects.map((o) => o.y));
+  const maxX = Math.max(...objects.map((o) => o.x + o.width));
+  const maxY = Math.max(...objects.map((o) => o.y + o.height));
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const boxW = Math.max(maxX - minX, 1);
+  const boxH = Math.max(maxY - minY, 1);
+
+  const sw = screenSize?.width ?? 1280;
+  const sh = screenSize?.height ?? 800;
+  const pad = 0.82;
+  const scale = Math.min(Math.max(Math.min((sw * pad) / boxW, (sh * pad) / boxH), 0.1), 2.0);
+
+  return {
+    x: Math.round(sw / 2 - centerX * scale),
+    y: Math.round(sh / 2 - centerY * scale),
+    scale: Math.round(scale * 1000) / 1000,
+  };
 }
 
 /**
@@ -806,20 +1026,25 @@ export async function executeTool(
       const { data, error } = await supabase
         .from("objects")
         .insert(rows)
-        .select("id");
+        .select("id, type, x, y, width, height");
 
       if (error) {
         return { error: error.message };
       }
 
+      const createdObjects: Array<{ id: string; type: string; x: number; y: number; width: number; height: number }> = [];
       for (const row of data || []) {
         createdIds.push(row.id);
+        createdObjects.push({ id: row.id, type: row.type, x: row.x, y: row.y, width: row.width, height: row.height });
       }
 
+      const _viewport = computeNavigationViewport(createdObjects, context.screenSize);
       return {
         created: createdIds.length,
         ids: createdIds,
+        objects: createdObjects,
         message: `Created ${createdIds.length} object(s)`,
+        ...(_viewport ? { _viewport } : {}),
       };
     }
 
@@ -827,15 +1052,17 @@ export async function executeTool(
     case "bulk_create_objects": {
       const objType: string = args.type || "sticky";
       const count: number = Math.min(Math.max(args.count || 0, 1), 500);
+      // Declare parentFrameId before layout so the conditional default below
+      // does not reference it inside the Temporal Dead Zone.
+      const parentFrameId: string | null = args.parentFrameId || null;
       // When placing inside a frame, default to vertical stacking so stickies
       // don't overflow the column width and trigger unwanted horizontal expansion.
       const layout: string = args.layout || (parentFrameId ? "vertical" : "grid");
       const gap: number = args.gap ?? 20;
-      let startX: number = args.startX ?? 100;
-      let startY: number = args.startY ?? 100;
+      let startX: number = args.startX ?? context.viewportCenter?.x ?? 100;
+      let startY: number = args.startY ?? context.viewportCenter?.y ?? 100;
       const contentPrompt: string | undefined = args.contentPrompt;
       const textPattern: string | undefined = args.textPattern;
-      const parentFrameId: string | null = args.parentFrameId || null;
 
       const defaults = TYPE_DEFAULTS[objType] || TYPE_DEFAULTS.rectangle;
       const objWidth: number = args.width ?? defaults.width;
@@ -989,27 +1216,146 @@ export async function executeTool(
 
     // ── Create Quadrant Layout ────────────────────────────
     case "createQuadrant": {
-      const { title, xAxisLabel, yAxisLabel, quadrantLabels, items } = args;
-      const startX = args.startX ?? 100;
-      const startY = args.startY ?? 100;
+      const { title, xAxisLabel, yAxisLabel, quadrantLabels, items, quadrantSourceIds } = args;
+      const startX = args.startX ?? context.viewportCenter?.x ?? 100;
+      const startY = args.startY ?? context.viewportCenter?.y ?? 100;
       const now = new Date().toISOString();
       let zIndex = Date.now();
-      
-      const tlItems: string[] = items?.topLeft || [];
-      const trItems: string[] = items?.topRight || [];
-      const blItems: string[] = items?.bottomLeft || [];
-      const brItems: string[] = items?.bottomRight || [];
 
       const stickyWidth = 150;
       const stickyHeight = 150;
       const gap = 20;
       const quadrantPadding = 30;
-      
+
       const getGridSize = (count: number) => {
         const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
         const rows = Math.max(1, Math.ceil(count / cols));
         return { cols, rows };
       };
+
+      // ── Reposition mode: move existing objects into quadrant layout ──
+      if (quadrantSourceIds && typeof quadrantSourceIds === "object") {
+        const qSrcTL: string[] = quadrantSourceIds.topLeft || [];
+        const qSrcTR: string[] = quadrantSourceIds.topRight || [];
+        const qSrcBL: string[] = quadrantSourceIds.bottomLeft || [];
+        const qSrcBR: string[] = quadrantSourceIds.bottomRight || [];
+        const allIds = [...qSrcTL, ...qSrcTR, ...qSrcBL, ...qSrcBR];
+
+        if (allIds.length > 0) {
+          const { data: srcObjs } = await supabase
+            .from("objects")
+            .select("id, width, height")
+            .eq("board_id", boardId)
+            .in("id", allIds);
+
+          if (!srcObjs || srcObjs.length === 0) {
+            return { error: "None of the quadrantSourceIds objects were found on this board." };
+          }
+
+          const qCountTL = qSrcTL.length, qCountTR = qSrcTR.length;
+          const qCountBL = qSrcBL.length, qCountBR = qSrcBR.length;
+          const tlGrid = getGridSize(qCountTL);
+          const trGrid = getGridSize(qCountTR);
+          const blGrid = getGridSize(qCountBL);
+          const brGrid = getGridSize(qCountBR);
+
+          const maxTopRows = Math.max(tlGrid.rows, trGrid.rows, 2);
+          const maxBottomRows = Math.max(blGrid.rows, brGrid.rows, 2);
+          const maxLeftCols = Math.max(tlGrid.cols, blGrid.cols, 2);
+          const maxRightCols = Math.max(trGrid.cols, brGrid.cols, 2);
+
+          const minQW = 2 * stickyWidth + gap + quadrantPadding * 2;
+          const minQH = 2 * stickyHeight + gap + quadrantPadding * 2 + 60;
+          const qWidthLeft = Math.max(maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2, minQW);
+          const qWidthRight = Math.max(maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2, minQW);
+          const qHeightTop = Math.max(maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 60, minQH);
+          const qHeightBottom = Math.max(maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 60, minQH);
+
+          const totalWidth = qWidthLeft + qWidthRight + gap;
+          const totalHeight = qHeightTop + qHeightBottom + gap;
+          const pos = await findOpenCanvasSpace(boardId, totalWidth + 40, totalHeight + 80, startX, startY);
+
+          let totalCreated = 0;
+          const quadrantIds: Record<string, string> = {};
+
+          const { data: masterData, error: masterErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "frame",
+              x: pos.x, y: pos.y, width: totalWidth + 40, height: totalHeight + 80,
+              color: "#F9F9F7", text: title || "Quadrant Layout", rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+          if (masterErr || !masterData) return { error: masterErr?.message || "Failed to create master frame" };
+          const masterFrameId = masterData.id;
+          totalCreated++;
+
+          const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+
+          const buildQuadrantRepos = async (
+            qTitle: string, srcIds: string[], qX: number, qY: number, qWidth: number, qHeight: number, qCols: number, key: string
+          ) => {
+            const { data: qData, error: qErr } = await supabase
+              .from("objects")
+              .insert({
+                board_id: boardId, type: "frame",
+                x: qX, y: qY, width: qWidth, height: qHeight,
+                color: "#F9F9F7", text: qTitle || key,
+                parent_frame_id: masterFrameId, rotation: 0,
+                z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+              })
+              .select("id")
+              .single();
+            if (qErr || !qData) throw new Error(qErr?.message || "Failed to create quadrant frame");
+            quadrantIds[key] = qData.id;
+            totalCreated++;
+
+            for (let i = 0; i < srcIds.length; i++) {
+              const col = i % qCols;
+              const row = Math.floor(i / qCols);
+              patches.push({
+                id: srcIds[i],
+                x: qX + quadrantPadding + col * (stickyWidth + gap),
+                y: qY + 60 + row * (stickyHeight + gap),
+                parentFrameId: qData.id,
+              });
+            }
+          };
+
+          try {
+            const startInnerX = pos.x + 20;
+            const startInnerY = pos.y + 60;
+            await buildQuadrantRepos(quadrantLabels?.topLeft, qSrcTL, startInnerX, startInnerY, qWidthLeft, qHeightTop, tlGrid.cols, "topLeft");
+            await buildQuadrantRepos(quadrantLabels?.topRight, qSrcTR, startInnerX + qWidthLeft + gap, startInnerY, qWidthRight, qHeightTop, trGrid.cols, "topRight");
+            await buildQuadrantRepos(quadrantLabels?.bottomLeft, qSrcBL, startInnerX, startInnerY + qHeightTop + gap, qWidthLeft, qHeightBottom, blGrid.cols, "bottomLeft");
+            await buildQuadrantRepos(quadrantLabels?.bottomRight, qSrcBR, startInnerX + qWidthLeft + gap, startInnerY + qHeightTop + gap, qWidthRight, qHeightBottom, brGrid.cols, "bottomRight");
+          } catch (err: any) {
+            return { error: err.message };
+          }
+
+          const moved = await repositionObjects(supabase, boardId, patches);
+          const _qViewport = computeNavigationViewport(
+            [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: totalHeight + 80 }],
+            context.screenSize
+          );
+          return {
+            created: totalCreated,
+            repositioned: moved,
+            frameId: masterFrameId,
+            quadrantIds,
+            message: `Reorganized ${moved} objects into quadrant layout with ${totalCreated} new frames.`,
+            ...(_qViewport ? { _viewport: _qViewport } : {}),
+          };
+        }
+      }
+
+      // ── Normal create mode ──
+      const tlItems: string[] = items?.topLeft || [];
+      const trItems: string[] = items?.topRight || [];
+      const blItems: string[] = items?.bottomLeft || [];
+      const brItems: string[] = items?.bottomRight || [];
 
       const tlGrid = getGridSize(tlItems.length);
       const trGrid = getGridSize(trItems.length);
@@ -1037,7 +1383,6 @@ export async function executeTool(
       let totalCreated = 0;
       const quadrantIds: Record<string, string> = {};
 
-      // Insert master frame first
       const { data: masterData, error: masterErr } = await supabase
         .from("objects")
         .insert({
@@ -1087,7 +1432,6 @@ export async function executeTool(
         totalCreated += children.length;
       }
 
-      // Helper to generate quadrant frames + stickies
       const buildQuadrant = async (qTitle: string, qItems: string[], qX: number, qY: number, qWidth: number, qHeight: number, color: string, qCols: number, key: string) => {
         const { data: qData, error: qErr } = await supabase
           .from("objects")
@@ -1113,7 +1457,7 @@ export async function executeTool(
             return {
               board_id: boardId, type: "sticky",
               x: qX + quadrantPadding + col * (stickyWidth + gap),
-              y: qY + 60 + row * (stickyHeight + gap), // +60 for quadrant title
+              y: qY + 60 + row * (stickyHeight + gap),
               width: stickyWidth, height: stickyHeight, text: itemText,
               color, parent_frame_id: qFrameId, rotation: 0,
               z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
@@ -1137,23 +1481,28 @@ export async function executeTool(
         return { error: err.message };
       }
 
+      const _qViewport = computeNavigationViewport(
+        [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: totalHeight + 80 }],
+        context.screenSize
+      );
       return {
         created: totalCreated,
         frameId: parentFrameId,
         quadrantIds,
         message: `Created quadrant layout with ${totalCreated} objects.`,
+        ...(_qViewport ? { _viewport: _qViewport } : {}),
       };
     }
 
     // ── Create Column Layout ────────────────────────────
     case "createColumnLayout": {
-      const { title, columns } = args;
+      const { title, columns, sourceIds: colSourceIds } = args;
       if (!Array.isArray(columns) || columns.length === 0) {
         return { error: "columns array is required and cannot be empty" };
       }
 
-      const startX = args.startX ?? 100;
-      const startY = args.startY ?? 100;
+      const startX = args.startX ?? context.viewportCenter?.x ?? 100;
+      const startY = args.startY ?? context.viewportCenter?.y ?? 100;
       const now = new Date().toISOString();
       let zIndex = Date.now();
 
@@ -1162,6 +1511,105 @@ export async function executeTool(
       const gap = 20;
       const colPadding = 30;
 
+      // ── Reposition mode: move existing objects into column layout ──
+      if (Array.isArray(colSourceIds) && colSourceIds.length > 0) {
+        const allObjIds = colSourceIds.flatMap((s: any) => s.objectIds || []);
+        const { data: srcObjs } = await supabase
+          .from("objects")
+          .select("id, width, height")
+          .eq("board_id", boardId)
+          .in("id", allObjIds);
+
+        if (!srcObjs || srcObjs.length === 0) {
+          return { error: "None of the sourceIds objects were found on this board." };
+        }
+        const objMap = new Map(srcObjs.map((o: any) => [o.id, o]));
+
+        const maxPerCol = Math.max(...colSourceIds.map((s: any) => (s.objectIds || []).length), 0);
+        const colWidth = stickyWidth + colPadding * 2;
+        const totalWidth = columns.length * (colWidth + gap) - gap;
+        const minStickySlots = 4;
+        const itemCount = Math.max(maxPerCol, minStickySlots);
+        const colHeight = itemCount * stickyHeight + (itemCount - 1) * gap + colPadding * 2 + 60;
+
+        const pos = await findOpenCanvasSpace(boardId, totalWidth + 40, colHeight + 80, startX, startY);
+        const colors = ["#E5E5E0", "#7FC8E8", "#FAD84E", "#9DD9A3", "#F5A8C4"];
+
+        let masterFrameId: string | null = null;
+        let totalCreated = 0;
+        const columnIds: Record<string, string> = {};
+
+        if (title) {
+          const { data: masterData, error: masterErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "frame",
+              x: pos.x, y: pos.y,
+              width: totalWidth + 40, height: colHeight + 80,
+              color: "#F9F9F7", text: title, rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+          if (masterErr || !masterData) return { error: masterErr?.message || "Failed to create master frame" };
+          masterFrameId = masterData.id;
+          totalCreated++;
+        }
+
+        const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+        const colSourceMap = new Map(colSourceIds.map((s: any) => [s.columnTitle, s.objectIds || []]));
+
+        for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+          const col = columns[colIdx];
+          const cx = pos.x + 20 + colIdx * (colWidth + gap);
+          const cy = pos.y + 60;
+          const color = colors[colIdx % colors.length];
+
+          const { data: colData, error: colErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "frame",
+              x: cx, y: cy, width: colWidth, height: colHeight,
+              color: "#F9F9F7", text: col.title || `Column ${colIdx + 1}`,
+              parent_frame_id: masterFrameId,
+              rotation: 0, z_index: zIndex++,
+              created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+          if (colErr || !colData) continue;
+          const colFrameId = colData.id;
+          columnIds[col.title || `Column ${colIdx + 1}`] = colFrameId;
+          totalCreated++;
+
+          const idsForCol: string[] = colSourceMap.get(col.title) || [];
+          for (let i = 0; i < idsForCol.length; i++) {
+            const objId = idsForCol[i];
+            if (!objMap.has(objId)) continue;
+            patches.push({
+              id: objId,
+              x: cx + colPadding,
+              y: cy + 60 + i * (stickyHeight + gap),
+              parentFrameId: colFrameId,
+            });
+          }
+        }
+
+        const moved = await repositionObjects(supabase, boardId, patches);
+        const colLayoutBounds = [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: colHeight + 80 }];
+        const _clViewport = computeNavigationViewport(colLayoutBounds, context.screenSize);
+
+        return {
+          created: totalCreated,
+          repositioned: moved,
+          frameId: masterFrameId ?? undefined,
+          columnIds,
+          message: `Reorganized ${moved} objects into column layout with ${totalCreated} new frames.`,
+          ...(_clViewport ? { _viewport: _clViewport } : {}),
+        };
+      }
+
+      // ── Normal create mode ──
       const maxItems = Math.max(...columns.map((c: any) => Array.isArray(c.items) ? c.items.length : 0));
       const colWidth = stickyWidth + colPadding * 2;
       const totalWidth = columns.length * (colWidth + gap) - gap;
@@ -1176,7 +1624,6 @@ export async function executeTool(
       let totalCreated = 0;
       const columnIds: Record<string, string> = {};
 
-      // Insert master frame first if title is provided
       if (title) {
         const { data: masterData, error: masterErr } = await supabase
           .from("objects")
@@ -1195,7 +1642,6 @@ export async function executeTool(
         totalCreated++;
       }
 
-      // Insert each column frame, then its children
       for (let colIdx = 0; colIdx < columns.length; colIdx++) {
         const col = columns[colIdx];
         const cx = pos.x + 20 + colIdx * (colWidth + gap);
@@ -1235,11 +1681,16 @@ export async function executeTool(
         }
       }
 
+      const colLayoutBounds = parentFrameId
+        ? [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: colHeight + 80 }]
+        : [{ x: pos.x, y: pos.y, width: totalWidth, height: colHeight }];
+      const _clViewport = computeNavigationViewport(colLayoutBounds, context.screenSize);
       return {
         created: totalCreated,
         frameId: parentFrameId ?? undefined,
         columnIds,
         message: `Created column layout with ${totalCreated} objects.`,
+        ...(_clViewport ? { _viewport: _clViewport } : {}),
       };
     }
 
@@ -1798,9 +2249,11 @@ export async function executeTool(
       const searchText:  string | undefined = args.text;
       const searchType:  string | undefined = args.type;
       const searchColor: string | undefined = args.color;
+      const searchParent: string | undefined = args.parentFrameId;
+      const searchLimit: number = typeof args.limit === "number" && args.limit > 0 ? Math.min(args.limit, 500) : 100;
 
-      if (!searchText && !searchType && !searchColor) {
-        return { error: "Provide at least one of: text, type, color." };
+      if (!searchText && !searchType && !searchColor && !searchParent) {
+        return { error: "Provide at least one of: text, type, color, parentFrameId." };
       }
 
       let query = supabase
@@ -1808,12 +2261,15 @@ export async function executeTool(
         .select("id, type, x, y, width, height, color, text, parent_frame_id")
         .eq("board_id", boardId);
 
-      if (searchType)  query = query.eq("type", searchType);
-      if (searchText)  query = query.ilike("text", `%${searchText}%`);
+      if (searchType)   query = query.eq("type", searchType);
+      if (searchText)   query = query.ilike("text", `%${searchText}%`);
+      if (searchParent) query = query.eq("parent_frame_id", searchParent);
       if (searchColor) {
         const hex = resolveColor(searchColor) ?? searchColor;
         query = query.ilike("color", hex);
       }
+
+      query = query.limit(searchLimit);
 
       const { data: results, error } = await query;
       if (error) return { error: error.message };
@@ -1836,7 +2292,620 @@ export async function executeTool(
       };
     }
 
-    // ── Read Board State ─────────────────────────────────
+    // ── Create Wireframe ───────────────────────────────────
+    case "createWireframe": {
+      const { title, sections, deviceType = "desktop" } = args;
+      if (!Array.isArray(sections) || sections.length === 0) {
+        return { error: "sections array is required and cannot be empty" };
+      }
+
+      const frameWidth = args.width ?? (deviceType === "mobile" ? 375 : deviceType === "tablet" ? 768 : 800);
+      const rowUnit = 60;
+      const sectionGap = 4;
+      const sectionPad = 8;
+
+      let totalHeight = sectionPad;
+      for (const section of sections) {
+        totalHeight += (section.heightRatio ?? 1) * rowUnit + sectionGap;
+      }
+      totalHeight += sectionPad;
+
+      const defaultX = context.viewportCenter?.x ? context.viewportCenter.x - Math.round(frameWidth / 2) : 100;
+      const defaultY = context.viewportCenter?.y ? context.viewportCenter.y - Math.round(totalHeight / 2) : 100;
+      const pos = await findOpenCanvasSpace(boardId, frameWidth + 40, totalHeight + 80, args.startX ?? defaultX, args.startY ?? defaultY);
+
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+
+      const { data: frameData, error: frameErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId, type: "frame",
+          x: pos.x, y: pos.y, width: frameWidth + 40, height: totalHeight + 80,
+          color: "#F9F9F7", text: title || "Wireframe", rotation: 0,
+          z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (frameErr || !frameData) return { error: frameErr?.message || "Failed to create wireframe frame" };
+      const frameId = frameData.id;
+
+      const children: any[] = [];
+      let curY = pos.y + 60;
+
+      for (const section of sections) {
+        const ratio = section.heightRatio ?? 1;
+        const sectionHeight = ratio * rowUnit;
+        const split: string = section.split ?? "full";
+
+        if (split === "full") {
+          children.push({
+            board_id: boardId, type: "rectangle",
+            x: pos.x + sectionPad + 20, y: curY,
+            width: frameWidth - sectionPad * 2, height: sectionHeight,
+            color: "#E5E5E0", text: section.label || "",
+            parent_frame_id: frameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          });
+        } else {
+          const splits = split === "two-column" ? [0.5, 0.5]
+            : split === "three-column" ? [0.333, 0.334, 0.333]
+            : split === "left-sidebar" ? [0.25, 0.75]
+            : [0.75, 0.25]; // right-sidebar
+
+          const labels: string[] = section.splitLabels ?? [];
+          let curX = pos.x + sectionPad + 20;
+          const availW = frameWidth - sectionPad * 2;
+
+          splits.forEach((frac: number, i: number) => {
+            const w = Math.round(availW * frac - (i < splits.length - 1 ? sectionGap : 0));
+            children.push({
+              board_id: boardId, type: "rectangle",
+              x: Math.round(curX), y: curY,
+              width: w, height: sectionHeight,
+              color: "#E5E5E0", text: labels[i] ?? section.label ?? "",
+              parent_frame_id: frameId, rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            });
+            curX += w + sectionGap;
+          });
+        }
+        curY += sectionHeight + sectionGap;
+      }
+
+      if (children.length > 0) {
+        const { error: childErr } = await supabase.from("objects").insert(children);
+        if (childErr) return { error: childErr.message };
+      }
+
+      const allCreated = [
+        { x: pos.x, y: pos.y, width: frameWidth + 40, height: totalHeight + 80 },
+        ...children.map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ];
+      const _viewport = computeNavigationViewport(allCreated, context.screenSize);
+
+      return {
+        created: 1 + children.length,
+        frameId,
+        message: `Created wireframe "${title}" with ${children.length} sections.`,
+        ...(_viewport ? { _viewport } : {}),
+      };
+    }
+
+    // ── Create Mind Map ──────────────────────────────────────
+    case "createMindMap": {
+      const { centerTopic, branches, sourceIds: mmSourceIds } = args;
+
+      const innerRadius = 250;
+      const outerRadius = 450;
+      const branchColors = ["#7FC8E8", "#9DD9A3", "#FAD84E", "#F5A8C4", "#E5E5E0"];
+
+      const defaultCX = context.viewportCenter?.x ?? 500;
+      const defaultCY = context.viewportCenter?.y ?? 400;
+      const cx = args.startX ?? defaultCX;
+      const cy = args.startY ?? defaultCY;
+
+      // ── Reposition mode: move existing objects into specific branches ──
+      if (Array.isArray(mmSourceIds) && mmSourceIds.length > 0 && Array.isArray(branches) && branches.length > 0) {
+        const allObjIds = mmSourceIds.flatMap((s: any) => s.objectIds || []);
+        const { data: srcObjs } = await supabase
+          .from("objects")
+          .select("id, x, y, width, height")
+          .eq("board_id", boardId)
+          .in("id", allObjIds);
+
+        if (!srcObjs || srcObjs.length === 0) {
+          return { error: "None of the sourceIds objects were found on this board." };
+        }
+        const objMap = new Map(srcObjs.map((o: any) => [o.id, o]));
+        const sourceMap = new Map(mmSourceIds.map((s: any) => [s.branchLabel, s.objectIds || []]));
+
+        const now = new Date().toISOString();
+        let zIndex = Date.now();
+        const centerW = 200;
+        const centerH = 80;
+        const branchW = 160;
+        const branchH = 60;
+
+        const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+        const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
+        const connectorRows: any[] = [];
+        let totalCreated = 0;
+
+        const { data: centerData, error: centerErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "rectangle",
+            x: cx - centerW / 2, y: cy - centerH / 2,
+            width: centerW, height: centerH,
+            color: "#3B82F6", text: centerTopic || "Central Topic",
+            rotation: 0, z_index: zIndex++,
+            created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (centerErr || !centerData) return { error: centerErr?.message || "Failed to create center node" };
+        const centerId = centerData.id;
+        totalCreated++;
+        allPositions.push({ x: cx - centerW / 2, y: cy - centerH / 2, width: centerW, height: centerH });
+
+        const n = branches.length;
+        for (let i = 0; i < n; i++) {
+          const branch = branches[i];
+          const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+          const bx = cx + Math.round(innerRadius * Math.cos(angle)) - branchW / 2;
+          const by = cy + Math.round(innerRadius * Math.sin(angle)) - branchH / 2;
+          const color = (branch.color ? resolveColor(branch.color) : null) || branchColors[i % branchColors.length];
+
+          const { data: bData, error: bErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "sticky",
+              x: bx, y: by, width: branchW, height: branchH,
+              color, text: branch.label || "",
+              rotation: 0, z_index: zIndex++,
+              created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+
+          if (bErr || !bData) continue;
+          totalCreated++;
+          allPositions.push({ x: bx, y: by, width: branchW, height: branchH });
+
+          connectorRows.push({
+            board_id: boardId,
+            from_id: centerId, to_id: bData.id,
+            style: "arrow", color: null, stroke_width: null,
+            from_point: null, to_point: null,
+          });
+
+          const idsForBranch: string[] = sourceMap.get(branch.label) || [];
+          if (idsForBranch.length > 0) {
+            const subAngleSpread = (2 * Math.PI / Math.max(n, 2)) * 0.6;
+            let currentLayerRadius = outerRadius;
+            let remainingIds = [...idsForBranch];
+            const layers: string[][] = [];
+
+            while (remainingIds.length > 0) {
+              const availableArcLength = currentLayerRadius * subAngleSpread;
+              const maxItems = Math.max(1, Math.floor(availableArcLength / 180) + 1);
+              layers.push(remainingIds.slice(0, maxItems));
+              remainingIds = remainingIds.slice(maxItems);
+              currentLayerRadius += 220;
+            }
+
+            for (let l = 0; l < layers.length; l++) {
+              const layerIds = layers[l];
+              const layerRadius = outerRadius + l * 220;
+              const spread = Math.min(subAngleSpread, (layerIds.length * 180) / layerRadius);
+
+              for (let k = 0; k < layerIds.length; k++) {
+                const objId = layerIds[k];
+                const obj = objMap.get(objId);
+                if (!obj) continue;
+
+                const subAngleOffset = layerIds.length > 1 
+                  ? (k - (layerIds.length - 1) / 2) * (spread / (layerIds.length - 1))
+                  : 0;
+                const subAngle = angle + subAngleOffset;
+                const sx = cx + Math.round(layerRadius * Math.cos(subAngle)) - Math.round((obj.width || 150) / 2);
+                const sy = cy + Math.round(layerRadius * Math.sin(subAngle)) - Math.round((obj.height || 150) / 2);
+
+                patches.push({ id: objId, x: sx, y: sy, parentFrameId: null });
+                allPositions.push({ x: sx, y: sy, width: obj.width || 150, height: obj.height || 150 });
+
+                connectorRows.push({
+                  board_id: boardId,
+                  from_id: bData.id, to_id: objId,
+                  style: "arrow", color: null, stroke_width: null,
+                  from_point: null, to_point: null,
+                });
+              }
+            }
+          }
+        }
+
+        const moved = await repositionObjects(supabase, boardId, patches);
+
+        if (connectorRows.length > 0) {
+          await supabase.from("connectors").insert(connectorRows);
+        }
+
+        const _viewport = computeNavigationViewport(allPositions, context.screenSize);
+
+        return {
+          created: totalCreated,
+          repositioned: moved,
+          connectors: connectorRows.length,
+          centerId,
+          message: `Created mind map with ${totalCreated} new nodes. Repositioned ${moved} existing objects into branches with ${connectorRows.length} connectors.`,
+          ...(_viewport ? { _viewport } : {}),
+        };
+      }
+
+      // ── Normal create mode ──
+      if (!Array.isArray(branches) || branches.length === 0) {
+        return { error: "branches array is required and cannot be empty" };
+      }
+
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+      const centerW = 200;
+      const centerH = 80;
+      const branchW = 160;
+      const branchH = 60;
+      const subW = 140;
+      const subH = 50;
+
+      const { data: centerData, error: centerErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId, type: "rectangle",
+          x: cx - centerW / 2, y: cy - centerH / 2,
+          width: centerW, height: centerH,
+          color: "#3B82F6", text: centerTopic || "Central Topic",
+          rotation: 0, z_index: zIndex++,
+          created_by: userId, created_at: now, updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (centerErr || !centerData) return { error: centerErr?.message || "Failed to create center node" };
+      const centerId = centerData.id;
+      let totalCreated = 1;
+      const connectorRows: any[] = [];
+      const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [
+        { x: cx - centerW / 2, y: cy - centerH / 2, width: centerW, height: centerH },
+      ];
+
+      const n = branches.length;
+      for (let i = 0; i < n; i++) {
+        const branch = branches[i];
+        const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+        const bx = cx + Math.round(innerRadius * Math.cos(angle)) - branchW / 2;
+        const by = cy + Math.round(innerRadius * Math.sin(angle)) - branchH / 2;
+        const color = (branch.color ? resolveColor(branch.color) : null) || branchColors[i % branchColors.length];
+
+        const { data: bData, error: bErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "sticky",
+            x: bx, y: by, width: branchW, height: branchH,
+            color, text: branch.label || "",
+            rotation: 0, z_index: zIndex++,
+            created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (bErr || !bData) continue;
+        totalCreated++;
+        allPositions.push({ x: bx, y: by, width: branchW, height: branchH });
+
+        connectorRows.push({
+          board_id: boardId,
+          from_id: centerId, to_id: bData.id,
+          style: "arrow", color: null, stroke_width: null,
+          from_point: null, to_point: null,
+        });
+
+        const children: string[] = Array.isArray(branch.children) ? branch.children : [];
+        if (children.length > 0) {
+          const subAngleSpread = (2 * Math.PI / Math.max(n, 2)) * 0.6;
+          let currentLayerRadius = outerRadius;
+          let remainingTexts = [...children];
+          const layers: string[][] = [];
+
+          while (remainingTexts.length > 0) {
+            const availableArcLength = currentLayerRadius * subAngleSpread;
+            const maxItems = Math.max(1, Math.floor(availableArcLength / 180) + 1);
+            layers.push(remainingTexts.slice(0, maxItems));
+            remainingTexts = remainingTexts.slice(maxItems);
+            currentLayerRadius += 220;
+          }
+
+          for (let l = 0; l < layers.length; l++) {
+            const layerTexts = layers[l];
+            const layerRadius = outerRadius + l * 220;
+            const spread = Math.min(subAngleSpread, (layerTexts.length * 180) / layerRadius);
+
+            for (let k = 0; k < layerTexts.length; k++) {
+              const subAngleOffset = layerTexts.length > 1 
+                ? (k - (layerTexts.length - 1) / 2) * (spread / (layerTexts.length - 1))
+                : 0;
+              const subAngle = angle + subAngleOffset;
+              const sx = cx + Math.round(layerRadius * Math.cos(subAngle)) - subW / 2;
+              const sy = cy + Math.round(layerRadius * Math.sin(subAngle)) - subH / 2;
+
+              const { data: sData, error: sErr } = await supabase
+                .from("objects")
+                .insert({
+                  board_id: boardId, type: "sticky",
+                  x: sx, y: sy, width: subW, height: subH,
+                  color, text: layerTexts[k] || "",
+                  rotation: 0, z_index: zIndex++,
+                  created_by: userId, created_at: now, updated_at: now,
+                })
+                .select("id")
+                .single();
+
+              if (sErr || !sData) continue;
+              totalCreated++;
+              allPositions.push({ x: sx, y: sy, width: subW, height: subH });
+
+              connectorRows.push({
+                board_id: boardId,
+                from_id: bData.id, to_id: sData.id,
+                style: "arrow", color: null, stroke_width: null,
+                from_point: null, to_point: null,
+              });
+            }
+          }
+        }
+      }
+
+      if (connectorRows.length > 0) {
+        await supabase.from("connectors").insert(connectorRows);
+      }
+
+      const _viewport = computeNavigationViewport(allPositions, context.screenSize);
+
+      return {
+        created: totalCreated,
+        connectors: connectorRows.length,
+        centerId,
+        message: `Created mind map with ${totalCreated} nodes and ${connectorRows.length} connectors.`,
+        ...(_viewport ? { _viewport } : {}),
+      };
+    }
+
+    // ── Create Flowchart ─────────────────────────────────────
+    case "createFlowchart": {
+      const { title, steps, direction = "top-to-bottom", sourceIds: fcSourceIds } = args;
+      const isVertical = direction === "top-to-bottom";
+
+      // ── Reposition mode: move existing objects into flowchart steps ──
+      if (Array.isArray(fcSourceIds) && fcSourceIds.length > 0) {
+        const allObjIds = fcSourceIds.flatMap((s: any) => s.objectIds || []);
+        const { data: srcObjs } = await supabase
+          .from("objects")
+          .select("id, x, y, width, height")
+          .eq("board_id", boardId)
+          .in("id", allObjIds);
+
+        if (!srcObjs || srcObjs.length === 0) {
+          return { error: "None of the sourceIds objects were found on this board." };
+        }
+        const objMap = new Map(srcObjs.map((o: any) => [o.id, o]));
+
+        const stepGapR = 80;
+        const defaultX = context.viewportCenter?.x ?? 200;
+        const defaultY = context.viewportCenter?.y ?? 200;
+        let cursorX = args.startX ?? defaultX;
+        let cursorY = args.startY ?? defaultY;
+
+        const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+        const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
+        const connectorRows: any[] = [];
+        let prevId: string | null = null;
+
+        for (let i = 0; i < fcSourceIds.length; i++) {
+          const step = fcSourceIds[i];
+          const ids: string[] = step.objectIds || [];
+          const firstId = ids[0];
+          const obj = firstId ? objMap.get(firstId) : null;
+          if (!obj) continue;
+
+          const w = obj.width || 200;
+          const h = obj.height || 80;
+          patches.push({ id: obj.id, x: cursorX, y: cursorY, parentFrameId: null });
+          allPositions.push({ x: cursorX, y: cursorY, width: w, height: h });
+
+          if (prevId) {
+            connectorRows.push({
+              board_id: boardId,
+              from_id: prevId, to_id: obj.id,
+              style: "arrow", color: null, stroke_width: null,
+              from_point: null, to_point: null,
+            });
+          }
+          prevId = obj.id;
+
+          if (isVertical) cursorY += h + stepGapR;
+          else cursorX += w + stepGapR;
+        }
+
+        const moved = await repositionObjects(supabase, boardId, patches);
+        if (connectorRows.length > 0) {
+          await supabase.from("connectors").insert(connectorRows);
+        }
+
+        const _viewport = computeNavigationViewport(allPositions, context.screenSize);
+        return {
+          repositioned: moved,
+          connectors: connectorRows.length,
+          message: `Reorganized ${moved} objects into a ${direction} flowchart with ${connectorRows.length} connectors.`,
+          ...(_viewport ? { _viewport } : {}),
+        };
+      }
+
+      // ── Normal create mode ──
+      if (!Array.isArray(steps) || steps.length === 0) {
+        return { error: "steps array is required and cannot be empty" };
+      }
+
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+      const stepGap = 80;
+      const processW = 200;
+      const processH = 80;
+      const decisionSize = 100;
+      const startEndW = 150;
+      const startEndH = 50;
+
+      const getStepDims = (type: string) => {
+        switch (type) {
+          case "decision": return { w: decisionSize, h: decisionSize };
+          case "start": case "end": return { w: startEndW, h: startEndH };
+          default: return { w: processW, h: processH };
+        }
+      };
+
+      // Calculate total bounds for frame
+      const totalSteps = steps.length;
+      const maxW = Math.max(processW, decisionSize, startEndW);
+      const maxH = Math.max(processH, decisionSize, startEndH);
+      const totalSpan = totalSteps * (isVertical ? maxH : maxW) + (totalSteps - 1) * stepGap;
+      const frameW = isVertical ? maxW + 200 : totalSpan + 200;
+      const frameH = isVertical ? totalSpan + 160 : maxH + 250;
+
+      const defaultX = context.viewportCenter?.x ? context.viewportCenter.x - Math.round(frameW / 2) : 100;
+      const defaultY = context.viewportCenter?.y ? context.viewportCenter.y - Math.round(frameH / 2) : 100;
+      const pos = await findOpenCanvasSpace(boardId, frameW, frameH, args.startX ?? defaultX, args.startY ?? defaultY);
+
+      // Create frame
+      const { data: frameData, error: frameErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId, type: "frame",
+          x: pos.x, y: pos.y, width: frameW, height: frameH,
+          color: "#F9F9F7", text: title || "Flowchart", rotation: 0,
+          z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (frameErr || !frameData) return { error: frameErr?.message || "Failed to create flowchart frame" };
+      const frameId = frameData.id;
+
+      // Create step nodes
+      const stepIds: string[] = [];
+      const stepPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
+      let totalCreated = 1; // frame
+
+      const contentStartX = pos.x + Math.round(frameW / 2);
+      const contentStartY = pos.y + 80;
+
+      for (let i = 0; i < totalSteps; i++) {
+        const step = steps[i];
+        const stepType: string = step.type || "process";
+        const dims = getStepDims(stepType);
+        const color = stepType === "decision" ? "#FAD84E"
+          : stepType === "start" || stepType === "end" ? "#9DD9A3"
+          : "#E5E5E0";
+        const shapeType = stepType === "decision" ? "circle" : "rectangle";
+
+        const sx = isVertical
+          ? contentStartX - Math.round(dims.w / 2)
+          : contentStartX - Math.round(frameW / 2) + 100 + i * (maxW + stepGap);
+        const sy = isVertical
+          ? contentStartY + i * (maxH + stepGap)
+          : contentStartY + Math.round((frameH - 160) / 2) - Math.round(dims.h / 2);
+
+        const { data: sData, error: sErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: shapeType,
+            x: sx, y: sy, width: dims.w, height: dims.h,
+            color, text: step.label || `Step ${i + 1}`,
+            parent_frame_id: frameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (sErr || !sData) {
+          stepIds.push("");
+          stepPositions.push({ x: sx, y: sy, width: dims.w, height: dims.h });
+          continue;
+        }
+        stepIds.push(sData.id);
+        stepPositions.push({ x: sx, y: sy, width: dims.w, height: dims.h });
+        totalCreated++;
+      }
+
+      // Create connectors
+      const connectorRows: any[] = [];
+      for (let i = 0; i < totalSteps; i++) {
+        const step = steps[i];
+        const fromId = stepIds[i];
+        if (!fromId) continue;
+
+        if (Array.isArray(step.branches) && step.branches.length > 0) {
+          for (const branch of step.branches) {
+            const targetIdx = branch.targetStepIndex;
+            if (typeof targetIdx === "number" && targetIdx >= 0 && targetIdx < totalSteps && stepIds[targetIdx]) {
+              connectorRows.push({
+                board_id: boardId,
+                from_id: fromId, to_id: stepIds[targetIdx],
+                style: "arrow", color: null, stroke_width: null,
+                from_point: null, to_point: null,
+              });
+            }
+          }
+          // Also connect to the next sequential step (the "default" path)
+          if (i + 1 < totalSteps && stepIds[i + 1]) {
+            connectorRows.push({
+              board_id: boardId,
+              from_id: fromId, to_id: stepIds[i + 1],
+              style: "arrow", color: null, stroke_width: null,
+              from_point: null, to_point: null,
+            });
+          }
+        } else if (i + 1 < totalSteps && stepIds[i + 1]) {
+          connectorRows.push({
+            board_id: boardId,
+            from_id: fromId, to_id: stepIds[i + 1],
+            style: "arrow", color: null, stroke_width: null,
+            from_point: null, to_point: null,
+          });
+        }
+      }
+
+      if (connectorRows.length > 0) {
+        await supabase.from("connectors").insert(connectorRows);
+      }
+
+      const allBounds = [
+        { x: pos.x, y: pos.y, width: frameW, height: frameH },
+        ...stepPositions,
+      ];
+      const _viewport = computeNavigationViewport(allBounds, context.screenSize);
+
+      return {
+        created: totalCreated,
+        connectors: connectorRows.length,
+        frameId,
+        stepIds: stepIds.filter(Boolean),
+        message: `Created flowchart "${title}" with ${totalCreated} objects and ${connectorRows.length} connectors.`,
+        ...(_viewport ? { _viewport } : {}),
+      };
+    }
+
+    // ── Read Board State ─────────────────────────────────────
     case "read_board_state": {
       return await fetchBoardState(boardId);
     }
@@ -1848,6 +2917,52 @@ export async function executeTool(
 
 // ─── Helpers ───────────────────────────────────────────────────
 
+/**
+ * Batch-reposition existing objects. Used by template tools when
+ * sourceObjectIds is provided to reorganize instead of create.
+ */
+async function repositionObjects(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  boardId: string,
+  patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }>
+): Promise<number> {
+  if (patches.length === 0) return 0;
+  const now = new Date().toISOString();
+
+  for (let i = 0; i < patches.length; i += PATCH_BULK_CHUNK_SIZE) {
+    const chunk = patches.slice(i, i + PATCH_BULK_CHUNK_SIZE);
+    const ids = chunk.map((p) => p.id);
+
+    const { data: existing } = await supabase
+      .from("objects")
+      .select("*")
+      .eq("board_id", boardId)
+      .in("id", ids);
+
+    if (!existing?.length) continue;
+
+    const byId = new Map(existing.map((r: any) => [r.id, r]));
+    const rows: any[] = [];
+
+    for (const patch of chunk) {
+      const row = byId.get(patch.id);
+      if (!row) continue;
+      rows.push({
+        ...row,
+        x: patch.x,
+        y: patch.y,
+        parent_frame_id: patch.parentFrameId !== undefined ? (patch.parentFrameId || null) : row.parent_frame_id,
+        updated_at: now,
+      });
+    }
+
+    if (rows.length > 0) {
+      await supabase.from("objects").upsert(rows, { onConflict: "id" });
+    }
+  }
+
+  return patches.length;
+}
 
 export async function findOpenCanvasSpace(boardId: string, reqWidth: number, reqHeight: number, startX = 100, startY = 100): Promise<{ x: number, y: number }> {
   const supabase = getSupabaseAdmin();

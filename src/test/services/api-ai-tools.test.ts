@@ -15,6 +15,7 @@ function freshChain() {
   c.in = vi.fn().mockReturnValue(c);
   c.or = vi.fn().mockReturnValue(c);
   c.ilike = vi.fn().mockReturnValue(c);
+  c.limit = vi.fn().mockReturnValue(c);
   c.single = vi.fn().mockResolvedValue(mockResult);
   c.maybeSingle = vi.fn().mockResolvedValue(mockResult);
   return c;
@@ -47,8 +48,8 @@ beforeEach(() => {
 // ── TOOL_DEFINITIONS ─────────────────────────────────────────
 
 describe("TOOL_DEFINITIONS", () => {
-  it("has 17 tool definitions", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(17);
+  it("has 20 tool definitions", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(20);
     for (const tool of TOOL_DEFINITIONS) {
       expect(tool.type).toBe("function");
       expect(tool.function.name).toBeTruthy();
@@ -208,7 +209,7 @@ describe("executeTool", () => {
   });
 
   it("search_objects returns matching objects", async () => {
-    chain.ilike.mockResolvedValueOnce({
+    chain.limit.mockResolvedValueOnce({
       data: [
         {
           id: "obj-1",
