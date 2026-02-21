@@ -84,6 +84,7 @@ import {
   joinBoard,
   updateBoardMetadata,
   deleteFrameCascade,
+  getBoardMembers,
 } from "../../services/board";
 
 describe("Board service (Supabase)", () => {
@@ -236,6 +237,65 @@ describe("Board service (Supabase)", () => {
 
       const result = await joinBoard("board-123", "user-456");
       expect(result).toEqual({ status: "member", role: "editor" });
+    });
+  });
+
+  // ── getBoardMembers ──────────────────────────────────────────
+
+  describe("getBoardMembers", () => {
+    it("calls the /api/boards/members endpoint, NOT Supabase directly — regression for RLS blind spot", async () => {
+      // Before the fix, getBoardMembers queried Supabase directly, which RLS
+      // restricts to the caller's own row only. Other members were invisible.
+      // After the fix it must use fetch() to go through the service-role API.
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          members: [
+            { userId: "user-123", role: "owner", displayName: "Alice" },
+            { userId: "other-user", role: "editor", displayName: "Bob" },
+          ],
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const members = await getBoardMembers("board-123", "test-token");
+
+      // Must have called fetch, not supabase
+      expect(mockFetch).toHaveBeenCalledOnce();
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/boards/members"),
+        expect.objectContaining({ method: "GET" })
+      );
+
+      // Must return both members, not just the caller
+      expect(members).toHaveLength(2);
+      expect(members.map((m) => m.userId)).toContain("other-user");
+
+      // Supabase must NOT have been called for the member list
+      expect(mockFrom).not.toHaveBeenCalledWith("board_members");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("forwards the session token as Authorization header", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ members: [] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await getBoardMembers("board-123", "my-session-token");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer my-session-token",
+          }),
+        })
+      );
+
+      vi.unstubAllGlobals();
     });
   });
 

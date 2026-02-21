@@ -168,36 +168,25 @@ export async function fetchBoardMetadata(boardId: string): Promise<BoardMetadata
 
 /**
  * Fetch all members of a board with their display names.
- * Uses two queries because board_members.user_id → auth.users, not profiles,
- * so PostgREST cannot auto-traverse the profiles relationship in one select.
+ * Uses the server-side API endpoint (service role) so the RLS policy that
+ * restricts each user to their own row does not hide other members.
  */
-export async function getBoardMembers(boardId: string): Promise<BoardMember[]> {
-  // 1. Get memberships
-  const { data: members, error: membersError } = await supabase
-    .from("board_members")
-    .select("user_id, role")
-    .eq("board_id", boardId);
+export async function getBoardMembers(boardId: string, sessionToken?: string): Promise<BoardMember[]> {
+  const headers: Record<string, string> = {};
+  if (sessionToken) headers["Authorization"] = `Bearer ${sessionToken}`;
 
-  if (membersError) throw membersError;
-  if (!members || members.length === 0) return [];
+  const res = await fetch(`/api/boards/members?boardId=${encodeURIComponent(boardId)}`, {
+    method: "GET",
+    headers,
+  });
 
-  // 2. Fetch display names from profiles for those user IDs
-  const userIds = members.map((m: any) => m.user_id);
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", userIds);
-
-  const nameMap: Record<string, string> = {};
-  for (const p of profiles ?? []) {
-    nameMap[p.id] = p.display_name || "Unknown User";
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to load members");
   }
 
-  return members.map((m: any) => ({
-    userId: m.user_id,
-    role: m.role as "owner" | "editor",
-    displayName: nameMap[m.user_id] || "Unknown User",
-  }));
+  const data = await res.json();
+  return (data.members ?? []) as BoardMember[];
 }
 
 /**

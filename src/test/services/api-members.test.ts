@@ -76,6 +76,91 @@ function createRes(): any {
 }
 
 // ── Tests ──────────────────────────────────────────────────────
+
+describe("GET /api/boards/members", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockVerifyToken.mockResolvedValue("user-123");
+    chain.select.mockReturnValue(chain);
+    chain.eq.mockReturnValue(chain);
+    chain.in.mockReturnValue(chain);
+    chain.maybeSingle.mockResolvedValue(mockResult);
+    mockSupabase.from.mockReturnValue(chain);
+  });
+
+  it("returns 400 when boardId is missing", async () => {
+    const req = createReq({ method: "GET", query: {} });
+    const res = createRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: "boardId is required" });
+  });
+
+  it("returns 403 when caller is not a member", async () => {
+    chain.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    const req = createReq({ method: "GET", query: { boardId: "board-1" } });
+    const res = createRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: "Not a member of this board" });
+  });
+
+  it("returns ALL members including non-callers — regression for RLS blind spot", async () => {
+    // Step 1: caller membership check resolves to owner
+    chain.maybeSingle.mockResolvedValueOnce({ data: { role: "owner" }, error: null });
+
+    // Step 2: full board_members query returns two rows (caller + collaborator)
+    // The final .eq() call resolves with the member list
+    chain.eq.mockReturnValueOnce(chain) // board_id eq on membership check
+          .mockReturnValueOnce(chain)   // user_id eq on membership check  → maybeSingle above
+          .mockResolvedValueOnce({      // board_id eq on full members fetch
+            data: [
+              { user_id: "user-123", role: "owner" },
+              { user_id: "other-user", role: "editor" },
+            ],
+            error: null,
+          });
+
+    // Step 3: profiles query resolves with names
+    chain.in.mockResolvedValueOnce({
+      data: [
+        { id: "user-123", display_name: "Alice" },
+        { id: "other-user", display_name: "Bob" },
+      ],
+      error: null,
+    });
+
+    const req = createReq({ method: "GET", query: { boardId: "board-1" } });
+    const res = createRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.members).toHaveLength(2);
+
+    const userIds = res.body.members.map((m: any) => m.userId);
+    // Both the caller AND the collaborator must be present
+    expect(userIds).toContain("user-123");
+    expect(userIds).toContain("other-user");
+
+    const names = res.body.members.map((m: any) => m.displayName);
+    expect(names).toContain("Alice");
+    expect(names).toContain("Bob");
+  });
+
+  it("returns empty list when board has no members", async () => {
+    chain.maybeSingle.mockResolvedValueOnce({ data: { role: "owner" }, error: null });
+    chain.eq.mockReturnValueOnce(chain)
+          .mockReturnValueOnce(chain)
+          .mockResolvedValueOnce({ data: [], error: null });
+
+    const req = createReq({ method: "GET", query: { boardId: "board-1" } });
+    const res = createRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ members: [] });
+  });
+});
+
 describe("POST /api/boards/members", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -97,8 +182,8 @@ describe("POST /api/boards/members", () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it("returns 405 for non-POST methods", async () => {
-    const req = createReq({ method: "GET" });
+  it("returns 405 for unsupported methods", async () => {
+    const req = createReq({ method: "DELETE" });
     const res = createRes();
     await handler(req, res);
     expect(res.statusCode).toBe(405);

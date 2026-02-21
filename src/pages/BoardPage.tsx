@@ -693,6 +693,13 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
           onVisibilityChange={setVisibility}
           onClose={() => setShowSettings(false)}
           onToast={(message, type = "info") => setToast({ message, type })}
+          onSelfRemoved={() => {
+            localStorage.setItem(
+              "collabboard_toast",
+              JSON.stringify({ type: "info", message: "You've left the board." })
+            );
+            onNavigateHome?.();
+          }}
         />
       )}
 

@@ -19,6 +19,8 @@ interface BoardSettingsPanelProps {
   onVisibilityChange: (v: "public" | "private") => void;
   onClose: () => void;
   onToast?: (message: string, type?: "error" | "info") => void;
+  /** Called when the current user successfully removes themselves from the board. */
+  onSelfRemoved?: () => void;
 }
 
 type Tab = "members" | "share";
@@ -30,6 +32,7 @@ export function BoardSettingsPanel({
   onVisibilityChange,
   onClose,
   onToast,
+  onSelfRemoved,
 }: BoardSettingsPanelProps) {
   const { session, user } = useAuth();
   const [tab, setTab] = useState<Tab>("share");
@@ -47,7 +50,7 @@ export function BoardSettingsPanel({
     setError(null);
     setMembersLoading(true);
     try {
-      const loadedMembers = await getBoardMembers(boardId);
+      const loadedMembers = await getBoardMembers(boardId, session?.access_token);
       setMembers(loadedMembers);
     } catch {
       setError("Failed to load members");
@@ -136,10 +139,15 @@ export function BoardSettingsPanel({
   // ── Remove member ─────────────────────────────────────────────
   const handleRemove = async (userId: string) => {
     if (!session) return;
+    const isSelf = userId === user?.id;
     try {
       await removeBoardMember(boardId, userId, session.access_token);
       setMembers((prev) => prev.filter((m) => m.userId !== userId));
-      onToast?.("Member removed.", "info");
+      if (isSelf) {
+        onSelfRemoved?.();
+      } else {
+        onToast?.("Member removed.", "info");
+      }
     } catch (e: any) {
       setError(e.message ?? "Failed to remove member");
     }

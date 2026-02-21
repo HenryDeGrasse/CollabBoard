@@ -71,7 +71,7 @@ describe("BoardSettingsPanel", () => {
     await user.click(screen.getByText("Members"));
 
     await waitFor(() => {
-      expect(mockGetBoardMembers).toHaveBeenCalledWith("board-123");
+      expect(mockGetBoardMembers).toHaveBeenCalledWith("board-123", "test-token");
     });
   });
 
@@ -153,6 +153,71 @@ describe("BoardSettingsPanel", () => {
       expect(screen.getByText("Charlie")).toBeTruthy();
       expect(screen.getByText("Approve")).toBeTruthy();
       expect(screen.getByText("Deny")).toBeTruthy();
+    });
+  });
+
+  it("calls onSelfRemoved (not onToast) when the current user leaves the board", async () => {
+    const onSelfRemoved = vi.fn();
+    // Current user is "user-1"; they appear as an editor in the member list
+    mockGetBoardMembers.mockResolvedValue([
+      { userId: "user-1", displayName: "Me", role: "editor" },
+    ]);
+    mockRemoveBoardMember.mockResolvedValue(undefined);
+
+    render(
+      <BoardSettingsPanel
+        {...defaultProps}
+        isOwner={false}
+        onSelfRemoved={onSelfRemoved}
+      />
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText("Members"));
+
+    await waitFor(() => expect(screen.getByText("Leave")).toBeTruthy());
+
+    await user.click(screen.getByText("Leave"));
+
+    await waitFor(() => {
+      expect(mockRemoveBoardMember).toHaveBeenCalledWith("board-123", "user-1", "test-token");
+      // Must navigate the user out immediately
+      expect(onSelfRemoved).toHaveBeenCalledOnce();
+      // Must NOT show a generic toast for self-removal
+      expect(defaultProps.onToast).not.toHaveBeenCalledWith("Member removed.", expect.anything());
+    });
+  });
+
+  it("calls onToast (not onSelfRemoved) when owner removes a different member", async () => {
+    const onSelfRemoved = vi.fn();
+    mockGetBoardMembers.mockResolvedValue([
+      { userId: "user-1", displayName: "Me", role: "owner" },
+      { userId: "user-2", displayName: "Bob", role: "editor" },
+    ]);
+    mockRemoveBoardMember.mockResolvedValue(undefined);
+
+    render(
+      <BoardSettingsPanel
+        {...defaultProps}
+        isOwner={true}
+        onSelfRemoved={onSelfRemoved}
+      />
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText("Members"));
+
+    await waitFor(() => expect(screen.getByText("Bob")).toBeTruthy());
+
+    // Click the Remove button next to Bob
+    const removeButtons = screen.getAllByText("Remove");
+    await user.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(mockRemoveBoardMember).toHaveBeenCalledWith("board-123", "user-2", "test-token");
+      expect(defaultProps.onToast).toHaveBeenCalledWith("Member removed.", "info");
+      // onSelfRemoved must NOT fire — user-1 (owner) removed user-2, not themselves
+      expect(onSelfRemoved).not.toHaveBeenCalled();
     });
   });
 
