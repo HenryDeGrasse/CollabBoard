@@ -62,56 +62,6 @@ export function classifyComplexity(command: string): "simple" | "complex" {
 export const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
 export const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
 
-// ─── Intent classification → dynamic tool selection ────────────
-// Only send the tools the model actually needs for this command.
-
-type ToolIntent = "create" | "template" | "modify" | "delete" | "query" | "arrange" | "general";
-
-export function classifyIntent(command: string): ToolIntent[] {
-  const lower = command.toLowerCase();
-  const intents: ToolIntent[] = [];
-
-  if (/\b(create|add|make|build|set up|generate|new|draw)\b/.test(lower)) intents.push("create");
-  if (/\b(swot|kanban|retro|retrospective|matrix|column|quadrant|wireframe|mockup|mind\s?map|flowchart|flow\s?chart)\b/.test(lower)) intents.push("template");
-  if (/\b(update|change|move|resize|rename|recolor|edit|modify|set)\b/.test(lower)) intents.push("modify");
-  if (/\b(delete|remove|clear|wipe|clean)\b/.test(lower)) intents.push("delete");
-  if (/\b(find|search|show me|where|what|read|list|navigate|go to|zoom|focus)\b/.test(lower)) intents.push("query");
-  if (/\b(align|arrange|distribute|grid|organize|sort|line up|space)\b/.test(lower)) intents.push("arrange");
-
-  return intents.length > 0 ? intents : ["general"];
-}
-
-const TOOL_GROUPS: Record<ToolIntent, string[] | null> = {
-  create:   ["create_objects", "bulk_create_objects", "create_connectors", "fit_frames_to_contents", "navigate_to_objects"],
-  template: ["createQuadrant", "createColumnLayout", "createWireframe", "createMindMap", "createFlowchart", "bulk_create_objects", "create_objects", "create_connectors", "fit_frames_to_contents", "navigate_to_objects"],
-  modify:   ["update_objects", "update_objects_by_filter", "search_objects", "read_board_state", "navigate_to_objects"],
-  delete:   ["delete_objects", "delete_objects_by_filter", "delete_connectors", "clear_board", "search_objects", "read_board_state"],
-  query:    ["search_objects", "read_board_state", "navigate_to_objects"],
-  arrange:  ["arrange_objects", "search_objects", "read_board_state", "update_objects", "navigate_to_objects"],
-  general:  null, // send all tools
-};
-
-export function selectTools(
-  intents: ToolIntent[],
-  allTools: typeof TOOL_DEFINITIONS
-): typeof TOOL_DEFINITIONS {
-  if (intents.includes("general")) return allTools;
-
-  const toolNames = new Set<string>();
-  for (const intent of intents) {
-    const group = TOOL_GROUPS[intent];
-    if (!group) return allTools; // fallback: send everything
-    group.forEach((name) => toolNames.add(name));
-  }
-  // Always include read + navigate as safety net
-  toolNames.add("read_board_state");
-  toolNames.add("navigate_to_objects");
-
-  const filtered = allTools.filter((t) => toolNames.has(t.function.name));
-  // If filtering removed too many tools, fall back to all
-  return filtered.length >= 2 ? filtered : allTools;
-}
-
 // ─── Fast-path handlers ────────────────────────────────────────
 // Bypass the general agent loop for well-known template requests.
 // These run a cheap content-generation call + deterministic template tool.
@@ -647,10 +597,6 @@ export async function* runAgent(
   const boardContext = buildBoardContext(boardState, complexity, selectedIds);
   const boardContextJson = JSON.stringify(boardContext.payload);
 
-  // Dynamic tool selection based on intent
-  const intents = classifyIntent(userCommand);
-  const selectedTools = selectTools(intents, TOOL_DEFINITIONS);
-
   // Let the client know which model/context scope was selected
   yield {
     type: "meta",
@@ -729,7 +675,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       const stream = await openai.chat.completions.create({
         model,
         messages,
-        tools: selectedTools,
+        tools: TOOL_DEFINITIONS,
         tool_choice: "auto",
         stream: true,
         temperature: 0.3,
