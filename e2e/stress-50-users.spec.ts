@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { createUserSession, createStickyNote, measureFPS, testBoardId } from "./helpers";
+import { createUserSession, createStickyNote, measureCanvasFPS, testBoardId } from "./helpers";
 
 /**
  * Stress Test: 5 concurrent browsers + 1000 objects
  *
- * Uses window.__COLLABBOARD__.createObject exposed by the app
- * to create objects via the app's own Firebase connection.
+ * Uses window.__COLLABBOARD__.createObjects (batch API) to insert objects
+ * in a single DB round-trip per browser instead of N individual calls.
  */
 
 async function bulkCreateObjects(page: any, count: number, startIdx: number) {
@@ -17,8 +17,9 @@ async function bulkCreateObjects(page: any, count: number, startIdx: number) {
       const colors = ["#FBBF24", "#F472B6", "#3B82F6", "#22C55E", "#F97316", "#A855F7"];
       const types: Array<"sticky" | "rectangle" | "circle"> = ["sticky", "rectangle", "circle"];
 
+      const objs = [];
       for (let i = 0; i < count; i++) {
-        board.createObject({
+        objs.push({
           type: types[i % types.length],
           x: 50 + ((startIdx + i) % 25) * 100,
           y: 50 + Math.floor((startIdx + i) / 25) * 100,
@@ -31,13 +32,16 @@ async function bulkCreateObjects(page: any, count: number, startIdx: number) {
           createdBy: `stress-user`,
         });
       }
+
+      // createObjects is the batch API — single DB round-trip per chunk of 200
+      return board.createObjects(objs);
     },
     { count, startIdx }
   );
 }
 
 test.describe("Stress Test: 50 Users + 1000 Objects", () => {
-  test("5 browser users + 1000 objects maintain 30+ FPS", async ({ browser }) => {
+  test("5 browser users + 1000 objects maintain 60 FPS", async ({ browser }) => {
     test.setTimeout(300_000);
 
     const boardId = testBoardId();
@@ -60,17 +64,17 @@ test.describe("Stress Test: 50 Users + 1000 Objects", () => {
     console.log("All 1000 objects created. Waiting for sync...");
     await Promise.all(sessions.map((s) => s.page.waitForTimeout(2000)));
 
-    // Phase 2: Measure FPS
-    console.log("Measuring FPS on all 5 browser sessions...");
+    // Phase 2: Measure canvas draw rate
+    console.log("Measuring canvas FPS on all 5 browser sessions...");
     const fpsResults: number[] = [];
     for (let i = 0; i < sessions.length; i++) {
-      const fps = await measureFPS(sessions[i].page, 3000);
+      const fps = await measureCanvasFPS(sessions[i].page, 3000);
       fpsResults.push(fps);
-      console.log(`BrowserUser${i + 1} FPS with 1000 objects: ${fps.toFixed(1)}`);
+      console.log(`BrowserUser${i + 1} canvas FPS with 1000 objects: ${fps.toFixed(1)}`);
     }
 
     for (let i = 0; i < fpsResults.length; i++) {
-      expect(fpsResults[i]).toBeGreaterThan(20);
+      expect(fpsResults[i]).toBeGreaterThan(60);
     }
 
     // Phase 3: UI interaction under load
@@ -98,9 +102,9 @@ test.describe("Stress Test: 50 Users + 1000 Objects", () => {
       await page0.waitForTimeout(500);
     }
 
-    const fpsAfterInteraction = await measureFPS(page0, 2000);
-    console.log(`FPS after pan/zoom: ${fpsAfterInteraction.toFixed(1)}`);
-    expect(fpsAfterInteraction).toBeGreaterThan(15);
+    const fpsAfterInteraction = await measureCanvasFPS(page0, 2000);
+    console.log(`Canvas FPS after pan/zoom: ${fpsAfterInteraction.toFixed(1)}`);
+    expect(fpsAfterInteraction).toBeGreaterThan(60);
 
     // Summary
     const avgFps = fpsResults.reduce((a, b) => a + b, 0) / fpsResults.length;

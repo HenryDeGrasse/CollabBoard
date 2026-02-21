@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createUserSession, measureFPS, testBoardId } from "./helpers";
+import { createUserSession, measureCanvasFPS, testBoardId } from "./helpers";
 
 test.describe("Test 3: Rapid Creation and Movement", () => {
   test("create 20+ objects rapidly and verify sync + FPS", async ({ browser }) => {
@@ -28,15 +28,15 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
     await userA.page.waitForTimeout(800);
     await userB.page.waitForTimeout(800);
 
-    // Verify User A's canvas is still responsive — measure FPS
-    const fpsA = await measureFPS(userA.page, 2000);
-    console.log(`User A FPS after 25 objects: ${fpsA.toFixed(1)}`);
-    expect(fpsA).toBeGreaterThan(30); // Should be well above 30 FPS
+    // Verify User A's canvas is still responsive — measure actual draw rate
+    const fpsA = await measureCanvasFPS(userA.page, 2000);
+    console.log(`User A canvas FPS after 25 objects: ${fpsA.toFixed(1)}`);
+    expect(fpsA).toBeGreaterThan(60);
 
     // Verify User B also has responsive canvas
-    const fpsB = await measureFPS(userB.page, 2000);
-    console.log(`User B FPS after 25 objects: ${fpsB.toFixed(1)}`);
-    expect(fpsB).toBeGreaterThan(30);
+    const fpsB = await measureCanvasFPS(userB.page, 2000);
+    console.log(`User B canvas FPS after 25 objects: ${fpsB.toFixed(1)}`);
+    expect(fpsB).toBeGreaterThan(60);
 
     // Switch to select tool first
     await userA.page.click('button:has-text("Select")');
@@ -59,10 +59,10 @@ test.describe("Test 3: Rapid Creation and Movement", () => {
     // Wait for sync
     await userA.page.waitForTimeout(500);
 
-    // Measure FPS after rapid dragging
-    const fpsAfterDrag = await measureFPS(userA.page, 2000);
-    console.log(`User A FPS after rapid drag: ${fpsAfterDrag.toFixed(1)}`);
-    expect(fpsAfterDrag).toBeGreaterThan(30);
+    // Measure canvas draw rate after rapid dragging
+    const fpsAfterDrag = await measureCanvasFPS(userA.page, 2000);
+    console.log(`User A canvas FPS after rapid drag: ${fpsAfterDrag.toFixed(1)}`);
+    expect(fpsAfterDrag).toBeGreaterThan(60);
 
     // No console errors
     const errors: string[] = [];

@@ -52,6 +52,11 @@ export function createPresenceChannel(
   // Prevents costly REST fallback that tanks FPS.
   let channelReady = false;
 
+  // Hold the most recent cursor position received before the channel was ready.
+  // Flushed immediately on SUBSCRIBED so collaborators see the cursor without
+  // waiting for the next mousemove (which may never come if the user is idle).
+  let pendingCursor: { x: number; y: number } | null = null;
+
   const localPresence: PresenceState = {
     displayName,
     cursorColor,
@@ -125,6 +130,14 @@ export function createPresenceChannel(
     channelReady = status === "SUBSCRIBED";
     if (status === "SUBSCRIBED") {
       await trackPresence();
+      // Flush any cursor position queued before the channel was ready so
+      // collaborators see this user's cursor without waiting for the next move.
+      if (pendingCursor) {
+        channel
+          .send({ type: "broadcast", event: "cursor", payload: { userId, ...pendingCursor } })
+          .catch(() => {});
+        pendingCursor = null;
+      }
     }
   });
 
@@ -133,7 +146,13 @@ export function createPresenceChannel(
 
     updateCursor: (x: number, y: number) => {
       localPresence.cursor = { x, y };
-      broadcastIfReady("cursor", { userId, x, y });
+      if (!channelReady) {
+        // Queue the latest position — flushed when the channel opens.
+        pendingCursor = { x, y };
+        return;
+      }
+      pendingCursor = null;
+      channel.send({ type: "broadcast", event: "cursor", payload: { userId, x, y } }).catch(() => {});
     },
 
     setEditingObject: (objectId: string | null) => {

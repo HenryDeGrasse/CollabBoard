@@ -1,10 +1,8 @@
-import type { UserPresence } from "../../types/presence";
+import type { RemoteUser } from "../../hooks/usePresence";
 
 interface PresencePanelProps {
-  users: Record<string, UserPresence>;
+  users: Record<string, RemoteUser>;
   currentUserId: string;
-  boardUrl: string;   // kept for API compat but unused now (share moved to header)
-  boardId: string;    // kept for API compat
 }
 
 export function PresencePanel({ users, currentUserId }: PresencePanelProps) {

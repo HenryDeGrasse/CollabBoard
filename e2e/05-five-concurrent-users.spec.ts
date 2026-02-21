@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createUserSession, createStickyNote, measureFPS, testBoardId } from "./helpers";
+import { createUserSession, createStickyNote, measureCanvasFPS, testBoardId } from "./helpers";
 
 test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
   test("5 users can all see each other and interact without performance drops", async ({
@@ -29,17 +29,19 @@ test.describe("Test 5: 5+ Concurrent Users Without Degradation", () => {
     // Wait for all objects to sync across all clients
     await Promise.all(sessions.map((s) => s.page.waitForTimeout(800)));
 
-    // Measure FPS on each user's canvas
+    // Measure actual canvas draw rate on each user's client.
+    // measureCanvasFPS hooks into Stage.batchDraw to count real redraws,
+    // not just rAF invocations (which are always ~60 regardless of paint work).
     const fpsResults: number[] = [];
     for (let i = 0; i < sessions.length; i++) {
-      const fps = await measureFPS(sessions[i].page, 2000);
+      const fps = await measureCanvasFPS(sessions[i].page, 2000);
       fpsResults.push(fps);
-      console.log(`${userNames[i]} FPS: ${fps.toFixed(1)}`);
+      console.log(`${userNames[i]} canvas FPS: ${fps.toFixed(1)}`);
     }
 
-    // All users should maintain > 30 FPS
+    // All users should maintain 60 canvas draws/sec with 5 concurrent users
     for (let i = 0; i < fpsResults.length; i++) {
-      expect(fpsResults[i]).toBeGreaterThan(30);
+      expect(fpsResults[i]).toBeGreaterThan(60);
     }
 
     // Verify cursor sync: move each user's mouse over the canvas

@@ -464,6 +464,38 @@ export async function createObject(
   return data.id;
 }
 
+const BATCH_INSERT_CHUNK_SIZE = 200;
+
+/**
+ * Insert multiple objects in one or more batched round-trips.
+ * Returns the real DB IDs in the same order as the input array.
+ * Used for bulk-create scenarios (stress tests, AI-generated boards, paste).
+ */
+export async function createObjects(
+  boardId: string,
+  objs: Omit<BoardObject, "id" | "createdAt" | "updatedAt">[]
+): Promise<string[]> {
+  if (objs.length === 0) return [];
+
+  const rows = objs.map((obj) => {
+    const row = objectToDb({ ...obj, boardId } as any);
+    row.board_id = boardId;
+    return row;
+  });
+
+  const ids: string[] = [];
+  for (let i = 0; i < rows.length; i += BATCH_INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + BATCH_INSERT_CHUNK_SIZE);
+    const { data, error } = await supabase
+      .from("objects")
+      .insert(chunk)
+      .select("id");
+    if (error) throw error;
+    ids.push(...(data ?? []).map((r: any) => r.id));
+  }
+  return ids;
+}
+
 export async function updateObject(
   boardId: string,
   objectId: string,

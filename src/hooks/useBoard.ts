@@ -53,6 +53,8 @@ export interface UseBoardReturn {
   boardTitle: string;
   updateBoardTitle: (title: string) => void;
   createObject: (obj: Omit<BoardObject, "id" | "createdAt" | "updatedAt">) => string;
+  /** Batch-insert multiple objects in a single DB round-trip (chunked at 200). */
+  createObjects: (objs: Omit<BoardObject, "id" | "createdAt" | "updatedAt">[]) => Promise<string[]>;
   updateObject: (id: string, updates: Partial<BoardObject>) => void;
   deleteObject: (id: string) => void;
   deleteFrameCascade: (frameId: string) => void;
@@ -279,6 +281,58 @@ export function useBoard(boardId: string): UseBoardReturn {
     [boardId]
   );
 
+  // Batch-create: optimistically adds all objects with temp IDs, then
+  // fires a single batched DB insert (chunked at 200) and swaps real IDs in.
+  const createObjects = useCallback(
+    async (objs: Omit<BoardObject, "id" | "createdAt" | "updatedAt">[]): Promise<string[]> => {
+      if (objs.length === 0) return [];
+
+      const now = Date.now();
+      const tempIds = objs.map(() => crypto.randomUUID());
+
+      // Optimistic local updates
+      setObjects((prev) => {
+        const next = { ...prev };
+        for (let i = 0; i < objs.length; i++) {
+          const fullObj: BoardObject = { ...objs[i], id: tempIds[i], createdAt: now, updatedAt: now };
+          next[tempIds[i]] = fullObj;
+        }
+        return next;
+      });
+
+      try {
+        const realIds = await boardService.createObjects(boardId, objs);
+        // Swap temp IDs for real DB IDs
+        setObjects((prev) => {
+          const next = { ...prev };
+          for (let i = 0; i < tempIds.length; i++) {
+            const tempId = tempIds[i];
+            const realId = realIds[i];
+            if (!realId) continue;
+            const existing = next[tempId];
+            if (existing) {
+              delete next[tempId];
+              next[realId] = { ...existing, id: realId };
+              idRemapCallbackRef.current?.(tempId, realId);
+            }
+          }
+          return next;
+        });
+        return realIds;
+      } catch (err) {
+        console.error("Failed to batch-create objects:", err);
+        // Rollback all optimistic updates
+        setObjects((prev) => {
+          const next = { ...prev };
+          for (const tempId of tempIds) delete next[tempId];
+          return next;
+        });
+        return [];
+      }
+    },
+    [boardId]
+  );
+
   const updateObject = useCallback(
     (id: string, updates: Partial<BoardObject>) => {
       // Optimistic local update
@@ -319,8 +373,10 @@ export function useBoard(boardId: string): UseBoardReturn {
 
   const deleteFrameCascade = useCallback(
     (frameId: string) => {
+      // Use the stable ref so this callback is never recreated on objects changes,
+      // and so it always reads the latest state when invoked.
       const idsToDelete = new Set(
-        Object.values(objects)
+        Object.values(objectsRef.current)
           .filter((obj) => obj.id === frameId || obj.parentFrameId === frameId)
           .map((obj) => obj.id)
       );
@@ -356,7 +412,9 @@ export function useBoard(boardId: string): UseBoardReturn {
         console.error("Failed to delete frame cascade:", err);
       });
     },
-    [boardId, objects]
+    // objectsRef.current is a stable ref — no need to list objects here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boardId]
   );
 
   const createConnector = useCallback(
@@ -478,6 +536,7 @@ export function useBoard(boardId: string): UseBoardReturn {
     boardTitle,
     updateBoardTitle,
     createObject,
+    createObjects,
     updateObject,
     deleteObject,
     deleteFrameCascade,

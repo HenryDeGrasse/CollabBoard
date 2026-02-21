@@ -33,17 +33,40 @@ export function useObjectPartitioning(
   objects: Record<string, BoardObject>,
   connectors: Record<string, Connector>
 ): UseObjectPartitioningReturn {
-  // Sort objects by zIndex for rendering order
-  const sortedObjects = useMemo(
+  // Fingerprint of id:zIndex pairs — cheap O(N) string build that only
+  // changes when the object set or z-indices change (not on position updates).
+  const zIndexKey = useMemo(() => {
+    let key = "";
+    for (const [id, obj] of Object.entries(objects)) {
+      key += id + ":" + (obj.zIndex ?? 0) + "|";
+    }
+    return key;
+  }, [objects]);
+
+  // Stable sorted ID array — O(N log N) sort only when z-order actually changes.
+  // Position-only drag updates leave zIndexKey unchanged so this is skipped.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sortedIds = useMemo(
     () =>
-      Object.values(objects).sort((a, b) => {
-        const dz = (a.zIndex || 0) - (b.zIndex || 0);
-        // Secondary key: object id (UUID). Deterministic on every client
-        // regardless of realtime insertion order, so tied-zIndex objects
-        // always render in the same order for all collaborators.
-        return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-      }),
-    [objects]
+      Object.values(objects)
+        .sort((a, b) => {
+          const dz = (a.zIndex || 0) - (b.zIndex || 0);
+          // Secondary key: object id (UUID). Deterministic on every client
+          // regardless of realtime insertion order, so tied-zIndex objects
+          // always render in the same order for all collaborators.
+          return dz !== 0 ? dz : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+        })
+        .map((o) => o.id),
+    // zIndexKey is the only dep — objects intentionally omitted so the
+    // sort is skipped on position-only updates (drag echoes from Realtime).
+    [zIndexKey] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Map sorted IDs to fresh object references — O(N) lookup, no sort.
+  // Rebuilds on any objects change to ensure viewport culling uses current positions.
+  const sortedObjects = useMemo(
+    () => sortedIds.map((id) => objects[id]).filter((o): o is BoardObject => o !== undefined),
+    [sortedIds, objects]
   );
 
   // Pre-computed map: frameId → contained objects (O(N) once, O(1) per lookup).

@@ -181,6 +181,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     boardTitle,
     updateBoardTitle,
     createObject,
+    createObjects,
     updateObject,
     deleteObject,
     deleteFrameCascade,
@@ -263,12 +264,20 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   useEffect(() => {
     (window as any).__COLLABBOARD__ = {
       boardId,
+      userId,
       createObject,
+      createObjects,
       objects,
       connectors,
+      // Returns a snapshot of all remote cursor positions keyed by userId.
+      // Used by E2E latency tests to detect when a remote cursor update arrives.
+      getCursorPositions: () => cursorStore.get(),
+      // Exposes the Konva Stage for E2E tests that need to hook into batchDraw
+      // to measure actual canvas draw rate (not just rAF invocation rate).
+      getStage: () => canvas.stageRef.current,
     };
     return () => { delete (window as any).__COLLABBOARD__; };
-  }, [boardId, createObject, objects, connectors]);
+  }, [boardId, userId, createObject, createObjects, objects, connectors, cursorStore, canvas.stageRef]);
 
   // (join handled above, before useBoard initialization)
 
@@ -577,8 +586,6 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         <PresencePanel
           users={users}
           currentUserId={userId}
-          boardUrl={window.location.href}
-          boardId={boardId}
         />
       </div>
 

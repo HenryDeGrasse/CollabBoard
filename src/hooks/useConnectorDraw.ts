@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { BoardObject, Connector } from "../types/board";
 import type { ToolType } from "../components/canvas/Board";
 
@@ -35,37 +35,55 @@ export function useConnectorDraw(
   const [connectorDraw, setConnectorDraw] = useState<ConnectorDrawState | null>(null);
   const [connectorHoverObjectId, setConnectorHoverObjectId] = useState<string | null>(null);
 
+  // Tracks hover without going through setState on every move — avoids
+  // re-renders when the same object is still under the cursor.
+  const currentHoverRef = useRef<string | null>(null);
+  // Subsample counter: run the O(N) hit-test scan every 3rd mousemove.
+  const hoverSampleCounterRef = useRef(0);
+
   const isConnectorTool = activeTool === "arrow" || activeTool === "line";
 
   // Clear hover when tool changes away from connector tools
   useEffect(() => {
-    if (!isConnectorTool) setConnectorHoverObjectId(null);
+    if (!isConnectorTool) {
+      setConnectorHoverObjectId(null);
+      currentHoverRef.current = null;
+    }
   }, [isConnectorTool]);
 
   const onMouseMove = useCallback(
     (canvasPoint: { x: number; y: number }) => {
-      // Detect hovered object for snap visual feedback
+      // Detect hovered object for snap visual feedback.
+      // The O(N) scan is subsampled to every 3rd event (≈20/sec at 60fps)
+      // and only triggers a React setState when the result changes.
       if (isConnectorTool) {
-        let hoveredId: string | null = null;
-        const objs = Object.values(objectsRef.current);
-        for (let i = objs.length - 1; i >= 0; i--) {
-          const o = objs[i];
-          if (o.type === "frame") continue;
-          const cx = o.x + o.width / 2;
-          const cy = o.y + o.height / 2;
-          const rad = -(o.rotation ?? 0) * (Math.PI / 180);
-          const cos = Math.cos(rad);
-          const sin = Math.sin(rad);
-          const dx = canvasPoint.x - cx;
-          const dy = canvasPoint.y - cy;
-          const lx = cx + dx * cos - dy * sin;
-          const ly = cy + dx * sin + dy * cos;
-          if (lx >= o.x && lx <= o.x + o.width && ly >= o.y && ly <= o.y + o.height) {
-            hoveredId = o.id;
-            break;
+        hoverSampleCounterRef.current = (hoverSampleCounterRef.current + 1) % 3;
+        if (hoverSampleCounterRef.current === 0) {
+          let hoveredId: string | null = null;
+          const objs = Object.values(objectsRef.current);
+          for (let i = objs.length - 1; i >= 0; i--) {
+            const o = objs[i];
+            if (o.type === "frame") continue;
+            const cx = o.x + o.width / 2;
+            const cy = o.y + o.height / 2;
+            const rad = -(o.rotation ?? 0) * (Math.PI / 180);
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const dx = canvasPoint.x - cx;
+            const dy = canvasPoint.y - cy;
+            const lx = cx + dx * cos - dy * sin;
+            const ly = cy + dx * sin + dy * cos;
+            if (lx >= o.x && lx <= o.x + o.width && ly >= o.y && ly <= o.y + o.height) {
+              hoveredId = o.id;
+              break;
+            }
+          }
+          // Only call setState when the hovered object actually changed.
+          if (hoveredId !== currentHoverRef.current) {
+            currentHoverRef.current = hoveredId;
+            setConnectorHoverObjectId(hoveredId);
           }
         }
-        setConnectorHoverObjectId(hoveredId);
       }
 
       // Update drawing preview

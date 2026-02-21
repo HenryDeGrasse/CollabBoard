@@ -128,25 +128,40 @@ export async function dragOnCanvas(
 }
 
 /**
- * Measure FPS over a duration using requestAnimationFrame
+ * Measure actual Konva canvas draw rate by hooking into Stage.batchDraw.
+ * Returns draws/second — a true measure of render throughput, not just
+ * how fast rAF fires.  Requires window.__COLLABBOARD__.getStage() to be set.
+ *
+ * Falls back to an rAF counter if the stage is not yet available.
  */
-export async function measureFPS(page: Page, durationMs: number = 2000): Promise<number> {
+export async function measureCanvasFPS(page: Page, durationMs: number = 2000): Promise<number> {
   return page.evaluate((duration) => {
     return new Promise<number>((resolve) => {
-      let frameCount = 0;
-      const start = performance.now();
-
-      function frame() {
-        frameCount++;
-        if (performance.now() - start < duration) {
-          requestAnimationFrame(frame);
-        } else {
-          const elapsed = performance.now() - start;
-          resolve((frameCount / elapsed) * 1000);
-        }
+      const stage = (window as any).__COLLABBOARD__?.getStage?.();
+      if (!stage || typeof stage.batchDraw !== "function") {
+        // Stage not ready — fall back to rAF counter
+        let frameCount = 0;
+        const start = performance.now();
+        const f = () => {
+          frameCount++;
+          if (performance.now() - start < duration) requestAnimationFrame(f);
+          else resolve((frameCount / (performance.now() - start)) * 1000);
+        };
+        requestAnimationFrame(f);
+        return;
       }
 
-      requestAnimationFrame(frame);
+      let drawCount = 0;
+      const origBatchDraw = stage.batchDraw.bind(stage);
+      stage.batchDraw = function (...args: any[]) {
+        drawCount++;
+        return origBatchDraw(...args);
+      };
+
+      setTimeout(() => {
+        stage.batchDraw = origBatchDraw;
+        resolve((drawCount / duration) * 1000);
+      }, duration);
     });
   }, durationMs);
 }
