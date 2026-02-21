@@ -615,9 +615,10 @@ export async function* runAgent(
   conversationHistory?: ConversationTurn[],
   selectedIds?: string[]
 ): AsyncGenerator<AgentStreamEvent> {
-  // Compute viewport center for placement defaults
-  const viewportCenter = viewport && screenSize
-    ? { x: computeViewBounds(viewport, screenSize).centerX, y: computeViewBounds(viewport, screenSize).centerY }
+  // Compute viewport bounds once — reused for placement defaults and context block
+  const viewBounds = viewport && screenSize ? computeViewBounds(viewport, screenSize) : null;
+  const viewportCenter = viewBounds
+    ? { x: viewBounds.centerX, y: viewBounds.centerY }
     : undefined;
 
   // ── Fast paths: bypass general agent loop for well-known templates ──
@@ -665,8 +666,8 @@ export async function* runAgent(
 
   // Build viewport context block if we have the data
   let viewportContext = "";
-  if (viewport && screenSize) {
-    const vb = computeViewBounds(viewport, screenSize);
+  if (viewBounds) {
+    const vb = viewBounds;
     viewportContext = `
 ## User's Current Viewport
 The user is currently looking at this region of the canvas (canvas coordinates):

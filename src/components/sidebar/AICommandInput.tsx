@@ -84,6 +84,8 @@ export function AICommandInput({
   const abortRef = useRef<AbortController | null>(null);
   // Refs so the sendCommand closure always reads latest values without
   // recreating the callback on every selection/viewport change.
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
   const selectedIdsRef = useRef<string[]>(selectedIds);
   selectedIdsRef.current = selectedIds;
   const onNavigateRef = useRef(onNavigate);
@@ -182,7 +184,7 @@ export function AICommandInput({
             boardId,
             command: userCommand,
             conversationHistory: priorTurns,
-            viewport,
+            viewport: viewportRef.current,
             screenSize: {
               width: window.innerWidth,
               height: window.innerHeight,
@@ -236,6 +238,16 @@ export function AICommandInput({
                 content: string;
               };
 
+              // Handle navigate outside the state updater to avoid
+              // triggering setState on BoardPage during our own update.
+              if (event.type === "navigate") {
+                try {
+                  const vp = JSON.parse(event.content) as Viewport;
+                  onNavigateRef.current?.(vp);
+                } catch { /* ignore parse errors */ }
+                continue;
+              }
+
               setHistory((prev) => {
                 const lastIdx = prev.length - 1;
                 if (lastIdx < 0) return prev;
@@ -260,15 +272,6 @@ export function AICommandInput({
                       TOOL_LABELS[event.content] || event.content,
                     ];
                     break;
-
-                  case "navigate": {
-                    // Agent wants to pan/zoom the camera — fire and don't mutate history
-                    try {
-                      const vp = JSON.parse(event.content) as Viewport;
-                      onNavigateRef.current?.(vp);
-                    } catch { /* ignore parse errors */ }
-                    return prev; // no history change needed
-                  }
 
                   case "meta": {
                     const meta = JSON.parse(event.content) as { model: string; complexity: string };
