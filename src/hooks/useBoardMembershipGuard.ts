@@ -14,11 +14,13 @@ interface Params {
  */
 export function useBoardMembershipGuard({ boardId, userId, onRemoved, pollMs = 3000 }: Params) {
   const kickedRef = useRef(false);
+  const wasMemberRef = useRef(false);
 
   useEffect(() => {
     if (!boardId || !userId) return;
 
     kickedRef.current = false;
+    wasMemberRef.current = false;
 
     const checkMembership = async () => {
       if (kickedRef.current) return;
@@ -30,7 +32,9 @@ export function useBoardMembershipGuard({ boardId, userId, onRemoved, pollMs = 3
         .eq("user_id", userId)
         .maybeSingle();
 
-      if (!data) {
+      if (data) {
+        wasMemberRef.current = true;
+      } else if (wasMemberRef.current) {
         kickedRef.current = true;
         onRemoved();
       }

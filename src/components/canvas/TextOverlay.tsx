@@ -29,6 +29,7 @@ export function TextOverlay({
 }: TextOverlayProps) {
   const [text, setText] = useState(object.text || "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -38,6 +39,7 @@ export function TextOverlay({
   }, []);
 
   const handleBlur = () => {
+    if (cancelledRef.current) return;
     onCommit(object.id, text);
   };
 
@@ -47,6 +49,7 @@ export function TextOverlay({
       onCommit(object.id, text);
     }
     if (e.key === "Escape") {
+      cancelledRef.current = true;
       onCancel();
     }
   };

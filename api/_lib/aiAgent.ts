@@ -79,6 +79,7 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 - Frame titles appear at the top. Make frames taller/wider than their contents with ~40px padding on each side and ~60px top padding for the title.
 - Use x/y coordinates to create structured layouts (rows, columns, grids).
 - Place items starting around x:100, y:100 for a clean board. Check existing objects to avoid overlap.
+- When filling a column frame (e.g. Kanban or Retro), always use layout: "vertical" in bulk_create_objects so stickies stack downward and do not overflow the column width.
 
 ## Color conventions:
 - Sticky colors: yellow (#FAD84E), pink (#F5A8C4), blue (#7FC8E8), green (#9DD9A3), grey (#E5E5E0), offwhite (#F9F9F7)

@@ -50,12 +50,19 @@ describe("useBoardMembershipGuard", () => {
     expect(mockRemoveChannel).toHaveBeenCalled();
   });
 
-  it("kicks user when realtime check finds no membership", async () => {
+  it("kicks user when realtime check finds no membership after being a member", async () => {
     const onRemoved = vi.fn();
     renderHook(() =>
       useBoardMembershipGuard({ boardId: "b1", userId: "u1", onRemoved, pollMs: 1000 })
     );
 
+    // First check confirms membership
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    // Next realtime event finds no membership — should fire onRemoved
     mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
     await act(async () => {
@@ -66,12 +73,19 @@ describe("useBoardMembershipGuard", () => {
     expect(onRemoved).toHaveBeenCalledTimes(1);
   });
 
-  it("kicks user on polling fallback when membership is gone", async () => {
+  it("kicks user on polling fallback when membership is gone after being a member", async () => {
     const onRemoved = vi.fn();
     renderHook(() =>
       useBoardMembershipGuard({ boardId: "b1", userId: "u1", onRemoved, pollMs: 1000 })
     );
 
+    // First poll confirms membership
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    // Second poll finds no membership — should fire onRemoved
     mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
     await act(async () => {

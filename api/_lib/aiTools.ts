@@ -149,7 +149,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
           layout: {
             type: "string",
             enum: ["grid", "vertical", "horizontal"],
-            description: "How to arrange the objects (default: grid)",
+            description: "How to arrange the objects. Default is 'vertical' when parentFrameId is set (stacks items in a single column to stay within frame width), 'grid' otherwise.",
           },
           columns: {
             type: "number",
@@ -189,7 +189,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
           },
           parentFrameId: {
             type: "string",
-            description: "ID of the parent frame if objects should be contained within one",
+            description: "ID of the parent frame if objects should be contained within one. When set, layout defaults to 'vertical' to keep items stacked within the frame's width.",
           },
         },
         required: ["type", "count"],
@@ -827,7 +827,9 @@ export async function executeTool(
     case "bulk_create_objects": {
       const objType: string = args.type || "sticky";
       const count: number = Math.min(Math.max(args.count || 0, 1), 500);
-      const layout: string = args.layout || "grid";
+      // When placing inside a frame, default to vertical stacking so stickies
+      // don't overflow the column width and trigger unwanted horizontal expansion.
+      const layout: string = args.layout || (parentFrameId ? "vertical" : "grid");
       const gap: number = args.gap ?? 20;
       let startX: number = args.startX ?? 100;
       let startY: number = args.startY ?? 100;
