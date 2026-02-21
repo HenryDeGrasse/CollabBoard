@@ -101,8 +101,8 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
                 },
                 x: { type: "number", description: "X position on the canvas" },
                 y: { type: "number", description: "Y position on the canvas" },
-                width: { type: "number", description: "Width in pixels (default: sticky=150, rectangle=200, circle=120, text=200, frame=400)" },
-                height: { type: "number", description: "Height in pixels (default: sticky=150, rectangle=150, circle=120, text=50, frame=300)" },
+                width: { type: "number", description: "Width in pixels (default: sticky=150, rectangle=200, circle=120, text=200, frame=800)" },
+                height: { type: "number", description: "Height in pixels (default: sticky=150, rectangle=150, circle=120, text=50, frame=600)" },
                 color: {
                   type: "string",
                   description:
@@ -585,7 +585,7 @@ const TYPE_DEFAULTS: Record<string, { width: number; height: number; color: stri
   rectangle: { width: 200, height: 150, color: "#111111" },
   circle:    { width: 120, height: 120, color: "#111111" },
   text:      { width: 200, height: 50, color: "#111111" },
-  frame:     { width: 400, height: 300, color: "#F9F9F7" },
+  frame:     { width: 800, height: 600, color: "#F9F9F7" },
 };
 
 const PATCH_BULK_CHUNK_SIZE = 200;
@@ -1019,10 +1019,12 @@ export async function executeTool(
       const maxLeftCols = Math.max(tlGrid.cols, blGrid.cols);
       const maxRightCols = Math.max(trGrid.cols, brGrid.cols);
 
-      const qWidthLeft = Math.max(maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2, 300);
-      const qWidthRight = Math.max(maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2, 300);
-      const qHeightTop = Math.max(maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 60, 300); // +60 for inner title
-      const qHeightBottom = Math.max(maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 60, 300);
+      const minQuadrantWidth = 2 * stickyWidth + gap + quadrantPadding * 2;
+      const minQuadrantHeight = 2 * stickyHeight + gap + quadrantPadding * 2 + 60;
+      const qWidthLeft = Math.max(maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2, minQuadrantWidth);
+      const qWidthRight = Math.max(maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2, minQuadrantWidth);
+      const qHeightTop = Math.max(maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 60, minQuadrantHeight);
+      const qHeightBottom = Math.max(maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 60, minQuadrantHeight);
 
       const totalWidth = qWidthLeft + qWidthRight + gap;
       const totalHeight = qHeightTop + qHeightBottom + gap;
@@ -1161,7 +1163,9 @@ export async function executeTool(
       const maxItems = Math.max(...columns.map((c: any) => Array.isArray(c.items) ? c.items.length : 0));
       const colWidth = stickyWidth + colPadding * 2;
       const totalWidth = columns.length * (colWidth + gap) - gap;
-      const colHeight = Math.max(maxItems * stickyHeight + (maxItems > 0 ? (maxItems - 1) * gap : 0) + colPadding * 2 + 60, 300);
+      const minStickySlots = 4;
+      const minColHeight = minStickySlots * stickyHeight + (minStickySlots - 1) * gap + colPadding * 2 + 60;
+      const colHeight = Math.max(maxItems * stickyHeight + (maxItems > 0 ? (maxItems - 1) * gap : 0) + colPadding * 2 + 60, minColHeight);
 
       const pos = await findOpenCanvasSpace(boardId, totalWidth, colHeight, startX, startY);
 

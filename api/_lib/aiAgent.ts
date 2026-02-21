@@ -74,7 +74,7 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 ## Layout guidelines:
 - The canvas is large (effectively infinite). Place objects with enough spacing.
 - For grid layouts, use ~20px gaps between objects.
-- Sticky notes default to 150×150px. Rectangles default to 200×150px.
+- Sticky notes default to 150×150px. Rectangles default to 200×150px. Frames default to 800×600px.
 - Frames are containers — place objects inside them by setting parentFrameId.
 - Frame titles appear at the top. Make frames taller/wider than their contents with ~40px padding on each side and ~60px top padding for the title.
 - Use x/y coordinates to create structured layouts (rows, columns, grids).

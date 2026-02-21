@@ -7,8 +7,8 @@ import type { UndoAction } from "./useUndoRedo";
 // Frame layout constants
 const MIN_FRAME_WIDTH = 200;
 const MIN_FRAME_HEIGHT = 150;
-const DEFAULT_FRAME_WIDTH = 200;
-const DEFAULT_FRAME_HEIGHT = 150;
+const DEFAULT_FRAME_WIDTH = 800;
+const DEFAULT_FRAME_HEIGHT = 600;
 const FRAME_CLICK_THRESHOLD = 6;
 
 export interface DrawState {
