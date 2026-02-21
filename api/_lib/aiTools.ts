@@ -8,9 +8,78 @@ import OpenAI from "openai";
 import { getSupabaseAdmin } from "./supabaseAdmin.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 
+function generateUUID(): string {
+  return crypto.randomUUID();
+}
+
 // ─── Tool Definitions (OpenAI function-calling schema) ─────────
 
 export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "createQuadrant",
+      description: "Create a 2x2 quadrant layout (like SWOT or Eisenhower matrix) with a bounding frame, axis lines, quadrant headers, and colored sticky notes in a single action.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Title for the main bounding frame (e.g. 'SWOT Analysis')" },
+          xAxisLabel: { type: "string", description: "Label for the X axis" },
+          yAxisLabel: { type: "string", description: "Label for the Y axis" },
+          quadrantLabels: {
+            type: "object",
+            properties: {
+              topLeft: { type: "string", description: "Top-left quadrant title" },
+              topRight: { type: "string", description: "Top-right quadrant title" },
+              bottomLeft: { type: "string", description: "Bottom-left quadrant title" },
+              bottomRight: { type: "string", description: "Bottom-right quadrant title" }
+            },
+            required: ["topLeft", "topRight", "bottomLeft", "bottomRight"]
+          },
+          items: {
+            type: "object",
+            properties: {
+              topLeft: { type: "array", items: { type: "string" }, description: "Items for the top-left quadrant" },
+              topRight: { type: "array", items: { type: "string" }, description: "Items for the top-right quadrant" },
+              bottomLeft: { type: "array", items: { type: "string" }, description: "Items for the bottom-left quadrant" },
+              bottomRight: { type: "array", items: { type: "string" }, description: "Items for the bottom-right quadrant" }
+            }
+          },
+          startX: { type: "number", description: "Starting X position on the canvas" },
+          startY: { type: "number", description: "Starting Y position on the canvas" }
+        },
+        required: ["title", "quadrantLabels"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "createColumnLayout",
+      description: "Create a column-based layout (like Kanban, Retrospective, or User Journey) with a bounding frame, column headers, and vertical sticky notes in a single action.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Title for the main bounding frame (e.g. 'Sprint Retrospective')" },
+          columns: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string", description: "Column header text" },
+                items: { type: "array", items: { type: "string" }, description: "Sticky note items for this column" }
+              },
+              required: ["title"]
+            },
+            description: "Array of columns with their respective titles and items"
+          },
+          startX: { type: "number", description: "Starting X position on the canvas" },
+          startY: { type: "number", description: "Starting Y position on the canvas" }
+        },
+        required: ["title", "columns"]
+      }
+    }
+  },
   {
     type: "function",
     function: {
@@ -880,6 +949,249 @@ export async function executeTool(
       };
     }
 
+    // ── Create Quadrant Layout ────────────────────────────
+    case "createQuadrant": {
+      const { title, xAxisLabel, yAxisLabel, quadrantLabels, items } = args;
+      const startX = args.startX ?? 100;
+      const startY = args.startY ?? 100;
+      const now = new Date().toISOString();
+      const baseZIndex = Date.now();
+      
+      const tlItems: string[] = items?.topLeft || [];
+      const trItems: string[] = items?.topRight || [];
+      const blItems: string[] = items?.bottomLeft || [];
+      const brItems: string[] = items?.bottomRight || [];
+
+      const stickyWidth = 150;
+      const stickyHeight = 150;
+      const gap = 20;
+      const quadrantPadding = 40;
+      
+      const getGridSize = (count: number) => {
+        const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+        const rows = Math.max(1, Math.ceil(count / cols));
+        return { cols, rows };
+      };
+
+      const tlGrid = getGridSize(tlItems.length);
+      const trGrid = getGridSize(trItems.length);
+      const blGrid = getGridSize(blItems.length);
+      const brGrid = getGridSize(brItems.length);
+
+      const maxTopRows = Math.max(tlGrid.rows, trGrid.rows);
+      const maxBottomRows = Math.max(blGrid.rows, brGrid.rows);
+      const maxLeftCols = Math.max(tlGrid.cols, blGrid.cols);
+      const maxRightCols = Math.max(trGrid.cols, brGrid.cols);
+
+      const qWidthLeft = maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2;
+      const qWidthRight = maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2;
+      const qHeightTop = maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 50;
+      const qHeightBottom = maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 50;
+
+      const totalWidth = qWidthLeft + qWidthRight;
+      const totalHeight = qHeightTop + qHeightBottom;
+
+      const pos = await findOpenCanvasSpace(boardId, totalWidth, totalHeight, startX, startY);
+      let zIndex = baseZIndex;
+
+      // Insert frame first to get its DB-generated ID
+      const { data: frameData, error: frameErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId,
+          type: "frame",
+          x: pos.x,
+          y: pos.y,
+          width: totalWidth,
+          height: totalHeight,
+          color: "#F9F9F7",
+          text: title || "Quadrant Layout",
+          rotation: 0,
+          z_index: zIndex++,
+          created_by: userId,
+          created_at: now,
+          updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (frameErr || !frameData) return { error: frameErr?.message || "Failed to create frame" };
+      const frameId = frameData.id;
+
+      // Build all child rows (no explicit id — Postgres auto-generates)
+      const children: any[] = [];
+
+      // Vertical axis
+      children.push({
+        board_id: boardId, type: "rectangle",
+        x: pos.x + qWidthLeft - 2, y: pos.y + 60,
+        width: 4, height: totalHeight - 60,
+        color: "#E5E5E0", parent_frame_id: frameId, rotation: 0,
+        z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+      });
+
+      // Horizontal axis
+      children.push({
+        board_id: boardId, type: "rectangle",
+        x: pos.x, y: pos.y + qHeightTop - 2,
+        width: totalWidth, height: 4,
+        color: "#E5E5E0", parent_frame_id: frameId, rotation: 0,
+        z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+      });
+
+      if (xAxisLabel) {
+        children.push({
+          board_id: boardId, type: "text",
+          x: pos.x + totalWidth / 2 - 100, y: pos.y + totalHeight - 40,
+          width: 200, height: 40, text: xAxisLabel,
+          color: "#111111", parent_frame_id: frameId, rotation: 0,
+          z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+        });
+      }
+      if (yAxisLabel) {
+        children.push({
+          board_id: boardId, type: "text",
+          x: pos.x - 80, y: pos.y + totalHeight / 2 - 100,
+          width: 200, height: 40, text: yAxisLabel,
+          color: "#111111", parent_frame_id: frameId, rotation: -90,
+          z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+        });
+      }
+
+      const addQuadrant = (qTitle: string, qItems: string[], qX: number, qY: number, color: string, qCols: number) => {
+        if (qTitle) {
+          children.push({
+            board_id: boardId, type: "text",
+            x: qX + quadrantPadding, y: qY + 20,
+            width: 200, height: 40, text: qTitle,
+            color: "#111111", parent_frame_id: frameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          });
+        }
+        qItems.forEach((itemText, i) => {
+          const col = i % qCols;
+          const row = Math.floor(i / qCols);
+          children.push({
+            board_id: boardId, type: "sticky",
+            x: qX + quadrantPadding + col * (stickyWidth + gap),
+            y: qY + 70 + row * (stickyHeight + gap),
+            width: stickyWidth, height: stickyHeight, text: itemText,
+            color, parent_frame_id: frameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          });
+        });
+      };
+
+      addQuadrant(quadrantLabels?.topLeft, tlItems, pos.x, pos.y + 60, "#9DD9A3", tlGrid.cols);
+      addQuadrant(quadrantLabels?.topRight, trItems, pos.x + qWidthLeft, pos.y + 60, "#FAD84E", trGrid.cols);
+      addQuadrant(quadrantLabels?.bottomLeft, blItems, pos.x, pos.y + qHeightTop, "#7FC8E8", blGrid.cols);
+      addQuadrant(quadrantLabels?.bottomRight, brItems, pos.x + qWidthLeft, pos.y + qHeightTop, "#F5A8C4", brGrid.cols);
+
+      if (children.length > 0) {
+        const { error: childErr } = await supabase.from("objects").insert(children);
+        if (childErr) return { error: childErr.message };
+      }
+
+      return {
+        created: 1 + children.length,
+        frameId,
+        message: `Created quadrant layout with ${1 + children.length} objects.`,
+      };
+    }
+
+    // ── Create Column Layout ────────────────────────────
+    case "createColumnLayout": {
+      const { title, columns } = args;
+      if (!Array.isArray(columns) || columns.length === 0) {
+        return { error: "columns array is required and cannot be empty" };
+      }
+
+      const startX = args.startX ?? 100;
+      const startY = args.startY ?? 100;
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+
+      const stickyWidth = 150;
+      const stickyHeight = 150;
+      const gap = 20;
+      const colPadding = 30;
+
+      const maxItems = Math.max(...columns.map((c: any) => Array.isArray(c.items) ? c.items.length : 0));
+      const colWidth = stickyWidth + colPadding * 2;
+      const totalWidth = columns.length * (colWidth + gap) - gap;
+      const colHeight = Math.max(maxItems * stickyHeight + (maxItems > 0 ? (maxItems - 1) * gap : 0) + colPadding * 2 + 60, 300);
+
+      const pos = await findOpenCanvasSpace(boardId, totalWidth, colHeight, startX, startY);
+
+      const colors = ["#E5E5E0", "#7FC8E8", "#FAD84E", "#9DD9A3", "#F5A8C4"];
+      let parentFrameId: string | null = null;
+      let totalCreated = 0;
+
+      // Insert master frame first if title is provided
+      if (title) {
+        const { data: masterData, error: masterErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "frame",
+            x: pos.x, y: pos.y,
+            width: totalWidth + 40, height: colHeight + 80,
+            color: "#F9F9F7", text: title, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (masterErr || !masterData) return { error: masterErr?.message || "Failed to create master frame" };
+        parentFrameId = masterData.id;
+        totalCreated++;
+      }
+
+      // Insert each column frame, then its children
+      for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+        const col = columns[colIdx];
+        const cx = pos.x + 20 + colIdx * (colWidth + gap);
+        const cy = pos.y + 60;
+        const color = colors[colIdx % colors.length];
+
+        const { data: colData, error: colErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "frame",
+            x: cx, y: cy, width: colWidth, height: colHeight,
+            color: "#F9F9F7", text: col.title || `Column ${colIdx + 1}`,
+            parent_frame_id: parentFrameId,
+            rotation: 0, z_index: zIndex++,
+            created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (colErr || !colData) return { error: colErr?.message || "Failed to create column frame" };
+        const colFrameId = colData.id;
+        totalCreated++;
+
+        const items: string[] = Array.isArray(col.items) ? col.items : [];
+        if (items.length > 0) {
+          const stickyRows = items.map((itemText: string, i: number) => ({
+            board_id: boardId, type: "sticky",
+            x: cx + colPadding, y: cy + 60 + i * (stickyHeight + gap),
+            width: stickyWidth, height: stickyHeight, text: itemText,
+            color, parent_frame_id: colFrameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          }));
+          const { error: stickyErr } = await supabase.from("objects").insert(stickyRows);
+          if (stickyErr) return { error: stickyErr.message };
+          totalCreated += stickyRows.length;
+        }
+      }
+
+      return {
+        created: totalCreated,
+        frameId: parentFrameId ?? undefined,
+        message: `Created column layout with ${totalCreated} objects.`,
+      };
+    }
+
     // ── Create Connectors ────────────────────────────────
     case "create_connectors": {
       const connectors: any[] = args.connectors || [];
@@ -1332,7 +1644,7 @@ export async function executeTool(
       // Pre-generate IDs so we can build the idMap and remap connectors
       const idMap: Record<string, string> = {};
       const newRows = objs.map((o: any, i: number) => {
-        const newId = crypto.randomUUID();
+        const newId = generateUUID();
         idMap[o.id] = newId;
         return {
           id: newId,
@@ -1446,6 +1758,47 @@ export async function executeTool(
 
 // ─── Helpers ───────────────────────────────────────────────────
 
+
+export async function findOpenCanvasSpace(boardId: string, reqWidth: number, reqHeight: number, startX = 100, startY = 100): Promise<{ x: number, y: number }> {
+  const supabase = getSupabaseAdmin();
+  const { data: objects } = await supabase
+    .from("objects")
+    .select("x, y, width, height")
+    .eq("board_id", boardId);
+  
+  if (!objects || objects.length === 0) {
+    return { x: startX, y: startY };
+  }
+
+  let testX = startX;
+  let testY = startY;
+  const padding = 50;
+
+  // Simple brute-force scan: move right and down until no intersection
+  while (true) {
+    const intersects = objects.some(o => {
+      return (
+        testX < o.x + o.width + padding &&
+        testX + reqWidth + padding > o.x &&
+        testY < o.y + o.height + padding &&
+        testY + reqHeight + padding > o.y
+      );
+    });
+
+    if (!intersects) {
+      return { x: testX, y: testY };
+    }
+
+    // Try moving right
+    testX += reqWidth + padding;
+
+    // Arbitrary wrap after moving 3000px right
+    if (testX > startX + 3000) {
+      testX = startX;
+      testY += reqHeight + padding;
+    }
+  }
+}
 
 export async function fetchBoardState(boardId: string) {
   const supabase = getSupabaseAdmin();

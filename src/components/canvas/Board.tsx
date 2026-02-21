@@ -133,7 +133,10 @@ export function Board({
     const layer = objectsLayerRef.current;
     if (!layer) return;
     if (isZooming) {
-      layer.cache();
+      // Konva throws a warning if we try to cache an empty layer
+      if (layer.children && layer.children.length > 0) {
+        layer.cache();
+      }
     } else {
       layer.clearCache();
     }

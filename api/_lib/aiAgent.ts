@@ -86,9 +86,6 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 - Frame default: #F9F9F7 (offwhite)
 
 ## Common patterns:
-- **SWOT analysis**: 4 colored frames in a 2×2 grid, each with a title (Strengths, Weaknesses, Opportunities, Threats) and a few stickies inside
-- **Kanban/Sprint board**: 3-4 frames side by side (To Do, In Progress, Done, etc.)
-- **Retrospective**: 3 frames (Went Well, Improve, Action Items) with colored stickies
 - **Mind map**: Central topic shape with connectors radiating to sub-topic shapes
 - **Flowchart**: Shapes connected with arrows in a top-to-bottom or left-to-right flow
 
@@ -99,7 +96,8 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 4. Read the board state first if you need to understand existing content or find object IDs.
 5. Keep responses concise — the user sees objects appear in real time on the board.
 6. If the user's request is ambiguous, make reasonable assumptions and proceed.
-7. For creating 10+ objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt (e.g., "a fun fact about animals") or patterned text via textPattern (e.g., "Task {i}").`;
+7. For creating 10+ objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt (e.g., "a fun fact about animals") or patterned text via textPattern (e.g., "Task {i}").
+8. For structured templates like SWOT, 2x2 matrices, Kanban boards, or Retrospectives, you MUST use the specialized layout tools (createQuadrant or createColumnLayout) instead of manually placing frames and sticky notes.`;
 
 export interface AgentStreamEvent {
   type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";
