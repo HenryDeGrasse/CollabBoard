@@ -62,6 +62,240 @@ export function classifyComplexity(command: string): "simple" | "complex" {
 export const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
 export const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
 
+// ─── Intent classification → dynamic tool selection ────────────
+// Only send the tools the model actually needs for this command.
+
+type ToolIntent = "create" | "template" | "modify" | "delete" | "query" | "arrange" | "general";
+
+export function classifyIntent(command: string): ToolIntent[] {
+  const lower = command.toLowerCase();
+  const intents: ToolIntent[] = [];
+
+  if (/\b(create|add|make|build|set up|generate|new|draw)\b/.test(lower)) intents.push("create");
+  if (/\b(swot|kanban|retro|retrospective|matrix|column|quadrant|wireframe|mockup|mind\s?map|flowchart|flow\s?chart)\b/.test(lower)) intents.push("template");
+  if (/\b(update|change|move|resize|rename|recolor|edit|modify|set)\b/.test(lower)) intents.push("modify");
+  if (/\b(delete|remove|clear|wipe|clean)\b/.test(lower)) intents.push("delete");
+  if (/\b(find|search|show me|where|what|read|list|navigate|go to|zoom|focus)\b/.test(lower)) intents.push("query");
+  if (/\b(align|arrange|distribute|grid|organize|sort|line up|space)\b/.test(lower)) intents.push("arrange");
+
+  return intents.length > 0 ? intents : ["general"];
+}
+
+const TOOL_GROUPS: Record<ToolIntent, string[] | null> = {
+  create:   ["create_objects", "bulk_create_objects", "create_connectors", "fit_frames_to_contents", "navigate_to_objects"],
+  template: ["createQuadrant", "createColumnLayout", "createWireframe", "createMindMap", "createFlowchart", "bulk_create_objects", "create_objects", "create_connectors", "fit_frames_to_contents", "navigate_to_objects"],
+  modify:   ["update_objects", "update_objects_by_filter", "search_objects", "read_board_state", "navigate_to_objects"],
+  delete:   ["delete_objects", "delete_objects_by_filter", "delete_connectors", "clear_board", "search_objects", "read_board_state"],
+  query:    ["search_objects", "read_board_state", "navigate_to_objects"],
+  arrange:  ["arrange_objects", "search_objects", "read_board_state", "update_objects", "navigate_to_objects"],
+  general:  null, // send all tools
+};
+
+export function selectTools(
+  intents: ToolIntent[],
+  allTools: typeof TOOL_DEFINITIONS
+): typeof TOOL_DEFINITIONS {
+  if (intents.includes("general")) return allTools;
+
+  const toolNames = new Set<string>();
+  for (const intent of intents) {
+    const group = TOOL_GROUPS[intent];
+    if (!group) return allTools; // fallback: send everything
+    group.forEach((name) => toolNames.add(name));
+  }
+  // Always include read + navigate as safety net
+  toolNames.add("read_board_state");
+  toolNames.add("navigate_to_objects");
+
+  const filtered = allTools.filter((t) => toolNames.has(t.function.name));
+  // If filtering removed too many tools, fall back to all
+  return filtered.length >= 2 ? filtered : allTools;
+}
+
+// ─── Fast-path handlers ────────────────────────────────────────
+// Bypass the general agent loop for well-known template requests.
+// These run a cheap content-generation call + deterministic template tool.
+
+interface FastPathMatch {
+  pattern: RegExp;
+  handler: (
+    match: RegExpMatchArray,
+    command: string,
+    boardId: string,
+    userId: string,
+    openaiApiKey: string,
+    context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+  ) => AsyncGenerator<AgentStreamEvent>;
+}
+
+const FAST_PATHS: FastPathMatch[] = [
+  {
+    pattern: /\b(?:create|make|build|set\s*up|generate)\b.*\bswot\b(?:\s+(?:analysis|matrix))?(?:\s+(?:for|about|on)\s+(.+))?/i,
+    handler: fastPathSWOT,
+  },
+  {
+    pattern: /\b(?:create|make|build|set\s*up|generate)\b.*\b(?:kanban)\s*(?:board)?(?:\s+(?:for|about|on)\s+(.+))?/i,
+    handler: fastPathKanban,
+  },
+  {
+    pattern: /\b(?:create|make|build|set\s*up|generate)\b.*\b(?:retro(?:spective)?)\s*(?:board)?(?:\s+(?:for|about|on)\s+(.+))?/i,
+    handler: fastPathRetro,
+  },
+];
+
+async function* fastPathSWOT(
+  match: RegExpMatchArray,
+  _command: string,
+  boardId: string,
+  userId: string,
+  openaiApiKey: string,
+  context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+): AsyncGenerator<AgentStreamEvent> {
+  const topic = match[1]?.trim() || "the project";
+
+  yield { type: "meta", content: JSON.stringify({ model: MODEL_SIMPLE, complexity: "fast-path", contextScope: "none", boardObjectCount: 0, boardConnectorCount: 0, contextChars: 0 }) };
+  yield { type: "tool_start", content: "createQuadrant" };
+
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0.7,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Generate SWOT analysis items. Return JSON: {\"strengths\":[...],\"weaknesses\":[...],\"opportunities\":[...],\"threats\":[...]} with 3-5 concise items (under 60 chars each) per category. No numbering." },
+      { role: "user", content: `SWOT analysis for: ${topic}` },
+    ],
+  });
+
+  let content: any = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+
+  const result = await executeTool("createQuadrant", {
+    title: `SWOT Analysis: ${topic}`,
+    quadrantLabels: { topLeft: "Strengths", topRight: "Weaknesses", bottomLeft: "Opportunities", bottomRight: "Threats" },
+    items: {
+      topLeft: content.strengths || ["Add strengths"],
+      topRight: content.weaknesses || ["Add weaknesses"],
+      bottomLeft: content.opportunities || ["Add opportunities"],
+      bottomRight: content.threats || ["Add threats"],
+    },
+    startX: context.viewportCenter?.x ? context.viewportCenter.x - 400 : undefined,
+    startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+
+  yield { type: "tool_result", content: JSON.stringify({ tool: "createQuadrant", result }) };
+
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
+  if ((nav as any)?._viewport) {
+    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  }
+
+  yield { type: "text", content: `Created a SWOT analysis for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "done", content: "" };
+}
+
+async function* fastPathKanban(
+  match: RegExpMatchArray,
+  _command: string,
+  boardId: string,
+  userId: string,
+  openaiApiKey: string,
+  context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+): AsyncGenerator<AgentStreamEvent> {
+  const topic = match[1]?.trim() || "Project Tasks";
+
+  yield { type: "meta", content: JSON.stringify({ model: MODEL_SIMPLE, complexity: "fast-path", contextScope: "none", boardObjectCount: 0, boardConnectorCount: 0, contextChars: 0 }) };
+  yield { type: "tool_start", content: "createColumnLayout" };
+
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0.7,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Generate Kanban board items. Return JSON: {\"backlog\":[...],\"todo\":[...],\"in_progress\":[...],\"done\":[...]} with 2-4 concise task items (under 60 chars each) per column. No numbering." },
+      { role: "user", content: `Kanban board for: ${topic}` },
+    ],
+  });
+
+  let content: any = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+
+  const result = await executeTool("createColumnLayout", {
+    title: `Kanban: ${topic}`,
+    columns: [
+      { title: "Backlog", items: content.backlog || [] },
+      { title: "To Do", items: content.todo || [] },
+      { title: "In Progress", items: content.in_progress || [] },
+      { title: "Done", items: content.done || [] },
+    ],
+    startX: context.viewportCenter?.x ? context.viewportCenter.x - 400 : undefined,
+    startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+
+  yield { type: "tool_result", content: JSON.stringify({ tool: "createColumnLayout", result }) };
+
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
+  if ((nav as any)?._viewport) {
+    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  }
+
+  yield { type: "text", content: `Created a Kanban board for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "done", content: "" };
+}
+
+async function* fastPathRetro(
+  match: RegExpMatchArray,
+  _command: string,
+  boardId: string,
+  userId: string,
+  openaiApiKey: string,
+  context: { screenSize?: ScreenSizeInput; selectedIds?: string[]; viewportCenter?: { x: number; y: number } }
+): AsyncGenerator<AgentStreamEvent> {
+  const topic = match[1]?.trim() || "Sprint";
+
+  yield { type: "meta", content: JSON.stringify({ model: MODEL_SIMPLE, complexity: "fast-path", contextScope: "none", boardObjectCount: 0, boardConnectorCount: 0, contextChars: 0 }) };
+  yield { type: "tool_start", content: "createColumnLayout" };
+
+  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const resp = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    temperature: 0.7,
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: "Generate retrospective items. Return JSON: {\"went_well\":[...],\"to_improve\":[...],\"action_items\":[...]} with 2-4 concise items (under 60 chars each) per category. No numbering." },
+      { role: "user", content: `Sprint retrospective for: ${topic}` },
+    ],
+  });
+
+  let content: any = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+
+  const result = await executeTool("createColumnLayout", {
+    title: `Retrospective: ${topic}`,
+    columns: [
+      { title: "Went Well", items: content.went_well || [] },
+      { title: "To Improve", items: content.to_improve || [] },
+      { title: "Action Items", items: content.action_items || [] },
+    ],
+    startX: context.viewportCenter?.x ? context.viewportCenter.x - 300 : undefined,
+    startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+
+  yield { type: "tool_result", content: JSON.stringify({ tool: "createColumnLayout", result }) };
+
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
+  if ((nav as any)?._viewport) {
+    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  }
+
+  yield { type: "text", content: `Created a retrospective board for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "done", content: "" };
+}
+
 export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collaborative whiteboard application. You help users create, modify, and organize objects on their board.
 
 ## Your capabilities:
@@ -89,6 +323,7 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 ## Common patterns:
 - **Mind map**: Central topic shape with connectors radiating to sub-topic shapes
 - **Flowchart**: Shapes connected with arrows in a top-to-bottom or left-to-right flow
+- **Wireframe**: Use rectangles (with descriptive text labels) to represent UI sections inside a parent frame. Steps: (1) create the outer frame with create_objects — note the returned x/y/width/height. (2) For each section (header, nav, hero, content, footer), call bulk_create_objects with parentFrameId set to the frame's ID and type "rectangle". bulk_create_objects will auto-compute positions inside the frame. Do NOT manually compute x/y for children — use bulk_create_objects with parentFrameId instead.
 
 ## Rules:
 1. Always use tool calls to modify the board — never just describe changes without executing them.
@@ -99,7 +334,37 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 6. If the user's request is ambiguous, make reasonable assumptions and proceed.
 7. For creating multiple objects, prefer bulk_create_objects over create_objects — it handles layout automatically and supports AI-generated unique content via contentPrompt.
 8. For structured templates like SWOT, 2x2 matrices, Kanban boards, or Retrospectives, you MUST use the specialized layout tools (createQuadrant or createColumnLayout) instead of manually placing frames and sticky notes.
-9. To add items inside an existing frame or column, ALWAYS use bulk_create_objects with the parentFrameId. It will automatically calculate the correct x/y coordinates inside the frame, so you don't need to guess the startX/startY.`;
+9. To add items inside an existing frame or column, ALWAYS use bulk_create_objects with the parentFrameId. It will automatically calculate the correct x/y coordinates inside the frame, so you don't need to guess the startX/startY.
+10. When no explicit position is requested, place new objects near the CENTER of the user's current viewport (provided below), NOT at (100, 100). Only use (100, 100) when the board is empty and the user is at the origin.
+11. For wireframes, use the createWireframe tool. For mind maps, use createMindMap. For flowcharts, use createFlowchart. These handle layout deterministically.
+
+## Examples of correct tool usage
+
+### Example 1: "Create 3 yellow sticky notes about project goals"
+\`\`\`
+bulk_create_objects({"type":"sticky","count":3,"color":"#FAD84E","contentPrompt":"a specific, actionable project goal for a software team"})
+\`\`\`
+
+### Example 2: "Make a simple wireframe for a landing page"
+\`\`\`
+createWireframe({"title":"Landing Page","deviceType":"desktop","sections":[{"label":"Header","heightRatio":0.5},{"label":"Hero Banner","heightRatio":2},{"label":"Features","heightRatio":2,"split":"three-column","splitLabels":["Feature 1","Feature 2","Feature 3"]},{"label":"Footer","heightRatio":0.5}]})
+\`\`\`
+
+### Example 3: "Connect all the sticky notes in a chain"
+First call read_board_state or search_objects to get IDs, then:
+\`\`\`
+create_connectors({"connectors":[{"fromId":"id1","toId":"id2","style":"arrow"},{"fromId":"id2","toId":"id3","style":"arrow"}]})
+\`\`\`
+
+### Example 4: "Create a mind map about machine learning"
+\`\`\`
+createMindMap({"centerTopic":"Machine Learning","branches":[{"label":"Supervised","children":["Classification","Regression"],"color":"#7FC8E8"},{"label":"Unsupervised","children":["Clustering","Dimensionality Reduction"],"color":"#9DD9A3"},{"label":"Reinforcement","children":["Q-Learning","Policy Gradient"],"color":"#F5A8C4"}]})
+\`\`\`
+
+### Example 5: "Make a flowchart for user registration"
+\`\`\`
+createFlowchart({"title":"User Registration","direction":"top-to-bottom","steps":[{"label":"Start","type":"start"},{"label":"Enter Email","type":"process"},{"label":"Valid Email?","type":"decision","branches":[{"label":"No","targetStepIndex":1}]},{"label":"Create Account","type":"process"},{"label":"Send Confirmation","type":"process"},{"label":"Done","type":"end"}]})
+\`\`\``;
 
 export interface AgentStreamEvent {
   type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";
@@ -350,6 +615,28 @@ export async function* runAgent(
   conversationHistory?: ConversationTurn[],
   selectedIds?: string[]
 ): AsyncGenerator<AgentStreamEvent> {
+  // Compute viewport center for placement defaults
+  const viewportCenter = viewport && screenSize
+    ? { x: computeViewBounds(viewport, screenSize).centerX, y: computeViewBounds(viewport, screenSize).centerY }
+    : undefined;
+
+  // ── Fast paths: bypass general agent loop for well-known templates ──
+  // Only try fast paths when there's no conversation history (fresh request)
+  // and no selected objects (not a follow-up edit).
+  if (!conversationHistory?.length && !selectedIds?.length) {
+    for (const fp of FAST_PATHS) {
+      const match = userCommand.match(fp.pattern);
+      if (match) {
+        yield* fp.handler(match, userCommand, boardId, userId, openaiApiKey, {
+          screenSize: screenSize ?? undefined,
+          selectedIds: selectedIds ?? undefined,
+          viewportCenter,
+        });
+        return;
+      }
+    }
+  }
+
   // wrapOpenAI automatically traces every LLM call to LangSmith as a child
   // span when LANGSMITH_TRACING=true. It's a no-op when tracing is off.
   const openai = wrapOpenAI(new OpenAI({ apiKey: openaiApiKey }));
@@ -358,6 +645,10 @@ export async function* runAgent(
   const model = complexity === "complex" ? MODEL_COMPLEX : MODEL_SIMPLE;
   const boardContext = buildBoardContext(boardState, complexity, selectedIds);
   const boardContextJson = JSON.stringify(boardContext.payload);
+
+  // Dynamic tool selection based on intent
+  const intents = classifyIntent(userCommand);
+  const selectedTools = selectTools(intents, TOOL_DEFINITIONS);
 
   // Let the client know which model/context scope was selected
   yield {
@@ -437,7 +728,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       const stream = await openai.chat.completions.create({
         model,
         messages,
-        tools: TOOL_DEFINITIONS,
+        tools: selectedTools,
         tool_choice: "auto",
         stream: true,
         temperature: 0.3,
@@ -537,6 +828,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
             const result = await executeTool(tc.name, args, boardId, userId, {
               screenSize: screenSize ?? undefined,
               selectedIds: selectedIds ?? undefined,
+              viewportCenter,
             }, openaiApiKey);
             return { id: tc.id, name: tc.name, result };
           } catch (err: any) {

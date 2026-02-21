@@ -85,7 +85,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     function: {
       name: "create_objects",
       description:
-        "Create one or more objects on the board. Use this to add sticky notes, rectangles, circles, text labels, or frames. Returns the created object IDs. For layout tasks, place objects with specific x/y coordinates to form grids, rows, or structured arrangements. To add items inside an EXISTING frame, you MUST use bulk_create_objects instead, as it automatically computes the x/y positions.",
+        "Create one or more objects on the board. Use this to add sticky notes, rectangles, circles, text labels, or frames. Returns the created object IDs plus each object's final x/y/width/height. For layout tasks, place objects with specific x/y coordinates to form grids, rows, or structured arrangements. To add items inside an EXISTING frame, you MUST use bulk_create_objects instead — it automatically computes x/y positions relative to the frame. If you use parentFrameId here, the x/y coordinates you supply must fall within the frame's content area (frame.x to frame.x+frame.width, frame.y+60 to frame.y+frame.height); otherwise the object will appear outside the frame visually.",
       parameters: {
         type: "object",
         properties: {
@@ -533,6 +533,130 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "createWireframe",
+      description:
+        "Create a wireframe/mockup for a UI screen. Generates a frame with rectangular sections representing UI components. " +
+        "Use for 'wireframe', 'mockup', 'UI layout', 'page design', 'app screen'. The layout engine handles all positioning automatically.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Screen/page name (e.g. 'Homepage', 'Login Page')" },
+          sections: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Section name (e.g. 'Header', 'Hero Banner', 'Sidebar')" },
+                heightRatio: { type: "number", description: "Relative height (1 = standard row ~60px). Header=0.5, Hero=2, Content=3, Footer=0.5. Default: 1" },
+                split: {
+                  type: "string",
+                  enum: ["full", "left-sidebar", "right-sidebar", "two-column", "three-column"],
+                  description: "How this row is split horizontally. Default: 'full'",
+                },
+                splitLabels: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Labels for each column in the split (e.g. ['Sidebar', 'Main Content'])",
+                },
+              },
+              required: ["label"],
+            },
+            description: "Ordered list of UI sections from top to bottom",
+          },
+          width: { type: "number", description: "Frame width in px (default: 375 mobile, 768 tablet, 800 desktop)" },
+          deviceType: { type: "string", enum: ["mobile", "tablet", "desktop"], description: "Device form factor. Default: desktop" },
+          startX: { type: "number" },
+          startY: { type: "number" },
+        },
+        required: ["title", "sections"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createMindMap",
+      description:
+        "Create a mind map with a central topic and radiating branches. Handles radial positioning and connectors automatically. " +
+        "Use for 'mind map', 'brainstorm', 'idea map', 'concept map', 'topic web'.",
+      parameters: {
+        type: "object",
+        properties: {
+          centerTopic: { type: "string", description: "The central topic text" },
+          branches: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Branch topic text" },
+                children: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Sub-topic texts hanging off this branch",
+                },
+                color: { type: "string", description: "Color for this branch's stickies (hex or name)" },
+              },
+              required: ["label"],
+            },
+            description: "Main branches radiating from the center",
+          },
+          startX: { type: "number" },
+          startY: { type: "number" },
+        },
+        required: ["centerTopic", "branches"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "createFlowchart",
+      description:
+        "Create a flowchart with sequential and branching steps. Handles layout and connectors automatically. " +
+        "Use for 'flowchart', 'flow chart', 'process flow', 'workflow', 'decision tree', 'user flow'.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Flowchart title" },
+          direction: { type: "string", enum: ["top-to-bottom", "left-to-right"], description: "Layout direction. Default: top-to-bottom" },
+          steps: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Step text" },
+                type: {
+                  type: "string",
+                  enum: ["process", "decision", "start", "end"],
+                  description: "Step shape: process=rectangle, decision=circle, start/end=small rectangle. Default: process",
+                },
+                branches: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      label: { type: "string", description: "Branch label (e.g. 'Yes', 'No')" },
+                      targetStepIndex: { type: "number", description: "0-based index of the step this branch connects to" },
+                    },
+                    required: ["label", "targetStepIndex"],
+                  },
+                  description: "For decision steps: branches to other steps. If omitted, the step connects to the next sequential step.",
+                },
+              },
+              required: ["label"],
+            },
+            description: "Ordered list of steps in the flow",
+          },
+          startX: { type: "number" },
+          startY: { type: "number" },
+        },
+        required: ["title", "steps"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "read_board_state",
       description:
         "Read the current state of the board — all objects and connectors. Use this to verify your changes, find object IDs, or understand the current layout before making modifications.",
@@ -752,6 +876,35 @@ export interface ToolResult {
 interface ToolContext {
   screenSize?: { width: number; height: number };
   selectedIds?: string[];
+  viewportCenter?: { x: number; y: number };
+}
+
+function computeNavigationViewport(
+  objects: Array<{ x: number; y: number; width: number; height: number }>,
+  screenSize?: { width: number; height: number }
+): { x: number; y: number; scale: number } | null {
+  if (objects.length === 0) return null;
+
+  const minX = Math.min(...objects.map((o) => o.x));
+  const minY = Math.min(...objects.map((o) => o.y));
+  const maxX = Math.max(...objects.map((o) => o.x + o.width));
+  const maxY = Math.max(...objects.map((o) => o.y + o.height));
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const boxW = Math.max(maxX - minX, 1);
+  const boxH = Math.max(maxY - minY, 1);
+
+  const sw = screenSize?.width ?? 1280;
+  const sh = screenSize?.height ?? 800;
+  const pad = 0.82;
+  const scale = Math.min(Math.max(Math.min((sw * pad) / boxW, (sh * pad) / boxH), 0.1), 2.0);
+
+  return {
+    x: Math.round(sw / 2 - centerX * scale),
+    y: Math.round(sh / 2 - centerY * scale),
+    scale: Math.round(scale * 1000) / 1000,
+  };
 }
 
 /**
@@ -806,20 +959,25 @@ export async function executeTool(
       const { data, error } = await supabase
         .from("objects")
         .insert(rows)
-        .select("id");
+        .select("id, type, x, y, width, height");
 
       if (error) {
         return { error: error.message };
       }
 
+      const createdObjects: Array<{ id: string; type: string; x: number; y: number; width: number; height: number }> = [];
       for (const row of data || []) {
         createdIds.push(row.id);
+        createdObjects.push({ id: row.id, type: row.type, x: row.x, y: row.y, width: row.width, height: row.height });
       }
 
+      const _viewport = computeNavigationViewport(createdObjects, context.screenSize);
       return {
         created: createdIds.length,
         ids: createdIds,
+        objects: createdObjects,
         message: `Created ${createdIds.length} object(s)`,
+        ...(_viewport ? { _viewport } : {}),
       };
     }
 
@@ -827,15 +985,17 @@ export async function executeTool(
     case "bulk_create_objects": {
       const objType: string = args.type || "sticky";
       const count: number = Math.min(Math.max(args.count || 0, 1), 500);
+      // Declare parentFrameId before layout so the conditional default below
+      // does not reference it inside the Temporal Dead Zone.
+      const parentFrameId: string | null = args.parentFrameId || null;
       // When placing inside a frame, default to vertical stacking so stickies
       // don't overflow the column width and trigger unwanted horizontal expansion.
       const layout: string = args.layout || (parentFrameId ? "vertical" : "grid");
       const gap: number = args.gap ?? 20;
-      let startX: number = args.startX ?? 100;
-      let startY: number = args.startY ?? 100;
+      let startX: number = args.startX ?? context.viewportCenter?.x ?? 100;
+      let startY: number = args.startY ?? context.viewportCenter?.y ?? 100;
       const contentPrompt: string | undefined = args.contentPrompt;
       const textPattern: string | undefined = args.textPattern;
-      const parentFrameId: string | null = args.parentFrameId || null;
 
       const defaults = TYPE_DEFAULTS[objType] || TYPE_DEFAULTS.rectangle;
       const objWidth: number = args.width ?? defaults.width;
@@ -990,8 +1150,8 @@ export async function executeTool(
     // ── Create Quadrant Layout ────────────────────────────
     case "createQuadrant": {
       const { title, xAxisLabel, yAxisLabel, quadrantLabels, items } = args;
-      const startX = args.startX ?? 100;
-      const startY = args.startY ?? 100;
+      const startX = args.startX ?? context.viewportCenter?.x ?? 100;
+      const startY = args.startY ?? context.viewportCenter?.y ?? 100;
       const now = new Date().toISOString();
       let zIndex = Date.now();
       
@@ -1137,11 +1297,16 @@ export async function executeTool(
         return { error: err.message };
       }
 
+      const _qViewport = computeNavigationViewport(
+        [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: totalHeight + 80 }],
+        context.screenSize
+      );
       return {
         created: totalCreated,
         frameId: parentFrameId,
         quadrantIds,
         message: `Created quadrant layout with ${totalCreated} objects.`,
+        ...(_qViewport ? { _viewport: _qViewport } : {}),
       };
     }
 
@@ -1152,8 +1317,8 @@ export async function executeTool(
         return { error: "columns array is required and cannot be empty" };
       }
 
-      const startX = args.startX ?? 100;
-      const startY = args.startY ?? 100;
+      const startX = args.startX ?? context.viewportCenter?.x ?? 100;
+      const startY = args.startY ?? context.viewportCenter?.y ?? 100;
       const now = new Date().toISOString();
       let zIndex = Date.now();
 
@@ -1235,11 +1400,16 @@ export async function executeTool(
         }
       }
 
+      const colLayoutBounds = parentFrameId
+        ? [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: colHeight + 80 }]
+        : [{ x: pos.x, y: pos.y, width: totalWidth, height: colHeight }];
+      const _clViewport = computeNavigationViewport(colLayoutBounds, context.screenSize);
       return {
         created: totalCreated,
         frameId: parentFrameId ?? undefined,
         columnIds,
         message: `Created column layout with ${totalCreated} objects.`,
+        ...(_clViewport ? { _viewport: _clViewport } : {}),
       };
     }
 
@@ -1836,7 +2006,393 @@ export async function executeTool(
       };
     }
 
-    // ── Read Board State ─────────────────────────────────
+    // ── Create Wireframe ───────────────────────────────────
+    case "createWireframe": {
+      const { title, sections, deviceType = "desktop" } = args;
+      if (!Array.isArray(sections) || sections.length === 0) {
+        return { error: "sections array is required and cannot be empty" };
+      }
+
+      const frameWidth = args.width ?? (deviceType === "mobile" ? 375 : deviceType === "tablet" ? 768 : 800);
+      const rowUnit = 60;
+      const sectionGap = 4;
+      const sectionPad = 8;
+
+      let totalHeight = sectionPad;
+      for (const section of sections) {
+        totalHeight += (section.heightRatio ?? 1) * rowUnit + sectionGap;
+      }
+      totalHeight += sectionPad;
+
+      const defaultX = context.viewportCenter?.x ? context.viewportCenter.x - Math.round(frameWidth / 2) : 100;
+      const defaultY = context.viewportCenter?.y ? context.viewportCenter.y - Math.round(totalHeight / 2) : 100;
+      const pos = await findOpenCanvasSpace(boardId, frameWidth + 40, totalHeight + 80, args.startX ?? defaultX, args.startY ?? defaultY);
+
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+
+      const { data: frameData, error: frameErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId, type: "frame",
+          x: pos.x, y: pos.y, width: frameWidth + 40, height: totalHeight + 80,
+          color: "#F9F9F7", text: title || "Wireframe", rotation: 0,
+          z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (frameErr || !frameData) return { error: frameErr?.message || "Failed to create wireframe frame" };
+      const frameId = frameData.id;
+
+      const children: any[] = [];
+      let curY = pos.y + 60;
+
+      for (const section of sections) {
+        const ratio = section.heightRatio ?? 1;
+        const sectionHeight = ratio * rowUnit;
+        const split: string = section.split ?? "full";
+
+        if (split === "full") {
+          children.push({
+            board_id: boardId, type: "rectangle",
+            x: pos.x + sectionPad + 20, y: curY,
+            width: frameWidth - sectionPad * 2, height: sectionHeight,
+            color: "#E5E5E0", text: section.label || "",
+            parent_frame_id: frameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          });
+        } else {
+          const splits = split === "two-column" ? [0.5, 0.5]
+            : split === "three-column" ? [0.333, 0.334, 0.333]
+            : split === "left-sidebar" ? [0.25, 0.75]
+            : [0.75, 0.25]; // right-sidebar
+
+          const labels: string[] = section.splitLabels ?? [];
+          let curX = pos.x + sectionPad + 20;
+          const availW = frameWidth - sectionPad * 2;
+
+          splits.forEach((frac: number, i: number) => {
+            const w = Math.round(availW * frac - (i < splits.length - 1 ? sectionGap : 0));
+            children.push({
+              board_id: boardId, type: "rectangle",
+              x: Math.round(curX), y: curY,
+              width: w, height: sectionHeight,
+              color: "#E5E5E0", text: labels[i] ?? section.label ?? "",
+              parent_frame_id: frameId, rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            });
+            curX += w + sectionGap;
+          });
+        }
+        curY += sectionHeight + sectionGap;
+      }
+
+      if (children.length > 0) {
+        const { error: childErr } = await supabase.from("objects").insert(children);
+        if (childErr) return { error: childErr.message };
+      }
+
+      const allCreated = [
+        { x: pos.x, y: pos.y, width: frameWidth + 40, height: totalHeight + 80 },
+        ...children.map((c) => ({ x: c.x, y: c.y, width: c.width, height: c.height })),
+      ];
+      const _viewport = computeNavigationViewport(allCreated, context.screenSize);
+
+      return {
+        created: 1 + children.length,
+        frameId,
+        message: `Created wireframe "${title}" with ${children.length} sections.`,
+        ...(_viewport ? { _viewport } : {}),
+      };
+    }
+
+    // ── Create Mind Map ──────────────────────────────────────
+    case "createMindMap": {
+      const { centerTopic, branches } = args;
+      if (!Array.isArray(branches) || branches.length === 0) {
+        return { error: "branches array is required and cannot be empty" };
+      }
+
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+      const centerW = 200;
+      const centerH = 80;
+      const branchW = 160;
+      const branchH = 60;
+      const subW = 140;
+      const subH = 50;
+      const innerRadius = 250;
+      const outerRadius = 450;
+      const branchColors = ["#7FC8E8", "#9DD9A3", "#FAD84E", "#F5A8C4", "#E5E5E0"];
+
+      const defaultCX = context.viewportCenter?.x ?? 500;
+      const defaultCY = context.viewportCenter?.y ?? 400;
+      const cx = args.startX ?? defaultCX;
+      const cy = args.startY ?? defaultCY;
+
+      // Create center node
+      const { data: centerData, error: centerErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId, type: "rectangle",
+          x: cx - centerW / 2, y: cy - centerH / 2,
+          width: centerW, height: centerH,
+          color: "#3B82F6", text: centerTopic || "Central Topic",
+          rotation: 0, z_index: zIndex++,
+          created_by: userId, created_at: now, updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (centerErr || !centerData) return { error: centerErr?.message || "Failed to create center node" };
+      const centerId = centerData.id;
+      let totalCreated = 1;
+      const connectorRows: any[] = [];
+      const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [
+        { x: cx - centerW / 2, y: cy - centerH / 2, width: centerW, height: centerH },
+      ];
+
+      const n = branches.length;
+      for (let i = 0; i < n; i++) {
+        const branch = branches[i];
+        const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+        const bx = cx + Math.round(innerRadius * Math.cos(angle)) - branchW / 2;
+        const by = cy + Math.round(innerRadius * Math.sin(angle)) - branchH / 2;
+        const color = (branch.color ? resolveColor(branch.color) : null) || branchColors[i % branchColors.length];
+
+        const { data: bData, error: bErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: "sticky",
+            x: bx, y: by, width: branchW, height: branchH,
+            color, text: branch.label || "",
+            rotation: 0, z_index: zIndex++,
+            created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (bErr || !bData) continue;
+        totalCreated++;
+        allPositions.push({ x: bx, y: by, width: branchW, height: branchH });
+
+        connectorRows.push({
+          board_id: boardId,
+          from_id: centerId, to_id: bData.id,
+          style: "arrow", color: null, stroke_width: null,
+          from_point: null, to_point: null,
+        });
+
+        // Sub-branches
+        const children: string[] = Array.isArray(branch.children) ? branch.children : [];
+        if (children.length > 0) {
+          const subAngleSpread = Math.PI / (n > 2 ? n : 3);
+          for (let j = 0; j < children.length; j++) {
+            const subAngleOffset = (j - (children.length - 1) / 2) * (subAngleSpread / Math.max(children.length, 1));
+            const subAngle = angle + subAngleOffset;
+            const sx = cx + Math.round(outerRadius * Math.cos(subAngle)) - subW / 2;
+            const sy = cy + Math.round(outerRadius * Math.sin(subAngle)) - subH / 2;
+
+            const { data: sData, error: sErr } = await supabase
+              .from("objects")
+              .insert({
+                board_id: boardId, type: "sticky",
+                x: sx, y: sy, width: subW, height: subH,
+                color, text: children[j] || "",
+                rotation: 0, z_index: zIndex++,
+                created_by: userId, created_at: now, updated_at: now,
+              })
+              .select("id")
+              .single();
+
+            if (sErr || !sData) continue;
+            totalCreated++;
+            allPositions.push({ x: sx, y: sy, width: subW, height: subH });
+
+            connectorRows.push({
+              board_id: boardId,
+              from_id: bData.id, to_id: sData.id,
+              style: "arrow", color: null, stroke_width: null,
+              from_point: null, to_point: null,
+            });
+          }
+        }
+      }
+
+      // Batch insert connectors
+      if (connectorRows.length > 0) {
+        await supabase.from("connectors").insert(connectorRows);
+      }
+
+      const _viewport = computeNavigationViewport(allPositions, context.screenSize);
+
+      return {
+        created: totalCreated,
+        connectors: connectorRows.length,
+        centerId,
+        message: `Created mind map with ${totalCreated} nodes and ${connectorRows.length} connectors.`,
+        ...(_viewport ? { _viewport } : {}),
+      };
+    }
+
+    // ── Create Flowchart ─────────────────────────────────────
+    case "createFlowchart": {
+      const { title, steps, direction = "top-to-bottom" } = args;
+      if (!Array.isArray(steps) || steps.length === 0) {
+        return { error: "steps array is required and cannot be empty" };
+      }
+
+      const now = new Date().toISOString();
+      let zIndex = Date.now();
+      const isVertical = direction === "top-to-bottom";
+      const stepGap = 80;
+      const processW = 200;
+      const processH = 80;
+      const decisionSize = 100;
+      const startEndW = 150;
+      const startEndH = 50;
+
+      const getStepDims = (type: string) => {
+        switch (type) {
+          case "decision": return { w: decisionSize, h: decisionSize };
+          case "start": case "end": return { w: startEndW, h: startEndH };
+          default: return { w: processW, h: processH };
+        }
+      };
+
+      // Calculate total bounds for frame
+      const totalSteps = steps.length;
+      const maxW = Math.max(processW, decisionSize, startEndW);
+      const maxH = Math.max(processH, decisionSize, startEndH);
+      const totalSpan = totalSteps * (isVertical ? maxH : maxW) + (totalSteps - 1) * stepGap;
+      const frameW = isVertical ? maxW + 200 : totalSpan + 200;
+      const frameH = isVertical ? totalSpan + 160 : maxH + 250;
+
+      const defaultX = context.viewportCenter?.x ? context.viewportCenter.x - Math.round(frameW / 2) : 100;
+      const defaultY = context.viewportCenter?.y ? context.viewportCenter.y - Math.round(frameH / 2) : 100;
+      const pos = await findOpenCanvasSpace(boardId, frameW, frameH, args.startX ?? defaultX, args.startY ?? defaultY);
+
+      // Create frame
+      const { data: frameData, error: frameErr } = await supabase
+        .from("objects")
+        .insert({
+          board_id: boardId, type: "frame",
+          x: pos.x, y: pos.y, width: frameW, height: frameH,
+          color: "#F9F9F7", text: title || "Flowchart", rotation: 0,
+          z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+        })
+        .select("id")
+        .single();
+
+      if (frameErr || !frameData) return { error: frameErr?.message || "Failed to create flowchart frame" };
+      const frameId = frameData.id;
+
+      // Create step nodes
+      const stepIds: string[] = [];
+      const stepPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
+      let totalCreated = 1; // frame
+
+      const contentStartX = pos.x + Math.round(frameW / 2);
+      const contentStartY = pos.y + 80;
+
+      for (let i = 0; i < totalSteps; i++) {
+        const step = steps[i];
+        const stepType: string = step.type || "process";
+        const dims = getStepDims(stepType);
+        const color = stepType === "decision" ? "#FAD84E"
+          : stepType === "start" || stepType === "end" ? "#9DD9A3"
+          : "#E5E5E0";
+        const shapeType = stepType === "decision" ? "circle" : "rectangle";
+
+        const sx = isVertical
+          ? contentStartX - Math.round(dims.w / 2)
+          : contentStartX - Math.round(frameW / 2) + 100 + i * (maxW + stepGap);
+        const sy = isVertical
+          ? contentStartY + i * (maxH + stepGap)
+          : contentStartY + Math.round((frameH - 160) / 2) - Math.round(dims.h / 2);
+
+        const { data: sData, error: sErr } = await supabase
+          .from("objects")
+          .insert({
+            board_id: boardId, type: shapeType,
+            x: sx, y: sy, width: dims.w, height: dims.h,
+            color, text: step.label || `Step ${i + 1}`,
+            parent_frame_id: frameId, rotation: 0,
+            z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+          })
+          .select("id")
+          .single();
+
+        if (sErr || !sData) {
+          stepIds.push("");
+          stepPositions.push({ x: sx, y: sy, width: dims.w, height: dims.h });
+          continue;
+        }
+        stepIds.push(sData.id);
+        stepPositions.push({ x: sx, y: sy, width: dims.w, height: dims.h });
+        totalCreated++;
+      }
+
+      // Create connectors
+      const connectorRows: any[] = [];
+      for (let i = 0; i < totalSteps; i++) {
+        const step = steps[i];
+        const fromId = stepIds[i];
+        if (!fromId) continue;
+
+        if (Array.isArray(step.branches) && step.branches.length > 0) {
+          for (const branch of step.branches) {
+            const targetIdx = branch.targetStepIndex;
+            if (typeof targetIdx === "number" && targetIdx >= 0 && targetIdx < totalSteps && stepIds[targetIdx]) {
+              connectorRows.push({
+                board_id: boardId,
+                from_id: fromId, to_id: stepIds[targetIdx],
+                style: "arrow", color: null, stroke_width: null,
+                from_point: null, to_point: null,
+              });
+            }
+          }
+          // Also connect to the next sequential step (the "default" path)
+          if (i + 1 < totalSteps && stepIds[i + 1]) {
+            connectorRows.push({
+              board_id: boardId,
+              from_id: fromId, to_id: stepIds[i + 1],
+              style: "arrow", color: null, stroke_width: null,
+              from_point: null, to_point: null,
+            });
+          }
+        } else if (i + 1 < totalSteps && stepIds[i + 1]) {
+          connectorRows.push({
+            board_id: boardId,
+            from_id: fromId, to_id: stepIds[i + 1],
+            style: "arrow", color: null, stroke_width: null,
+            from_point: null, to_point: null,
+          });
+        }
+      }
+
+      if (connectorRows.length > 0) {
+        await supabase.from("connectors").insert(connectorRows);
+      }
+
+      const allBounds = [
+        { x: pos.x, y: pos.y, width: frameW, height: frameH },
+        ...stepPositions,
+      ];
+      const _viewport = computeNavigationViewport(allBounds, context.screenSize);
+
+      return {
+        created: totalCreated,
+        connectors: connectorRows.length,
+        frameId,
+        stepIds: stepIds.filter(Boolean),
+        message: `Created flowchart "${title}" with ${totalCreated} objects and ${connectorRows.length} connectors.`,
+        ...(_viewport ? { _viewport } : {}),
+      };
+    }
+
+    // ── Read Board State ─────────────────────────────────────
     case "read_board_state": {
       return await fetchBoardState(boardId);
     }
