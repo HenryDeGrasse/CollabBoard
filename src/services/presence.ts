@@ -125,7 +125,7 @@ export function createPresenceChannel(
   });
 
   // Subscribe and track initial presence when connected
-  channel.subscribe(async (status, err) => {
+  channel.subscribe(async (status) => {
     channelReady = status === "SUBSCRIBED";
     if (status === "SUBSCRIBED") {
       await trackPresence();
@@ -222,8 +222,7 @@ export function createBoardRealtimeChannels(
         );
       }
     )
-    .subscribe((status, err) => {
-    });
+    .subscribe(() => {});
 
   connectorsChannel
     .on(
@@ -236,8 +235,7 @@ export function createBoardRealtimeChannels(
         );
       }
     )
-    .subscribe((status, err) => {
-    });
+    .subscribe(() => {});
 
   return [objectsChannel, connectorsChannel];
 }
