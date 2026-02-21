@@ -45,6 +45,18 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
               bottomRight: { type: "array", items: { type: "string" }, description: "Items for the bottom-right quadrant" }
             }
           },
+          quadrantSourceIds: {
+            type: "object",
+            properties: {
+              topLeft: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the top-left quadrant" },
+              topRight: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the top-right quadrant" },
+              bottomLeft: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the bottom-left quadrant" },
+              bottomRight: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into the bottom-right quadrant" }
+            },
+            description:
+              "Optional. Existing object IDs to REPOSITION into each quadrant instead of creating new items. " +
+              "When provided, the items object is ignored. Use when the user says 'reorganize', 'convert', or 'turn into'."
+          },
           startX: { type: "number", description: "Starting X position on the canvas" },
           startY: { type: "number", description: "Starting Y position on the canvas" }
         },
@@ -72,6 +84,20 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
               required: ["title"]
             },
             description: "Array of columns with their respective titles and items"
+          },
+          sourceIds: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                columnTitle: { type: "string", description: "Which column to place these objects in (must match a title in columns)" },
+                objectIds: { type: "array", items: { type: "string" }, description: "IDs of existing objects to move into this column" }
+              },
+              required: ["columnTitle", "objectIds"]
+            },
+            description:
+              "Optional. Existing object IDs to REPOSITION into columns instead of creating new items. " +
+              "When provided, the items arrays in columns are ignored. Use when the user says 'reorganize', 'convert', or 'turn into'."
           },
           startX: { type: "number", description: "Starting X position on the canvas" },
           startY: { type: "number", description: "Starting Y position on the canvas" }
@@ -600,10 +626,18 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             },
             description: "Main branches radiating from the center",
           },
+          sourceObjectIds: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Optional. Existing object IDs to REPOSITION into the mind map instead of creating new nodes. " +
+              "The objects keep their text, color, and size — only their positions are updated. " +
+              "Use when the user says 'reorganize', 'convert', or 'turn into'. When provided, branches array is ignored.",
+          },
           startX: { type: "number" },
           startY: { type: "number" },
         },
-        required: ["centerTopic", "branches"],
+        required: ["centerTopic"],
       },
     },
   },
@@ -647,10 +681,17 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             },
             description: "Ordered list of steps in the flow",
           },
+          sourceObjectIds: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Optional. Existing object IDs to REPOSITION into the flowchart instead of creating new step nodes. " +
+              "Objects are placed in the given order. When provided, steps array is ignored.",
+          },
           startX: { type: "number" },
           startY: { type: "number" },
         },
-        required: ["title", "steps"],
+        required: ["title"],
       },
     },
   },
@@ -1149,27 +1190,146 @@ export async function executeTool(
 
     // ── Create Quadrant Layout ────────────────────────────
     case "createQuadrant": {
-      const { title, xAxisLabel, yAxisLabel, quadrantLabels, items } = args;
+      const { title, xAxisLabel, yAxisLabel, quadrantLabels, items, quadrantSourceIds } = args;
       const startX = args.startX ?? context.viewportCenter?.x ?? 100;
       const startY = args.startY ?? context.viewportCenter?.y ?? 100;
       const now = new Date().toISOString();
       let zIndex = Date.now();
-      
-      const tlItems: string[] = items?.topLeft || [];
-      const trItems: string[] = items?.topRight || [];
-      const blItems: string[] = items?.bottomLeft || [];
-      const brItems: string[] = items?.bottomRight || [];
 
       const stickyWidth = 150;
       const stickyHeight = 150;
       const gap = 20;
       const quadrantPadding = 30;
-      
+
       const getGridSize = (count: number) => {
         const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
         const rows = Math.max(1, Math.ceil(count / cols));
         return { cols, rows };
       };
+
+      // ── Reposition mode: move existing objects into quadrant layout ──
+      if (quadrantSourceIds && typeof quadrantSourceIds === "object") {
+        const qSrcTL: string[] = quadrantSourceIds.topLeft || [];
+        const qSrcTR: string[] = quadrantSourceIds.topRight || [];
+        const qSrcBL: string[] = quadrantSourceIds.bottomLeft || [];
+        const qSrcBR: string[] = quadrantSourceIds.bottomRight || [];
+        const allIds = [...qSrcTL, ...qSrcTR, ...qSrcBL, ...qSrcBR];
+
+        if (allIds.length > 0) {
+          const { data: srcObjs } = await supabase
+            .from("objects")
+            .select("id, width, height")
+            .eq("board_id", boardId)
+            .in("id", allIds);
+
+          if (!srcObjs || srcObjs.length === 0) {
+            return { error: "None of the quadrantSourceIds objects were found on this board." };
+          }
+
+          const qCountTL = qSrcTL.length, qCountTR = qSrcTR.length;
+          const qCountBL = qSrcBL.length, qCountBR = qSrcBR.length;
+          const tlGrid = getGridSize(qCountTL);
+          const trGrid = getGridSize(qCountTR);
+          const blGrid = getGridSize(qCountBL);
+          const brGrid = getGridSize(qCountBR);
+
+          const maxTopRows = Math.max(tlGrid.rows, trGrid.rows, 2);
+          const maxBottomRows = Math.max(blGrid.rows, brGrid.rows, 2);
+          const maxLeftCols = Math.max(tlGrid.cols, blGrid.cols, 2);
+          const maxRightCols = Math.max(trGrid.cols, brGrid.cols, 2);
+
+          const minQW = 2 * stickyWidth + gap + quadrantPadding * 2;
+          const minQH = 2 * stickyHeight + gap + quadrantPadding * 2 + 60;
+          const qWidthLeft = Math.max(maxLeftCols * stickyWidth + (maxLeftCols - 1) * gap + quadrantPadding * 2, minQW);
+          const qWidthRight = Math.max(maxRightCols * stickyWidth + (maxRightCols - 1) * gap + quadrantPadding * 2, minQW);
+          const qHeightTop = Math.max(maxTopRows * stickyHeight + (maxTopRows - 1) * gap + quadrantPadding * 2 + 60, minQH);
+          const qHeightBottom = Math.max(maxBottomRows * stickyHeight + (maxBottomRows - 1) * gap + quadrantPadding * 2 + 60, minQH);
+
+          const totalWidth = qWidthLeft + qWidthRight + gap;
+          const totalHeight = qHeightTop + qHeightBottom + gap;
+          const pos = await findOpenCanvasSpace(boardId, totalWidth + 40, totalHeight + 80, startX, startY);
+
+          let totalCreated = 0;
+          const quadrantIds: Record<string, string> = {};
+
+          const { data: masterData, error: masterErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "frame",
+              x: pos.x, y: pos.y, width: totalWidth + 40, height: totalHeight + 80,
+              color: "#F9F9F7", text: title || "Quadrant Layout", rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+          if (masterErr || !masterData) return { error: masterErr?.message || "Failed to create master frame" };
+          const masterFrameId = masterData.id;
+          totalCreated++;
+
+          const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+
+          const buildQuadrantRepos = async (
+            qTitle: string, srcIds: string[], qX: number, qY: number, qWidth: number, qHeight: number, qCols: number, key: string
+          ) => {
+            const { data: qData, error: qErr } = await supabase
+              .from("objects")
+              .insert({
+                board_id: boardId, type: "frame",
+                x: qX, y: qY, width: qWidth, height: qHeight,
+                color: "#F9F9F7", text: qTitle || key,
+                parent_frame_id: masterFrameId, rotation: 0,
+                z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+              })
+              .select("id")
+              .single();
+            if (qErr || !qData) throw new Error(qErr?.message || "Failed to create quadrant frame");
+            quadrantIds[key] = qData.id;
+            totalCreated++;
+
+            for (let i = 0; i < srcIds.length; i++) {
+              const col = i % qCols;
+              const row = Math.floor(i / qCols);
+              patches.push({
+                id: srcIds[i],
+                x: qX + quadrantPadding + col * (stickyWidth + gap),
+                y: qY + 60 + row * (stickyHeight + gap),
+                parentFrameId: qData.id,
+              });
+            }
+          };
+
+          try {
+            const startInnerX = pos.x + 20;
+            const startInnerY = pos.y + 60;
+            await buildQuadrantRepos(quadrantLabels?.topLeft, qSrcTL, startInnerX, startInnerY, qWidthLeft, qHeightTop, tlGrid.cols, "topLeft");
+            await buildQuadrantRepos(quadrantLabels?.topRight, qSrcTR, startInnerX + qWidthLeft + gap, startInnerY, qWidthRight, qHeightTop, trGrid.cols, "topRight");
+            await buildQuadrantRepos(quadrantLabels?.bottomLeft, qSrcBL, startInnerX, startInnerY + qHeightTop + gap, qWidthLeft, qHeightBottom, blGrid.cols, "bottomLeft");
+            await buildQuadrantRepos(quadrantLabels?.bottomRight, qSrcBR, startInnerX + qWidthLeft + gap, startInnerY + qHeightTop + gap, qWidthRight, qHeightBottom, brGrid.cols, "bottomRight");
+          } catch (err: any) {
+            return { error: err.message };
+          }
+
+          const moved = await repositionObjects(supabase, boardId, patches);
+          const _qViewport = computeNavigationViewport(
+            [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: totalHeight + 80 }],
+            context.screenSize
+          );
+          return {
+            created: totalCreated,
+            repositioned: moved,
+            frameId: masterFrameId,
+            quadrantIds,
+            message: `Reorganized ${moved} objects into quadrant layout with ${totalCreated} new frames.`,
+            ...(_qViewport ? { _viewport: _qViewport } : {}),
+          };
+        }
+      }
+
+      // ── Normal create mode ──
+      const tlItems: string[] = items?.topLeft || [];
+      const trItems: string[] = items?.topRight || [];
+      const blItems: string[] = items?.bottomLeft || [];
+      const brItems: string[] = items?.bottomRight || [];
 
       const tlGrid = getGridSize(tlItems.length);
       const trGrid = getGridSize(trItems.length);
@@ -1197,7 +1357,6 @@ export async function executeTool(
       let totalCreated = 0;
       const quadrantIds: Record<string, string> = {};
 
-      // Insert master frame first
       const { data: masterData, error: masterErr } = await supabase
         .from("objects")
         .insert({
@@ -1247,7 +1406,6 @@ export async function executeTool(
         totalCreated += children.length;
       }
 
-      // Helper to generate quadrant frames + stickies
       const buildQuadrant = async (qTitle: string, qItems: string[], qX: number, qY: number, qWidth: number, qHeight: number, color: string, qCols: number, key: string) => {
         const { data: qData, error: qErr } = await supabase
           .from("objects")
@@ -1273,7 +1431,7 @@ export async function executeTool(
             return {
               board_id: boardId, type: "sticky",
               x: qX + quadrantPadding + col * (stickyWidth + gap),
-              y: qY + 60 + row * (stickyHeight + gap), // +60 for quadrant title
+              y: qY + 60 + row * (stickyHeight + gap),
               width: stickyWidth, height: stickyHeight, text: itemText,
               color, parent_frame_id: qFrameId, rotation: 0,
               z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
@@ -1312,7 +1470,7 @@ export async function executeTool(
 
     // ── Create Column Layout ────────────────────────────
     case "createColumnLayout": {
-      const { title, columns } = args;
+      const { title, columns, sourceIds: colSourceIds } = args;
       if (!Array.isArray(columns) || columns.length === 0) {
         return { error: "columns array is required and cannot be empty" };
       }
@@ -1327,6 +1485,105 @@ export async function executeTool(
       const gap = 20;
       const colPadding = 30;
 
+      // ── Reposition mode: move existing objects into column layout ──
+      if (Array.isArray(colSourceIds) && colSourceIds.length > 0) {
+        const allObjIds = colSourceIds.flatMap((s: any) => s.objectIds || []);
+        const { data: srcObjs } = await supabase
+          .from("objects")
+          .select("id, width, height")
+          .eq("board_id", boardId)
+          .in("id", allObjIds);
+
+        if (!srcObjs || srcObjs.length === 0) {
+          return { error: "None of the sourceIds objects were found on this board." };
+        }
+        const objMap = new Map(srcObjs.map((o: any) => [o.id, o]));
+
+        const maxPerCol = Math.max(...colSourceIds.map((s: any) => (s.objectIds || []).length), 0);
+        const colWidth = stickyWidth + colPadding * 2;
+        const totalWidth = columns.length * (colWidth + gap) - gap;
+        const minStickySlots = 4;
+        const itemCount = Math.max(maxPerCol, minStickySlots);
+        const colHeight = itemCount * stickyHeight + (itemCount - 1) * gap + colPadding * 2 + 60;
+
+        const pos = await findOpenCanvasSpace(boardId, totalWidth + 40, colHeight + 80, startX, startY);
+        const colors = ["#E5E5E0", "#7FC8E8", "#FAD84E", "#9DD9A3", "#F5A8C4"];
+
+        let masterFrameId: string | null = null;
+        let totalCreated = 0;
+        const columnIds: Record<string, string> = {};
+
+        if (title) {
+          const { data: masterData, error: masterErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "frame",
+              x: pos.x, y: pos.y,
+              width: totalWidth + 40, height: colHeight + 80,
+              color: "#F9F9F7", text: title, rotation: 0,
+              z_index: zIndex++, created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+          if (masterErr || !masterData) return { error: masterErr?.message || "Failed to create master frame" };
+          masterFrameId = masterData.id;
+          totalCreated++;
+        }
+
+        const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+        const colSourceMap = new Map(colSourceIds.map((s: any) => [s.columnTitle, s.objectIds || []]));
+
+        for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+          const col = columns[colIdx];
+          const cx = pos.x + 20 + colIdx * (colWidth + gap);
+          const cy = pos.y + 60;
+          const color = colors[colIdx % colors.length];
+
+          const { data: colData, error: colErr } = await supabase
+            .from("objects")
+            .insert({
+              board_id: boardId, type: "frame",
+              x: cx, y: cy, width: colWidth, height: colHeight,
+              color: "#F9F9F7", text: col.title || `Column ${colIdx + 1}`,
+              parent_frame_id: masterFrameId,
+              rotation: 0, z_index: zIndex++,
+              created_by: userId, created_at: now, updated_at: now,
+            })
+            .select("id")
+            .single();
+          if (colErr || !colData) continue;
+          const colFrameId = colData.id;
+          columnIds[col.title || `Column ${colIdx + 1}`] = colFrameId;
+          totalCreated++;
+
+          const idsForCol: string[] = colSourceMap.get(col.title) || [];
+          for (let i = 0; i < idsForCol.length; i++) {
+            const objId = idsForCol[i];
+            if (!objMap.has(objId)) continue;
+            patches.push({
+              id: objId,
+              x: cx + colPadding,
+              y: cy + 60 + i * (stickyHeight + gap),
+              parentFrameId: colFrameId,
+            });
+          }
+        }
+
+        const moved = await repositionObjects(supabase, boardId, patches);
+        const colLayoutBounds = [{ x: pos.x, y: pos.y, width: totalWidth + 40, height: colHeight + 80 }];
+        const _clViewport = computeNavigationViewport(colLayoutBounds, context.screenSize);
+
+        return {
+          created: totalCreated,
+          repositioned: moved,
+          frameId: masterFrameId ?? undefined,
+          columnIds,
+          message: `Reorganized ${moved} objects into column layout with ${totalCreated} new frames.`,
+          ...(_clViewport ? { _viewport: _clViewport } : {}),
+        };
+      }
+
+      // ── Normal create mode ──
       const maxItems = Math.max(...columns.map((c: any) => Array.isArray(c.items) ? c.items.length : 0));
       const colWidth = stickyWidth + colPadding * 2;
       const totalWidth = columns.length * (colWidth + gap) - gap;
@@ -1341,7 +1598,6 @@ export async function executeTool(
       let totalCreated = 0;
       const columnIds: Record<string, string> = {};
 
-      // Insert master frame first if title is provided
       if (title) {
         const { data: masterData, error: masterErr } = await supabase
           .from("objects")
@@ -1360,7 +1616,6 @@ export async function executeTool(
         totalCreated++;
       }
 
-      // Insert each column frame, then its children
       for (let colIdx = 0; colIdx < columns.length; colIdx++) {
         const col = columns[colIdx];
         const cx = pos.x + 20 + colIdx * (colWidth + gap);
@@ -2109,7 +2364,76 @@ export async function executeTool(
 
     // ── Create Mind Map ──────────────────────────────────────
     case "createMindMap": {
-      const { centerTopic, branches } = args;
+      const { centerTopic, branches, sourceObjectIds } = args;
+
+      const innerRadius = 250;
+      const outerRadius = 450;
+      const branchColors = ["#7FC8E8", "#9DD9A3", "#FAD84E", "#F5A8C4", "#E5E5E0"];
+
+      const defaultCX = context.viewportCenter?.x ?? 500;
+      const defaultCY = context.viewportCenter?.y ?? 400;
+      const cx = args.startX ?? defaultCX;
+      const cy = args.startY ?? defaultCY;
+
+      // ── Reposition mode: move existing objects into mind map layout ──
+      if (Array.isArray(sourceObjectIds) && sourceObjectIds.length > 0) {
+        const { data: srcObjs } = await supabase
+          .from("objects")
+          .select("id, x, y, width, height")
+          .eq("board_id", boardId)
+          .in("id", sourceObjectIds);
+
+        if (!srcObjs || srcObjs.length === 0) {
+          return { error: "None of the sourceObjectIds were found on this board." };
+        }
+
+        const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+        const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
+        const connectorRows: any[] = [];
+
+        const firstId = srcObjs[0].id;
+        const firstObj = srcObjs[0];
+        const centerX = cx - Math.round((firstObj.width || 160) / 2);
+        const centerY = cy - Math.round((firstObj.height || 60) / 2);
+        patches.push({ id: firstId, x: centerX, y: centerY, parentFrameId: null });
+        allPositions.push({ x: centerX, y: centerY, width: firstObj.width || 160, height: firstObj.height || 60 });
+
+        const remaining = srcObjs.slice(1);
+        const n = remaining.length;
+        for (let i = 0; i < n; i++) {
+          const obj = remaining[i];
+          const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+          const bx = cx + Math.round(innerRadius * Math.cos(angle)) - Math.round((obj.width || 160) / 2);
+          const by = cy + Math.round(innerRadius * Math.sin(angle)) - Math.round((obj.height || 60) / 2);
+          patches.push({ id: obj.id, x: bx, y: by, parentFrameId: null });
+          allPositions.push({ x: bx, y: by, width: obj.width || 160, height: obj.height || 60 });
+
+          connectorRows.push({
+            board_id: boardId,
+            from_id: firstId, to_id: obj.id,
+            style: "arrow", color: null, stroke_width: null,
+            from_point: null, to_point: null,
+          });
+        }
+
+        const moved = await repositionObjects(supabase, boardId, patches);
+
+        if (connectorRows.length > 0) {
+          await supabase.from("connectors").insert(connectorRows);
+        }
+
+        const _viewport = computeNavigationViewport(allPositions, context.screenSize);
+
+        return {
+          repositioned: moved,
+          connectors: connectorRows.length,
+          centerId: firstId,
+          message: `Reorganized ${moved} existing objects into a mind map with ${connectorRows.length} connectors.`,
+          ...(_viewport ? { _viewport } : {}),
+        };
+      }
+
+      // ── Normal create mode ──
       if (!Array.isArray(branches) || branches.length === 0) {
         return { error: "branches array is required and cannot be empty" };
       }
@@ -2122,16 +2446,7 @@ export async function executeTool(
       const branchH = 60;
       const subW = 140;
       const subH = 50;
-      const innerRadius = 250;
-      const outerRadius = 450;
-      const branchColors = ["#7FC8E8", "#9DD9A3", "#FAD84E", "#F5A8C4", "#E5E5E0"];
 
-      const defaultCX = context.viewportCenter?.x ?? 500;
-      const defaultCY = context.viewportCenter?.y ?? 400;
-      const cx = args.startX ?? defaultCX;
-      const cy = args.startY ?? defaultCY;
-
-      // Create center node
       const { data: centerData, error: centerErr } = await supabase
         .from("objects")
         .insert({
@@ -2184,7 +2499,6 @@ export async function executeTool(
           from_point: null, to_point: null,
         });
 
-        // Sub-branches
         const children: string[] = Array.isArray(branch.children) ? branch.children : [];
         if (children.length > 0) {
           const subAngleSpread = Math.PI / (n > 2 ? n : 3);
@@ -2220,7 +2534,6 @@ export async function executeTool(
         }
       }
 
-      // Batch insert connectors
       if (connectorRows.length > 0) {
         await supabase.from("connectors").insert(connectorRows);
       }
@@ -2238,14 +2551,72 @@ export async function executeTool(
 
     // ── Create Flowchart ─────────────────────────────────────
     case "createFlowchart": {
-      const { title, steps, direction = "top-to-bottom" } = args;
+      const { title, steps, direction = "top-to-bottom", sourceObjectIds: fcSourceIds } = args;
+      const isVertical = direction === "top-to-bottom";
+
+      // ── Reposition mode ──
+      if (Array.isArray(fcSourceIds) && fcSourceIds.length > 0) {
+        const { data: srcObjs } = await supabase
+          .from("objects")
+          .select("id, x, y, width, height")
+          .eq("board_id", boardId)
+          .in("id", fcSourceIds);
+
+        if (!srcObjs || srcObjs.length === 0) {
+          return { error: "None of the sourceObjectIds were found on this board." };
+        }
+
+        const stepGapR = 80;
+        const defaultX = context.viewportCenter?.x ?? 200;
+        const defaultY = context.viewportCenter?.y ?? 200;
+        let cursorX = args.startX ?? defaultX;
+        let cursorY = args.startY ?? defaultY;
+
+        const patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }> = [];
+        const allPositions: Array<{ x: number; y: number; width: number; height: number }> = [];
+        const connectorRows: any[] = [];
+
+        for (let i = 0; i < srcObjs.length; i++) {
+          const obj = srcObjs[i];
+          const w = obj.width || 200;
+          const h = obj.height || 80;
+          patches.push({ id: obj.id, x: cursorX, y: cursorY, parentFrameId: null });
+          allPositions.push({ x: cursorX, y: cursorY, width: w, height: h });
+
+          if (i > 0) {
+            connectorRows.push({
+              board_id: boardId,
+              from_id: srcObjs[i - 1].id, to_id: obj.id,
+              style: "arrow", color: null, stroke_width: null,
+              from_point: null, to_point: null,
+            });
+          }
+
+          if (isVertical) cursorY += h + stepGapR;
+          else cursorX += w + stepGapR;
+        }
+
+        const moved = await repositionObjects(supabase, boardId, patches);
+        if (connectorRows.length > 0) {
+          await supabase.from("connectors").insert(connectorRows);
+        }
+
+        const _viewport = computeNavigationViewport(allPositions, context.screenSize);
+        return {
+          repositioned: moved,
+          connectors: connectorRows.length,
+          message: `Reorganized ${moved} objects into a ${direction} flowchart with ${connectorRows.length} connectors.`,
+          ...(_viewport ? { _viewport } : {}),
+        };
+      }
+
+      // ── Normal create mode ──
       if (!Array.isArray(steps) || steps.length === 0) {
         return { error: "steps array is required and cannot be empty" };
       }
 
       const now = new Date().toISOString();
       let zIndex = Date.now();
-      const isVertical = direction === "top-to-bottom";
       const stepGap = 80;
       const processW = 200;
       const processH = 80;
@@ -2404,6 +2775,52 @@ export async function executeTool(
 
 // ─── Helpers ───────────────────────────────────────────────────
 
+/**
+ * Batch-reposition existing objects. Used by template tools when
+ * sourceObjectIds is provided to reorganize instead of create.
+ */
+async function repositionObjects(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  boardId: string,
+  patches: Array<{ id: string; x: number; y: number; parentFrameId?: string | null }>
+): Promise<number> {
+  if (patches.length === 0) return 0;
+  const now = new Date().toISOString();
+
+  for (let i = 0; i < patches.length; i += PATCH_BULK_CHUNK_SIZE) {
+    const chunk = patches.slice(i, i + PATCH_BULK_CHUNK_SIZE);
+    const ids = chunk.map((p) => p.id);
+
+    const { data: existing } = await supabase
+      .from("objects")
+      .select("*")
+      .eq("board_id", boardId)
+      .in("id", ids);
+
+    if (!existing?.length) continue;
+
+    const byId = new Map(existing.map((r: any) => [r.id, r]));
+    const rows: any[] = [];
+
+    for (const patch of chunk) {
+      const row = byId.get(patch.id);
+      if (!row) continue;
+      rows.push({
+        ...row,
+        x: patch.x,
+        y: patch.y,
+        parent_frame_id: patch.parentFrameId !== undefined ? (patch.parentFrameId || null) : row.parent_frame_id,
+        updated_at: now,
+      });
+    }
+
+    if (rows.length > 0) {
+      await supabase.from("objects").upsert(rows, { onConflict: "id" });
+    }
+  }
+
+  return patches.length;
+}
 
 export async function findOpenCanvasSpace(boardId: string, reqWidth: number, reqHeight: number, startX = 100, startY = 100): Promise<{ x: number, y: number }> {
   const supabase = getSupabaseAdmin();

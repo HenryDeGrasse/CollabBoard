@@ -287,6 +287,7 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 9. To add items inside an existing frame or column, ALWAYS use bulk_create_objects with the parentFrameId. It will automatically calculate the correct x/y coordinates inside the frame, so you don't need to guess the startX/startY.
 10. When no explicit position is requested, place new objects near the CENTER of the user's current viewport (provided below), NOT at (100, 100). Only use (100, 100) when the board is empty and the user is at the origin.
 11. For wireframes, use the createWireframe tool. For mind maps, use createMindMap. For flowcharts, use createFlowchart. These handle layout deterministically.
+12. When the user says "reorganize", "convert", "turn into", or "rearrange" existing objects into a layout, you MUST: (a) call read_board_state or search_objects to get the IDs of the existing objects, then (b) call the appropriate template tool (createMindMap, createFlowchart, createColumnLayout, createQuadrant) with the sourceObjectIds / sourceIds / quadrantSourceIds parameter, passing in those IDs. This REPOSITIONS existing objects instead of creating duplicates. NEVER create new objects and leave the originals behind.
 
 ## Examples of correct tool usage
 
@@ -314,7 +315,14 @@ createMindMap({"centerTopic":"Machine Learning","branches":[{"label":"Supervised
 ### Example 5: "Make a flowchart for user registration"
 \`\`\`
 createFlowchart({"title":"User Registration","direction":"top-to-bottom","steps":[{"label":"Start","type":"start"},{"label":"Enter Email","type":"process"},{"label":"Valid Email?","type":"decision","branches":[{"label":"No","targetStepIndex":1}]},{"label":"Create Account","type":"process"},{"label":"Send Confirmation","type":"process"},{"label":"Done","type":"end"}]})
-\`\`\``;
+\`\`\`
+
+### Example 6: "Reorganize everything on this board into a mind map"
+First call read_board_state to get existing object IDs, then:
+\`\`\`
+createMindMap({"centerTopic":"Board Overview","sourceObjectIds":["id1","id2","id3","id4","id5"]})
+\`\`\`
+This moves the existing objects into a radial mind map layout with connectors — no new objects are created, no originals are left behind.`;
 
 export interface AgentStreamEvent {
   type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";
