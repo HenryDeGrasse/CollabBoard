@@ -959,6 +959,7 @@ export async function executeTool(
         updated_at: now,
       }));
 
+      // Update DB
       const { data, error } = await supabase
         .from("objects")
         .insert(rows)
@@ -968,11 +969,19 @@ export async function executeTool(
         return { error: error.message };
       }
 
+      // Automatically fit frames if a parent frame was provided
+      if (parentFrameId) {
+        // Run the generic fit_frames_to_contents tool with no IDs passed,
+        // so it recursively finds all frames and fits them inside out.
+        // This ensures both the inner column and the master outer frame resize.
+        await executeTool("fit_frames_to_contents", { padding: 30 }, boardId, userId, context, openaiApiKey);
+      }
+
       const createdIds = (data || []).map((r: any) => r.id);
       return {
         created: createdIds.length,
         ids: createdIds,
-        message: `Bulk-created ${createdIds.length} ${objType} object(s)`,
+        message: `Bulk-created ${createdIds.length} ${objType} object(s)${parentFrameId ? ' and resized frames' : ''}`,
       };
     }
 
