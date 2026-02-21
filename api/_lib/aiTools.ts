@@ -758,7 +758,8 @@ const HEX_TO_COLOR_NAME: Record<string, string> = Object.fromEntries(
 
 /** Resolve a user-supplied color string to a hex code. */
 function resolveColor(input: string): string | null {
-  const lower = input.trim().toLowerCase();
+  const cleanedInput = input.replace(/\s*\(.*?\)\s*$/, '');
+  const lower = cleanedInput.trim().toLowerCase();
   if (lower.startsWith("#")) return lower; // already hex
   return COLOR_NAME_TO_HEX[lower] ?? null;
 }
@@ -2483,26 +2484,46 @@ export async function executeTool(
 
           const idsForBranch: string[] = sourceMap.get(branch.label) || [];
           if (idsForBranch.length > 0) {
-            const subAngleSpread = Math.PI / (n > 2 ? n : 3);
-            for (let j = 0; j < idsForBranch.length; j++) {
-              const objId = idsForBranch[j];
-              const obj = objMap.get(objId);
-              if (!obj) continue;
+            const subAngleSpread = (2 * Math.PI / Math.max(n, 2)) * 0.6;
+            let currentLayerRadius = outerRadius;
+            let remainingIds = [...idsForBranch];
+            const layers: string[][] = [];
 
-              const subAngleOffset = (j - (idsForBranch.length - 1) / 2) * (subAngleSpread / Math.max(idsForBranch.length, 1));
-              const subAngle = angle + subAngleOffset;
-              const sx = cx + Math.round(outerRadius * Math.cos(subAngle)) - Math.round((obj.width || 150) / 2);
-              const sy = cy + Math.round(outerRadius * Math.sin(subAngle)) - Math.round((obj.height || 150) / 2);
+            while (remainingIds.length > 0) {
+              const availableArcLength = currentLayerRadius * subAngleSpread;
+              const maxItems = Math.max(1, Math.floor(availableArcLength / 180) + 1);
+              layers.push(remainingIds.slice(0, maxItems));
+              remainingIds = remainingIds.slice(maxItems);
+              currentLayerRadius += 220;
+            }
 
-              patches.push({ id: objId, x: sx, y: sy, parentFrameId: null });
-              allPositions.push({ x: sx, y: sy, width: obj.width || 150, height: obj.height || 150 });
+            for (let l = 0; l < layers.length; l++) {
+              const layerIds = layers[l];
+              const layerRadius = outerRadius + l * 220;
+              const spread = Math.min(subAngleSpread, (layerIds.length * 180) / layerRadius);
 
-              connectorRows.push({
-                board_id: boardId,
-                from_id: bData.id, to_id: objId,
-                style: "arrow", color: null, stroke_width: null,
-                from_point: null, to_point: null,
-              });
+              for (let k = 0; k < layerIds.length; k++) {
+                const objId = layerIds[k];
+                const obj = objMap.get(objId);
+                if (!obj) continue;
+
+                const subAngleOffset = layerIds.length > 1 
+                  ? (k - (layerIds.length - 1) / 2) * (spread / (layerIds.length - 1))
+                  : 0;
+                const subAngle = angle + subAngleOffset;
+                const sx = cx + Math.round(layerRadius * Math.cos(subAngle)) - Math.round((obj.width || 150) / 2);
+                const sy = cy + Math.round(layerRadius * Math.sin(subAngle)) - Math.round((obj.height || 150) / 2);
+
+                patches.push({ id: objId, x: sx, y: sy, parentFrameId: null });
+                allPositions.push({ x: sx, y: sy, width: obj.width || 150, height: obj.height || 150 });
+
+                connectorRows.push({
+                  board_id: boardId,
+                  from_id: bData.id, to_id: objId,
+                  style: "arrow", color: null, stroke_width: null,
+                  from_point: null, to_point: null,
+                });
+              }
             }
           }
         }
@@ -2593,35 +2614,55 @@ export async function executeTool(
 
         const children: string[] = Array.isArray(branch.children) ? branch.children : [];
         if (children.length > 0) {
-          const subAngleSpread = Math.PI / (n > 2 ? n : 3);
-          for (let j = 0; j < children.length; j++) {
-            const subAngleOffset = (j - (children.length - 1) / 2) * (subAngleSpread / Math.max(children.length, 1));
-            const subAngle = angle + subAngleOffset;
-            const sx = cx + Math.round(outerRadius * Math.cos(subAngle)) - subW / 2;
-            const sy = cy + Math.round(outerRadius * Math.sin(subAngle)) - subH / 2;
+          const subAngleSpread = (2 * Math.PI / Math.max(n, 2)) * 0.6;
+          let currentLayerRadius = outerRadius;
+          let remainingTexts = [...children];
+          const layers: string[][] = [];
 
-            const { data: sData, error: sErr } = await supabase
-              .from("objects")
-              .insert({
-                board_id: boardId, type: "sticky",
-                x: sx, y: sy, width: subW, height: subH,
-                color, text: children[j] || "",
-                rotation: 0, z_index: zIndex++,
-                created_by: userId, created_at: now, updated_at: now,
-              })
-              .select("id")
-              .single();
+          while (remainingTexts.length > 0) {
+            const availableArcLength = currentLayerRadius * subAngleSpread;
+            const maxItems = Math.max(1, Math.floor(availableArcLength / 180) + 1);
+            layers.push(remainingTexts.slice(0, maxItems));
+            remainingTexts = remainingTexts.slice(maxItems);
+            currentLayerRadius += 220;
+          }
 
-            if (sErr || !sData) continue;
-            totalCreated++;
-            allPositions.push({ x: sx, y: sy, width: subW, height: subH });
+          for (let l = 0; l < layers.length; l++) {
+            const layerTexts = layers[l];
+            const layerRadius = outerRadius + l * 220;
+            const spread = Math.min(subAngleSpread, (layerTexts.length * 180) / layerRadius);
 
-            connectorRows.push({
-              board_id: boardId,
-              from_id: bData.id, to_id: sData.id,
-              style: "arrow", color: null, stroke_width: null,
-              from_point: null, to_point: null,
-            });
+            for (let k = 0; k < layerTexts.length; k++) {
+              const subAngleOffset = layerTexts.length > 1 
+                ? (k - (layerTexts.length - 1) / 2) * (spread / (layerTexts.length - 1))
+                : 0;
+              const subAngle = angle + subAngleOffset;
+              const sx = cx + Math.round(layerRadius * Math.cos(subAngle)) - subW / 2;
+              const sy = cy + Math.round(layerRadius * Math.sin(subAngle)) - subH / 2;
+
+              const { data: sData, error: sErr } = await supabase
+                .from("objects")
+                .insert({
+                  board_id: boardId, type: "sticky",
+                  x: sx, y: sy, width: subW, height: subH,
+                  color, text: layerTexts[k] || "",
+                  rotation: 0, z_index: zIndex++,
+                  created_by: userId, created_at: now, updated_at: now,
+                })
+                .select("id")
+                .single();
+
+              if (sErr || !sData) continue;
+              totalCreated++;
+              allPositions.push({ x: sx, y: sy, width: subW, height: subH });
+
+              connectorRows.push({
+                board_id: boardId,
+                from_id: bData.id, to_id: sData.id,
+                style: "arrow", color: null, stroke_width: null,
+                from_point: null, to_point: null,
+              });
+            }
           }
         }
       }
