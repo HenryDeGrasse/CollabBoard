@@ -20,7 +20,6 @@ interface FrameProps {
 
 const MIN_WIDTH = 200;
 const MIN_HEIGHT = 150;
-const CORNER_RADIUS = 8;
 
 export const Frame = React.memo(function Frame({
   object,

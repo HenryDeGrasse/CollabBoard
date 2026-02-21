@@ -607,8 +607,6 @@ function BoardActionMenu(props: BoardActionMenuProps) {
 }
 
 function BoardCard({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardId, formatDate }: BoardItemProps) {
-  const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const hue1 = hash % 360;
   const thumbnail = localStorage.getItem(`collabboard-thumb-${meta.id}`);
 
   return (
@@ -662,8 +660,6 @@ function BoardCard({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardI
 }
 
 function BoardRow({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardId, formatDate }: BoardItemProps) {
-  const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-
   return (
     <div className="group flex items-center gap-4 px-6 py-4 bg-white border border-newsprint-fg sharp-corners hover:hard-shadow-hover transition-all duration-200 cursor-pointer" onClick={onOpen}>
       <div className="w-12 h-12 shrink-0 border border-newsprint-fg flex items-center justify-center font-serif text-xl font-bold bg-neutral-100">

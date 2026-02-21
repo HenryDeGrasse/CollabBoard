@@ -20,8 +20,6 @@ interface ToolbarProps {
   activeColor: string;
   activeStrokeWidth: number;
   selectedCount: number;
-  /** IDs of selected objects (for deriving sticky vs shape color set) */
-  selectedObjectIds?: Set<string>;
   selectedColor: string;
   selectedStrokeWidth: number | null;
   /** Number of selected connectors */
@@ -185,7 +183,6 @@ export function Toolbar({
   activeColor,
   activeStrokeWidth,
   selectedCount,
-  selectedObjectIds,
   selectedColor,
   selectedStrokeWidth,
   selectedConnectorCount,
