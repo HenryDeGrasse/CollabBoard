@@ -29,9 +29,9 @@ describe("TextStylePanel", () => {
     expect(screen.getByText("24")).toBeTruthy();
   });
 
-  it('shows "Mix" when textSize is null', () => {
+  it('shows "MIX" when textSize is null', () => {
     renderPanel({ textSize: null });
-    expect(screen.getByText("Mix")).toBeTruthy();
+    expect(screen.getByText("MIX")).toBeTruthy();
   });
 
   it("calls onDecreaseTextSize when A- is clicked", async () => {
@@ -68,11 +68,11 @@ describe("TextStylePanel", () => {
     // Open color picker
     await user.click(screen.getByTitle("Text color"));
 
-    // Click a color option (e.g., red #EF4444)
-    const redBtn = screen.getByTitle("#EF4444");
+    // Click a color option (e.g., red #CC0000)
+    const redBtn = screen.getByTitle("#CC0000");
     await user.click(redBtn);
 
-    expect(onChangeTextColor).toHaveBeenCalledWith("#EF4444");
+    expect(onChangeTextColor).toHaveBeenCalledWith("#CC0000");
   });
 
   it("renders vertical alignment buttons", () => {

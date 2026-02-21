@@ -37,7 +37,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
                 color: {
                   type: "string",
                   description:
-                    "Hex color. Sticky colors: #FBBF24 (yellow), #F472B6 (pink), #3B82F6 (blue), #22C55E (green), #F97316 (orange), #A855F7 (purple). Shape colors: #EF4444 (red), #3B82F6 (blue), #22C55E (green), #9CA3AF (gray), #1F2937 (black). Frame default: #E5E7EB.",
+                    "Hex color. Sticky colors: #FAD84E (yellow), #F5A8C4 (pink), #7FC8E8 (blue), #9DD9A3 (green), #E5E5E0 (grey), #F9F9F7 (offwhite). Shape colors: #111111 (black), #CC0000 (red), #3B82F6 (blue), #404040 (darkgrey), #E5E5E0 (grey). Frame default: #F9F9F7.",
                 },
                 text: { type: "string", description: "Text content to display on the object" },
                 rotation: { type: "number", description: "Rotation in degrees (default: 0)" },
@@ -75,7 +75,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
           color: {
             type: "string",
             description:
-              "Hex color or color name for all objects. Sticky colors: #FBBF24 (yellow), #F472B6 (pink), #3B82F6 (blue), #22C55E (green), #F97316 (orange), #A855F7 (purple).",
+              "Hex color or color name for all objects. Sticky colors: #FAD84E (yellow), #F5A8C4 (pink), #7FC8E8 (blue), #9DD9A3 (green), #E5E5E0 (grey), #F9F9F7 (offwhite).",
           },
           layout: {
             type: "string",
@@ -238,8 +238,8 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
             type: "string",
             description:
               "Only delete objects with this color. Accepts a hex code OR a color name: " +
-              "yellow (#FBBF24), pink (#F472B6), blue (#3B82F6), green (#22C55E), " +
-              "orange (#F97316), purple (#A855F7), red (#EF4444), gray (#9CA3AF), black (#1F2937).",
+              "yellow (#FAD84E), pink (#F5A8C4), blue (#7FC8E8), green (#9DD9A3), " +
+              "grey (#E5E5E0), offwhite (#F9F9F7), red (#CC0000), black (#111111).",
           },
         },
       },
@@ -474,22 +474,22 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
   },
 ];
 
-// ─── Color name ↔ hex mapping ──────────────────────────────────
+// ─── Color name ↔ hex mapping (matches src/utils/colors.ts) ─────
 
 const COLOR_NAME_TO_HEX: Record<string, string> = {
-  yellow:  "#FBBF24",
-  pink:    "#F472B6",
-  blue:    "#3B82F6",
-  green:   "#22C55E",
-  orange:  "#F97316",
-  purple:  "#A855F7",
-  red:     "#EF4444",
-  gray:    "#9CA3AF",
-  grey:    "#9CA3AF",
-  black:   "#1F2937",
-  white:   "#FFFFFF",
-  "light gray": "#E5E7EB",
-  "light grey": "#E5E7EB",
+  yellow:   "#FAD84E",
+  pink:     "#F5A8C4",
+  blue:     "#7FC8E8",
+  green:    "#9DD9A3",
+  grey:     "#E5E5E0",
+  gray:     "#E5E5E0",
+  offwhite: "#F9F9F7",
+  red:      "#CC0000",
+  black:    "#111111",
+  darkgrey: "#404040",
+  white:    "#FFFFFF",
+  "light gray": "#E5E5E0",
+  "light grey": "#E5E5E0",
 };
 
 const HEX_TO_COLOR_NAME: Record<string, string> = Object.fromEntries(
@@ -511,11 +511,11 @@ export function colorLabel(hex: string): string {
 // ─── Defaults ──────────────────────────────────────────────────
 
 const TYPE_DEFAULTS: Record<string, { width: number; height: number; color: string }> = {
-  sticky: { width: 150, height: 150, color: "#FBBF24" },
-  rectangle: { width: 200, height: 150, color: "#3B82F6" },
-  circle: { width: 120, height: 120, color: "#22C55E" },
-  text: { width: 200, height: 50, color: "#1F2937" },
-  frame: { width: 400, height: 300, color: "#E5E7EB" },
+  sticky:    { width: 150, height: 150, color: "#FAD84E" },
+  rectangle: { width: 200, height: 150, color: "#111111" },
+  circle:    { width: 120, height: 120, color: "#111111" },
+  text:      { width: 200, height: 50, color: "#111111" },
+  frame:     { width: 400, height: 300, color: "#F9F9F7" },
 };
 
 const PATCH_BULK_CHUNK_SIZE = 200;

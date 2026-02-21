@@ -14,17 +14,14 @@ interface TextStylePanelProps {
 }
 
 const TEXT_COLOR_OPTIONS = [
-  "#111827",
-  "#374151",
-  "#6B7280",
-  "#FFFFFF",
-  "#EF4444",
-  "#F97316",
-  "#FBBF24",
-  "#22C55E",
-  "#3B82F6",
-  "#A855F7",
-  "#EC4899",
+  "#111111", // Ink Black
+  "#404040", // Dark Grey
+  "#E5E5E0", // Muted Grey
+  "#F9F9F7", // Offwhite
+  "#CC0000", // Editorial Red
+  "#3B82F6", // Blue
+  "#22C55E", // Green
+  "#FBBF24", // Yellow
 ];
 
 const VALIGN_OPTIONS: { value: VAlign; icon: React.ReactNode; label: string }[] = [
@@ -59,42 +56,42 @@ export function TextStylePanel({
   return (
     // onMouseDown preventDefault keeps focus in the text-editing textarea
     <div className="fixed left-0 top-1/2 -translate-y-1/2 z-50" onMouseDown={(e) => e.preventDefault()}>
-      <div className="bg-white/95 backdrop-blur rounded-r-xl border border-l-0 border-gray-200 shadow-md p-1.5 flex flex-col items-center gap-1.5">
+      <div className="bg-newsprint-bg border-2 border-l-0 border-newsprint-fg sharp-corners shadow-[4px_4px_0px_0px_#111111] p-2 flex flex-col items-center gap-2">
 
         <button
           onClick={onDecreaseTextSize}
-          className="w-8 h-8 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-100 transition"
+          className="w-8 h-8 sharp-corners text-xs font-bold font-mono text-newsprint-fg hover:bg-neutral-200 border border-transparent hover:border-newsprint-fg transition-colors"
           title="Decrease text size"
         >
           A-
         </button>
 
         <div
-          className="w-8 h-7 rounded-md bg-gray-50 border border-gray-200 text-[10px] text-gray-600 flex items-center justify-center"
+          className="w-8 h-8 sharp-corners bg-white border border-newsprint-fg text-[10px] font-mono font-bold text-newsprint-fg flex items-center justify-center"
           title={textSize ? `Current text size: ${textSize}px` : "Mixed text sizes"}
         >
-          {textSize ? `${textSize}` : "Mix"}
+          {textSize ? `${textSize}` : "MIX"}
         </div>
 
         <button
           onClick={onIncreaseTextSize}
-          className="w-8 h-8 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-100 transition"
+          className="w-8 h-8 sharp-corners text-xs font-bold font-mono text-newsprint-fg hover:bg-neutral-200 border border-transparent hover:border-newsprint-fg transition-colors"
           title="Increase text size"
         >
           A+
         </button>
 
-        <div ref={colorRef} className="relative mt-0.5">
+        <div ref={colorRef} className="relative mt-1 border-t-2 border-newsprint-fg pt-2">
           <button
             onClick={() => setColorOpen((v) => !v)}
-            className="w-8 h-8 rounded-lg border border-gray-300 hover:border-gray-500 transition"
+            className="w-8 h-8 sharp-corners border-2 border-newsprint-fg hover:bg-neutral-200 transition-colors"
             style={{ backgroundColor: textColor }}
             title="Text color"
           />
 
           {colorOpen && (
-            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-[70] w-[144px]">
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider px-1 mb-1.5">
+            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 bg-newsprint-bg sharp-corners border-2 border-newsprint-fg shadow-[4px_4px_0px_0px_#111111] p-3 z-[70] w-[144px]">
+              <p className="text-[10px] text-newsprint-fg font-mono font-bold uppercase tracking-widest px-1 mb-2">
                 Text color
               </p>
               <div className="grid grid-cols-6 gap-1.5">
@@ -105,10 +102,10 @@ export function TextStylePanel({
                       onChangeTextColor(color);
                       setColorOpen(false);
                     }}
-                    className={`w-5 h-5 rounded-md border-2 transition-transform hover:scale-110 ${
+                    className={`w-5 h-5 sharp-corners border-2 transition-transform hover:scale-110 ${
                       textColor === color
-                        ? "border-gray-800 scale-110 ring-1 ring-gray-800 ring-offset-1"
-                        : "border-gray-200 hover:border-gray-400"
+                        ? "border-newsprint-fg scale-110 shadow-[2px_2px_0px_0px_#111111]"
+                        : "border-transparent hover:border-newsprint-fg"
                     }`}
                     style={{ backgroundColor: color }}
                     title={color}
@@ -120,15 +117,15 @@ export function TextStylePanel({
         </div>
 
         {/* Vertical alignment */}
-        <div className="flex flex-col gap-0.5 mt-0.5 border-t border-gray-200 pt-1.5">
+        <div className="flex flex-col gap-1 mt-1 border-t-2 border-newsprint-fg pt-2">
           {VALIGN_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               onClick={() => onChangeTextVerticalAlign(opt.value)}
-              className={`w-8 h-7 rounded-md flex items-center justify-center transition ${
+              className={`w-8 h-8 sharp-corners flex items-center justify-center transition-colors border border-transparent ${
                 textVerticalAlign === opt.value
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                  ? "bg-newsprint-fg text-newsprint-bg border-newsprint-fg"
+                  : "text-newsprint-fg hover:bg-neutral-200 hover:border-newsprint-fg"
               }`}
               title={`Align ${opt.label}`}
             >

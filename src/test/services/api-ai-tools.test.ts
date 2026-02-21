@@ -59,12 +59,12 @@ describe("TOOL_DEFINITIONS", () => {
 // ── colorLabel ───────────────────────────────────────────────
 
 describe("colorLabel", () => {
-  it('returns "purple" for "#A855F7"', () => {
-    expect(colorLabel("#A855F7")).toBe("purple");
+  it('returns "pink" for "#F5A8C4"', () => {
+    expect(colorLabel("#F5A8C4")).toBe("pink");
   });
 
-  it('returns "yellow" for "#FBBF24"', () => {
-    expect(colorLabel("#FBBF24")).toBe("yellow");
+  it('returns "yellow" for "#FAD84E"', () => {
+    expect(colorLabel("#FAD84E")).toBe("yellow");
   });
 
   it("returns the hex string when no name matches", () => {
@@ -263,7 +263,7 @@ describe("executeTool", () => {
 
     const result: any = await executeTool(
       "delete_objects_by_filter",
-      { color: "purple" },
+      { color: "yellow" },
       BOARD_ID,
       USER_ID,
     );
@@ -320,7 +320,7 @@ describe("fetchBoardState", () => {
         y: 0,
         width: 150,
         height: 150,
-        color: "#A855F7",
+        color: "#FAD84E",
         text: "Note",
         rotation: 0,
         z_index: 1,
@@ -358,8 +358,8 @@ describe("fetchBoardState", () => {
 
     expect(result.objectCount).toBe(1);
     expect(result.connectorCount).toBe(1);
-    expect(result.objects[0].color).toContain("purple");
-    expect(result.objects[0].color).toContain("#A855F7");
+    expect(result.objects[0].color).toContain("yellow");
+    expect(result.objects[0].color).toContain("#FAD84E");
     expect(result.connectors[0]).toEqual(
       expect.objectContaining({
         id: "conn-1",

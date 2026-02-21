@@ -27,12 +27,12 @@ import {
   Lock,
 } from "lucide-react";
 
-// Inline logo matching the login page — two cursor arrows (navy + mint)
+// Inline logo matching the login page — Newspaper theme
 function CollabBoardLogo({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden>
-      <path d="M3 3L3 21L13 15L3 3Z"   fill="#0F2044" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M11 9L11 27L21 21L11 9Z" fill="#10B981" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
+      <rect x="2" y="2" width="12" height="28" fill="#111111" />
+      <rect x="18" y="2" width="12" height="28" fill="#111111" />
     </svg>
   );
 }
@@ -211,71 +211,69 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
+    if (diffMins < 1) return "JUST NOW";
+    if (diffMins < 60) return `${diffMins}M AGO`;
+    if (diffHours < 24) return `${diffHours}H AGO`;
+    if (diffDays < 7) return `${diffDays}D AGO`;
+    return date.toLocaleDateString().toUpperCase();
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
+    <div className="min-h-screen bg-newsprint-bg newsprint-texture">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "#0F2044" }}>
-            <CollabBoardLogo size={28} />
+      <header className="bg-newsprint-bg border-b-2 border-newsprint-fg sticky top-0 z-20">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <h1 className="text-3xl font-black font-serif flex items-center gap-3 text-newsprint-fg uppercase tracking-tighter">
+            <CollabBoardLogo size={32} />
             CollabBoard
           </h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-500">
-              Hello, <span className="font-medium text-gray-700">{displayName}</span>
+          <div className="flex items-center gap-6">
+            <span className="text-xs uppercase tracking-widest font-mono text-neutral-600">
+              User: <span className="font-bold text-newsprint-fg">{displayName}</span>
             </span>
             <button
               onClick={signOut}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs uppercase tracking-widest font-bold text-newsprint-fg border border-transparent hover:border-newsprint-fg hover:bg-neutral-100 transition-colors duration-200 sharp-corners"
             >
-              <LogOut size={14} />
+              <LogOut size={14} strokeWidth={1.5} />
               Sign out
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Action bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-3 flex-1 w-full sm:w-auto">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12 border-b-4 border-newsprint-fg pb-8">
+          <div className="flex items-center gap-4 flex-1 w-full md:w-auto">
             <div className="relative flex-1 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={16} strokeWidth={1.5} className="absolute left-3 top-1/2 -translate-y-1/2 text-newsprint-fg" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search boards..."
-                className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition shadow-sm"
+                placeholder="SEARCH BOARDS..."
+                className="w-full pl-9 pr-4 py-2 bg-transparent border-b-2 border-newsprint-fg sharp-corners text-sm font-mono text-newsprint-fg focus-visible:bg-neutral-100 focus-visible:outline-none transition-colors placeholder:text-neutral-500"
               />
             </div>
-            <div className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <div className="flex items-center bg-transparent border border-newsprint-fg sharp-corners overflow-hidden">
               <button
                 onClick={() => setViewMode("grid")}
-                className={`p-2 transition ${viewMode === "grid" ? "text-white" : "text-gray-400 hover:text-gray-600"}`}
-                style={viewMode === "grid" ? { backgroundColor: "#0F2044" } : {}}
+                className={`p-2 transition-colors duration-200 sharp-corners ${viewMode === "grid" ? "bg-newsprint-fg text-newsprint-bg" : "text-newsprint-fg hover:bg-neutral-200"}`}
               >
-                <LayoutGrid size={16} />
+                <LayoutGrid size={16} strokeWidth={1.5} />
               </button>
               <button
                 onClick={() => setViewMode("list")}
-                className={`p-2 transition ${viewMode === "list" ? "text-white" : "text-gray-400 hover:text-gray-600"}`}
-                style={viewMode === "list" ? { backgroundColor: "#0F2044" } : {}}
+                className={`p-2 transition-colors duration-200 sharp-corners ${viewMode === "list" ? "bg-newsprint-fg text-newsprint-bg" : "text-newsprint-fg hover:bg-neutral-200"}`}
               >
-                <List size={16} />
+                <List size={16} strokeWidth={1.5} />
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex gap-2">
+          <div className="flex items-center gap-4 w-full md:w-auto">
+            <div className="flex gap-2 w-full md:w-auto">
               <input
                 id="join-board-id"
                 name="boardId"
@@ -283,15 +281,22 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
                 value={joinBoardId}
                 onChange={(e) => setJoinBoardId(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleJoinBoard()}
-                placeholder="Board ID"
-                className="w-32 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition shadow-sm"
+                placeholder="BOARD ID"
+                className="w-32 md:w-40 px-3 py-2 bg-transparent border-b-2 border-newsprint-fg sharp-corners text-sm font-mono text-newsprint-fg focus-visible:bg-neutral-100 focus-visible:outline-none transition-colors placeholder:text-neutral-500"
               />
-              <button onClick={handleJoinBoard} disabled={!joinBoardId.trim()} className="px-4 py-2.5 text-white rounded-xl text-sm font-medium transition disabled:opacity-50 shadow-sm" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>
+              <button 
+                onClick={handleJoinBoard} 
+                disabled={!joinBoardId.trim()} 
+                className="px-4 py-2 border border-newsprint-fg bg-transparent hover:bg-newsprint-fg hover:text-newsprint-bg text-newsprint-fg uppercase tracking-widest text-xs font-bold sharp-corners transition-all duration-200 disabled:opacity-50"
+              >
                 Join
               </button>
             </div>
-            <button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-medium transition shadow-md hover:shadow-lg" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>
-              <Plus size={16} />
+            <button 
+              onClick={() => setShowCreateModal(true)} 
+              className="flex items-center gap-2 px-6 py-2.5 bg-newsprint-fg text-newsprint-bg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg uppercase tracking-widest text-xs font-bold sharp-corners transition-all duration-200 w-full md:w-auto justify-center"
+            >
+              <Plus size={16} strokeWidth={1.5} />
               New Board
             </button>
           </div>
@@ -299,34 +304,37 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
 
         {loading && (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin w-8 h-8 border-4 border-slate-200 border-t-[#0F2044] rounded-full" />
+            <div className="animate-spin w-8 h-8 border-4 border-newsprint-muted border-t-newsprint-fg rounded-full" />
           </div>
         )}
 
         {!loading && filteredBoards.length === 0 && !searchQuery && (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: "rgba(15,32,68,0.06)" }}>
+          <div className="text-center py-24 border border-newsprint-fg bg-white p-12 max-w-2xl mx-auto sharp-corners hard-shadow-hover">
+            <div className="w-16 h-16 border-2 border-newsprint-fg flex items-center justify-center mx-auto mb-6 sharp-corners bg-neutral-100">
               <CollabBoardLogo size={34} />
             </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: "#0F2044" }}>No boards yet</h2>
-            <p className="text-gray-500 mb-6">Create your first collaborative whiteboard to get started.</p>
-            <button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 px-6 py-3 text-white rounded-xl font-medium transition shadow-md" style={{ backgroundColor: "#0F2044" }} onMouseEnter={e => (e.currentTarget.style.opacity="0.85")} onMouseLeave={e => (e.currentTarget.style.opacity="1")}>
-              <Plus size={18} />
+            <h2 className="text-3xl font-black font-serif mb-4 text-newsprint-fg">NO BOARDS YET</h2>
+            <p className="text-newsprint-fg font-body text-lg mb-8">Create your first collaborative whiteboard to share ideas with your team.</p>
+            <button 
+              onClick={() => setShowCreateModal(true)} 
+              className="inline-flex items-center gap-2 px-8 py-4 bg-newsprint-fg text-newsprint-bg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg uppercase tracking-widest text-sm font-bold sharp-corners transition-all duration-200"
+            >
+              <Plus size={18} strokeWidth={1.5} />
               Create Your First Board
             </button>
           </div>
         )}
 
         {!loading && filteredBoards.length === 0 && searchQuery && (
-          <div className="text-center py-20">
-            <p className="text-gray-500">No boards matching &quot;{searchQuery}&quot;</p>
+          <div className="text-center py-20 border border-newsprint-fg sharp-corners bg-white">
+            <p className="text-newsprint-fg font-mono uppercase tracking-widest">No matching boards found for "{searchQuery}"</p>
           </div>
         )}
 
         {myBoards.length > 0 && (
-          <section className="mb-10">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">My Boards ({myBoards.length})</h2>
-            <div className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-2"}>
+          <section className="mb-16">
+            <h2 className="text-2xl font-black font-serif border-b-2 border-newsprint-fg pb-2 mb-6 uppercase tracking-tighter">My Boards <span className="font-mono text-sm align-top ml-2">({myBoards.length})</span></h2>
+            <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" : "space-y-4"}>
               {myBoards.map((meta) => (
                 viewMode === "grid" ? (
                   <BoardCard key={meta.id} meta={meta} isOwner
@@ -349,9 +357,9 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
         )}
 
         {sharedBoards.length > 0 && (
-          <section className="mb-10">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">Shared with Me ({sharedBoards.length})</h2>
-            <div className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-2"}>
+          <section className="mb-16">
+            <h2 className="text-2xl font-black font-serif border-b-2 border-newsprint-fg pb-2 mb-6 uppercase tracking-tighter">Shared With Me <span className="font-mono text-sm align-top ml-2">({sharedBoards.length})</span></h2>
+            <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" : "space-y-4"}>
               {sharedBoards.map((meta) => (
                 viewMode === "grid" ? (
                   <BoardCard key={meta.id} meta={meta} isOwner={false}
@@ -374,66 +382,63 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
 
       {/* Create Board Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowCreateModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Create New Board</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)}>
+          <div className="bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[8px_8px_0px_0px_#111111] w-full max-w-md mx-4 p-8" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-2xl font-black font-serif text-newsprint-fg mb-6 uppercase">New Board</h2>
             <input
               autoFocus
               type="text"
               value={newBoardTitle}
               onChange={(e) => setNewBoardTitle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreateBoard()}
-              placeholder="Board title (optional)"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none transition mb-4"
+              placeholder="HEADLINE (OPTIONAL)"
+              className="w-full px-4 py-3 border-b-2 border-newsprint-fg bg-transparent text-sm font-mono focus-visible:bg-neutral-100 focus-visible:outline-none outline-none transition mb-8"
             />
 
             {/* Visibility picker */}
-            <div className="flex gap-2 mb-5">
+            <div className="flex gap-4 mb-8">
               <button
                 onClick={() => setNewBoardVisibility("public")}
-                className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm transition ${
+                className={`flex-1 flex flex-col items-center justify-center gap-2 px-3 py-4 border-2 sharp-corners transition-colors duration-200 ${
                   newBoardVisibility === "public"
-                    ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                    : "border-gray-200 text-gray-500 hover:border-gray-300"
+                    ? "border-newsprint-fg bg-newsprint-fg text-newsprint-bg"
+                    : "border-newsprint-muted text-newsprint-fg hover:border-newsprint-fg"
                 }`}
               >
-                <Globe size={14} className="shrink-0" />
-                <div className="text-left">
-                  <div className="font-medium text-xs">Public</div>
-                  <div className="text-[10px] opacity-70">Anyone with link</div>
+                <Globe size={20} strokeWidth={1.5} />
+                <div className="text-center">
+                  <div className="font-bold text-xs uppercase tracking-widest">Public</div>
+                  <div className={`text-[10px] uppercase mt-1 ${newBoardVisibility === 'public' ? 'text-newsprint-bg opacity-80' : 'text-neutral-500'}`}>Anyone with link</div>
                 </div>
               </button>
               <button
                 onClick={() => setNewBoardVisibility("private")}
-                className={`flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm transition ${
+                className={`flex-1 flex flex-col items-center justify-center gap-2 px-3 py-4 border-2 sharp-corners transition-colors duration-200 ${
                   newBoardVisibility === "private"
-                    ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-                    : "border-gray-200 text-gray-500 hover:border-gray-300"
+                    ? "border-newsprint-fg bg-newsprint-fg text-newsprint-bg"
+                    : "border-newsprint-muted text-newsprint-fg hover:border-newsprint-fg"
                 }`}
               >
-                <Lock size={14} className="shrink-0" />
-                <div className="text-left">
-                  <div className="font-medium text-xs">Private</div>
-                  <div className="text-[10px] opacity-70">Invite only</div>
+                <Lock size={20} strokeWidth={1.5} />
+                <div className="text-center">
+                  <div className="font-bold text-xs uppercase tracking-widest">Private</div>
+                  <div className={`text-[10px] uppercase mt-1 ${newBoardVisibility === 'private' ? 'text-newsprint-bg opacity-80' : 'text-neutral-500'}`}>Invite only</div>
                 </div>
               </button>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <button
                 onClick={() => { setShowCreateModal(false); setNewBoardVisibility("public"); }}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition"
+                className="flex-1 px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-fg border border-newsprint-fg bg-transparent hover:bg-neutral-200 sharp-corners transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateBoard}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-xl transition shadow-md"
-                style={{ backgroundColor: "#0F2044" }}
-                onMouseEnter={e => (e.currentTarget.style.opacity="0.85")}
-                onMouseLeave={e => (e.currentTarget.style.opacity="1")}
+                className="flex-1 px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-bg bg-newsprint-fg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg sharp-corners transition"
               >
-                Create
+                Publish
               </button>
             </div>
           </div>
@@ -443,33 +448,33 @@ export function HomePage({ onNavigateToBoard }: HomePageProps) {
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.type === "error" ? "bg-red-600" : "bg-slate-700"}`}
+          className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 sharp-corners border-2 shadow-[4px_4px_0px_0px_#111111] text-sm font-mono uppercase tracking-widest font-bold ${toast.type === "error" ? "bg-newsprint-accent text-white border-newsprint-fg" : "bg-newsprint-bg text-newsprint-fg border-newsprint-fg"}`}
           style={{ animation: "toastIn 0.2s ease-out" }}
         >
           <span>{toast.message}</span>
-          <button onClick={() => setToast(null)} className="ml-1 opacity-70 hover:opacity-100 transition leading-none">✕</button>
+          <button onClick={() => setToast(null)} className="ml-2 opacity-70 hover:opacity-100 transition leading-none text-lg border border-transparent hover:border-current px-1">✕</button>
           <style>{`@keyframes toastIn { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }`}</style>
         </div>
       )}
 
       {/* Delete / Leave Confirmation */}
       {pendingBoardAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setPendingBoardAction(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setPendingBoardAction(null)}>
+          <div className="bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[8px_8px_0px_0px_#111111] w-full max-w-sm mx-4 p-8" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-2xl font-black font-serif text-newsprint-fg mb-4 uppercase">
               {pendingBoardAction.isOwner ? "Delete Board?" : "Leave Board?"}
             </h2>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm font-body text-newsprint-fg mb-8 leading-relaxed">
               {pendingBoardAction.isOwner
-                ? "This board will be removed from your dashboard."
-                : "You will be removed from this board, but it will remain for other collaborators."}
+                ? "This board will be permanently removed."
+                : "You will be removed from this board, but it will remain available for others."}
             </p>
-            <div className="flex gap-3">
-              <button onClick={() => setPendingBoardAction(null)} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition">Cancel</button>
+            <div className="flex gap-4">
+              <button onClick={() => setPendingBoardAction(null)} className="flex-1 px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-fg border border-newsprint-fg bg-transparent hover:bg-neutral-200 sharp-corners transition">Cancel</button>
               {pendingBoardAction.isOwner ? (
-                <button onClick={() => handleDeleteBoard(pendingBoardAction.boardId)} className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition shadow-md">Delete</button>
+                <button onClick={() => handleDeleteBoard(pendingBoardAction.boardId)} className="flex-1 px-4 py-3 text-xs uppercase tracking-widest font-bold text-white bg-newsprint-accent border border-newsprint-fg hover:bg-red-800 sharp-corners transition">Delete</button>
               ) : (
-                <button onClick={() => handleLeaveBoard(pendingBoardAction.boardId)} className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-amber-600 rounded-xl hover:bg-amber-700 transition shadow-md">Leave</button>
+                <button onClick={() => handleLeaveBoard(pendingBoardAction.boardId)} className="flex-1 px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-bg bg-newsprint-fg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg sharp-corners transition">Leave</button>
               )}
             </div>
           </div>
@@ -496,18 +501,10 @@ interface BoardActionMenuProps {
   isOwner: boolean;
   onOpen: () => void;
   onDelete?: () => void;
-  /** Owner-only: copies the board's invite link to the clipboard. */
   onCopyInvite?: () => void;
-  /** Copies the board ID to the clipboard (available to all members). */
   onCopyBoardId?: () => void;
 }
 
-/**
- * Board action menu rendered via a portal so it is never clipped by a parent
- * `overflow-hidden` container (e.g. the card thumbnail wrapper).
- *
- * Exported as `BoardActionMenuTest` for unit-test access.
- */
 export function BoardActionMenuTest({
   title,
   isOwner,
@@ -520,7 +517,6 @@ export function BoardActionMenuTest({
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Close on any window click
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
@@ -548,55 +544,43 @@ export function BoardActionMenuTest({
           data-testid="board-action-dropdown"
           onClick={(e) => e.stopPropagation()}
           style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
-          className="w-48 bg-white border border-gray-200 rounded-xl shadow-lg p-1"
+          className="w-56 bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[4px_4px_0px_0px_#111111] p-0"
         >
-          {/* Primary action */}
           <button
             onClick={(e) => { e.stopPropagation(); close(); onOpen(); }}
-            className="w-full text-left px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
+            className="w-full text-left px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg flex items-center gap-3 transition-colors border-b border-newsprint-muted"
           >
-            <ExternalLink size={13} /> Open
+            <ExternalLink size={14} strokeWidth={1.5} /> Open
           </button>
 
-          {/* Share actions */}
           {(isOwner ? onCopyInvite : null) && (
-            <>
-              <div className="my-1 border-t border-gray-100" />
-              <button
-                onClick={(e) => { e.stopPropagation(); close(); onCopyInvite!(); }}
-                className="w-full text-left px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
-              >
-                <Link2 size={13} /> Copy invite link
-              </button>
-            </>
+            <button
+              onClick={(e) => { e.stopPropagation(); close(); onCopyInvite!(); }}
+              className="w-full text-left px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg flex items-center gap-3 transition-colors border-b border-newsprint-muted"
+            >
+              <Link2 size={14} strokeWidth={1.5} /> Copy Invite Link
+            </button>
           )}
           {onCopyBoardId && (
-            <>
-              {!isOwner && <div className="my-1 border-t border-gray-100" />}
-              <button
-                onClick={(e) => { e.stopPropagation(); close(); onCopyBoardId(); }}
-                className="w-full text-left px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg flex items-center gap-2"
-              >
-                <Copy size={13} /> Copy board ID
-              </button>
-            </>
+            <button
+              onClick={(e) => { e.stopPropagation(); close(); onCopyBoardId(); }}
+              className="w-full text-left px-4 py-3 text-xs uppercase tracking-widest font-bold text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg flex items-center gap-3 transition-colors border-b border-newsprint-muted"
+            >
+              <Copy size={14} strokeWidth={1.5} /> Copy ID
+            </button>
           )}
 
-          {/* Destructive action */}
           {onDelete && (
-            <>
-              <div className="my-1 border-t border-gray-100" />
-              <button
-                aria-label={isOwner ? `Delete board ${title}` : `Leave board ${title}`}
-                onClick={(e) => { e.stopPropagation(); close(); onDelete(); }}
-                className={`w-full text-left px-2.5 py-2 text-sm rounded-lg flex items-center gap-2 ${
-                  isOwner ? "text-red-600 hover:bg-red-50" : "text-amber-700 hover:bg-amber-50"
-                }`}
-              >
-                {isOwner ? <Trash2 size={13} /> : <LogOut size={13} />}
-                {isOwner ? "Delete board" : "Leave board"}
-              </button>
-            </>
+            <button
+              aria-label={isOwner ? `Delete board ${title}` : `Leave board ${title}`}
+              onClick={(e) => { e.stopPropagation(); close(); onDelete(); }}
+              className={`w-full text-left px-4 py-3 text-xs uppercase tracking-widest font-bold flex items-center gap-3 transition-colors ${
+                isOwner ? "text-newsprint-accent hover:bg-newsprint-accent hover:text-white" : "text-newsprint-fg hover:bg-neutral-200"
+              }`}
+            >
+              {isOwner ? <Trash2 size={14} strokeWidth={1.5} /> : <LogOut size={14} strokeWidth={1.5} />}
+              {isOwner ? "Delete" : "Leave"}
+            </button>
           )}
         </div>,
         document.body
@@ -609,16 +593,15 @@ export function BoardActionMenuTest({
         ref={buttonRef}
         aria-label={`Board actions ${title}`}
         onClick={handleTrigger}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+        className="p-2 sharp-corners border border-transparent hover:border-newsprint-fg hover:bg-neutral-100 text-newsprint-fg transition-colors"
       >
-        <MoreHorizontal size={14} />
+        <MoreHorizontal size={16} strokeWidth={1.5} />
       </button>
       {dropdown}
     </div>
   );
 }
 
-// Internal alias kept for backward-compat with the card/row components below
 function BoardActionMenu(props: BoardActionMenuProps) {
   return <BoardActionMenuTest {...props} />;
 }
@@ -626,37 +609,42 @@ function BoardActionMenu(props: BoardActionMenuProps) {
 function BoardCard({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardId, formatDate }: BoardItemProps) {
   const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
   const hue1 = hash % 360;
-  const hue2 = (hash * 7) % 360;
   const thumbnail = localStorage.getItem(`collabboard-thumb-${meta.id}`);
 
   return (
-    <div className="group bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-all hover:border-emerald-300 cursor-pointer" onClick={onOpen}>
-      <div className="h-32 relative overflow-hidden" style={thumbnail ? {} : { background: `linear-gradient(135deg, hsl(${hue1}, 70%, 92%), hsl(${hue2}, 60%, 88%))` }}>
+    <div className="group bg-white border border-newsprint-fg sharp-corners hover:hard-shadow-hover transition-all duration-200 cursor-pointer flex flex-col" onClick={onOpen}>
+      <div className="h-40 relative overflow-hidden border-b border-newsprint-fg bg-neutral-100">
         {thumbnail ? (
-          <img src={thumbnail} alt={meta.title || "Board preview"} className="w-full h-full object-cover" />
+          <img src={thumbnail} alt={meta.title || "Board preview"} className="w-full h-full object-cover grayscale group-hover:sepia-[.30] transition-all duration-300" />
         ) : (
-          <div className="absolute inset-0 opacity-30">
-            <div className="absolute top-4 left-4 w-16 h-12 bg-white/60 rounded-lg" />
-            <div className="absolute top-8 right-6 w-10 h-10 bg-white/50 rounded-md rotate-12" />
-            <div className="absolute bottom-4 left-1/3 w-20 h-8 bg-white/40 rounded-lg" />
+          <div className="absolute inset-0 flex items-center justify-center opacity-30">
+            <div className="absolute inset-0 bg-[radial-gradient(#000_1px,transparent_1px)] opacity-20 [background-size:16px_16px]" />
+            <div className="w-16 h-16 border-2 border-newsprint-fg bg-white rotate-6" />
+            <div className="w-20 h-12 border-2 border-newsprint-fg bg-white -rotate-3 absolute bottom-6 right-6" />
           </div>
         )}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-          <span className="px-4 py-2 bg-white/90 rounded-lg text-sm font-medium text-gray-700 shadow-sm flex items-center gap-1.5">
-            <ExternalLink size={14} /> Open
+        <div className="absolute inset-0 bg-newsprint-fg/0 group-hover:bg-newsprint-fg/5 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+          <span className="px-4 py-2 bg-newsprint-fg text-newsprint-bg sharp-corners text-xs font-mono uppercase tracking-widest font-bold shadow-[2px_2px_0px_0px_#111111] flex items-center gap-2">
+            <ExternalLink size={14} strokeWidth={1.5} /> Read
           </span>
         </div>
+        {/* Board ID badge */}
+        <div className="absolute top-0 left-0 bg-newsprint-fg text-newsprint-bg px-2 py-1 text-[10px] font-mono uppercase font-bold tracking-widest border-r border-b border-newsprint-fg">
+          {meta.id.slice(0, 8).toUpperCase()}
+        </div>
       </div>
-      <div className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate text-sm">{meta.title || "Untitled Board"}</h3>
-            <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
-              <span className="flex items-center gap-1"><Clock size={11} />{formatDate(meta.updatedAt)}</span>
-              {!isOwner && <span className="flex items-center gap-1"><Users size={11} />Shared</span>}
+      <div className="p-5 flex-1 flex flex-col justify-between">
+        <div>
+          <h3 className="font-bold font-serif text-xl text-newsprint-fg leading-tight mb-3 line-clamp-2 uppercase">{meta.title || "Untitled Board"}</h3>
+        </div>
+        <div className="flex items-end justify-between mt-4 pt-4 border-t border-newsprint-muted">
+          <div className="flex flex-col gap-1.5 text-[10px] font-mono uppercase tracking-widest text-neutral-600">
+            <span className="flex items-center gap-1.5"><Clock size={12} strokeWidth={1.5} /> {formatDate(meta.updatedAt)}</span>
+            <div className="flex items-center gap-3 mt-1">
+              {!isOwner && <span className="flex items-center gap-1.5 text-newsprint-fg font-bold"><Users size={12} strokeWidth={1.5} /> Shared</span>}
               {meta.visibility === "private"
-                ? <span className="flex items-center gap-1 text-indigo-400"><Lock size={11} />Private</span>
-                : <span className="flex items-center gap-1 text-emerald-500"><Globe size={11} />Public</span>}
+                ? <span className="flex items-center gap-1.5 text-newsprint-fg"><Lock size={12} strokeWidth={1.5} /> Private</span>
+                : <span className="flex items-center gap-1.5 text-newsprint-fg"><Globe size={12} strokeWidth={1.5} /> Public</span>}
             </div>
           </div>
           <BoardActionMenu
@@ -677,22 +665,30 @@ function BoardRow({ meta, isOwner, onOpen, onDelete, onCopyInvite, onCopyBoardId
   const hash = meta.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
 
   return (
-    <div className="group flex items-center gap-4 px-4 py-3 bg-white rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition cursor-pointer" onClick={onOpen}>
-      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: `hsl(${hash % 360}, 60%, 65%)` }} />
-      <div className="flex-1 min-w-0"><h3 className="font-medium text-gray-900 truncate text-sm">{meta.title || "Untitled Board"}</h3></div>
-      {!isOwner && <span className="text-xs text-gray-400 flex items-center gap-1 shrink-0"><Users size={11} />Shared</span>}
-      {meta.visibility === "private"
-        ? <span className="text-xs text-indigo-400 flex items-center gap-1 shrink-0"><Lock size={11} />Private</span>
-        : <span className="text-xs text-emerald-500 flex items-center gap-1 shrink-0"><Globe size={11} />Public</span>}
-      <span className="text-xs text-gray-400 flex items-center gap-1 shrink-0"><Clock size={11} />{formatDate(meta.updatedAt)}</span>
-      <BoardActionMenu
-        title={meta.title || "Untitled Board"}
-        isOwner={isOwner}
-        onOpen={onOpen}
-        onDelete={onDelete}
-        onCopyInvite={onCopyInvite}
-        onCopyBoardId={onCopyBoardId}
-      />
+    <div className="group flex items-center gap-4 px-6 py-4 bg-white border border-newsprint-fg sharp-corners hover:hard-shadow-hover transition-all duration-200 cursor-pointer" onClick={onOpen}>
+      <div className="w-12 h-12 shrink-0 border border-newsprint-fg flex items-center justify-center font-serif text-xl font-bold bg-neutral-100">
+        {meta.title ? meta.title.charAt(0).toUpperCase() : "U"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <h3 className="font-bold font-serif text-lg text-newsprint-fg truncate uppercase">{meta.title || "Untitled Board"}</h3>
+      </div>
+      <div className="flex items-center gap-6 hidden sm:flex">
+        {!isOwner && <span className="text-[10px] font-mono uppercase tracking-widest text-newsprint-fg font-bold flex items-center gap-1.5 shrink-0"><Users size={12} strokeWidth={1.5} /> Shared</span>}
+        {meta.visibility === "private"
+          ? <span className="text-[10px] font-mono uppercase tracking-widest text-newsprint-fg flex items-center gap-1.5 shrink-0"><Lock size={12} strokeWidth={1.5} /> Private</span>
+          : <span className="text-[10px] font-mono uppercase tracking-widest text-newsprint-fg flex items-center gap-1.5 shrink-0"><Globe size={12} strokeWidth={1.5} /> Public</span>}
+        <span className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 flex items-center gap-1.5 shrink-0 w-32"><Clock size={12} strokeWidth={1.5} /> {formatDate(meta.updatedAt)}</span>
+      </div>
+      <div className="shrink-0 pl-4 border-l border-newsprint-muted hidden sm:block">
+        <BoardActionMenu
+          title={meta.title || "Untitled Board"}
+          isOwner={isOwner}
+          onOpen={onOpen}
+          onDelete={onDelete}
+          onCopyInvite={onCopyInvite}
+          onCopyBoardId={onCopyBoardId}
+        />
+      </div>
     </div>
   );
 }

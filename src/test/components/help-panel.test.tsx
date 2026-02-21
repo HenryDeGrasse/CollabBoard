@@ -18,17 +18,14 @@ describe("HelpPanel", () => {
     render(<HelpPanel />);
     fireEvent.click(screen.getByTitle("Keyboard shortcuts (?)"));
     expect(screen.getByText("Keyboard Shortcuts")).toBeTruthy();
-    // Click the backdrop overlay
-    const overlay = screen.getByText("Keyboard Shortcuts").closest(".bg-white")!.parentElement!;
-    fireEvent.click(overlay);
+    fireEvent.click(screen.getByTestId("help-panel-backdrop"));
     expect(screen.queryByText("Keyboard Shortcuts")).toBeNull();
   });
 
   it("closes when X button is clicked", () => {
     render(<HelpPanel />);
     fireEvent.click(screen.getByTitle("Keyboard shortcuts (?)"));
-    // The X button is inside the header
-    const closeBtn = screen.getByText("Keyboard Shortcuts").parentElement!.querySelector("button")!;
+    const closeBtn = screen.getByRole("button", { name: /close/i });
     fireEvent.click(closeBtn);
     expect(screen.queryByText("Keyboard Shortcuts")).toBeNull();
   });

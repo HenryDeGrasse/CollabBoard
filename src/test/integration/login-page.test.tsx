@@ -34,7 +34,7 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.click(screen.getByRole("button", { name: /join as guest/i }));
+    await user.click(screen.getByRole("button", { name: /^enter$/i }));
     expect(screen.getByText(/please enter a display name/i)).toBeInTheDocument();
     expect(mockSignInAnonymously).not.toHaveBeenCalled();
     expect(mockSignUp).not.toHaveBeenCalled();
@@ -44,8 +44,8 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
-    await user.click(screen.getByRole("button", { name: /join as guest/i }));
+    await user.type(screen.getByPlaceholderText(/guest alias/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /^enter$/i }));
 
     expect(mockSignInAnonymously).toHaveBeenCalledWith({
       options: { data: { display_name: "TestUser" } },
@@ -60,8 +60,8 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
-    await user.click(screen.getByRole("button", { name: /join as guest/i }));
+    await user.type(screen.getByPlaceholderText(/guest alias/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /^enter$/i }));
 
     await waitFor(() => {
       expect(mockSignUp).toHaveBeenCalledWith(
@@ -84,8 +84,8 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
-    await user.click(screen.getByRole("button", { name: /join as guest/i }));
+    await user.type(screen.getByPlaceholderText(/guest alias/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /^enter$/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/too many requests/i)).toBeInTheDocument();
@@ -104,8 +104,8 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.type(screen.getByPlaceholderText(/enter your name/i), "TestUser");
-    await user.click(screen.getByRole("button", { name: /join as guest/i }));
+    await user.type(screen.getByPlaceholderText(/guest alias/i), "TestUser");
+    await user.click(screen.getByRole("button", { name: /^enter$/i }));
 
     await waitFor(() => {
       expect(screen.getByText(/signup disabled/i)).toBeInTheDocument();
@@ -118,7 +118,7 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await user.click(screen.getByRole("button", { name: /google/i }));
     expect(mockSignInWithOAuth).toHaveBeenCalledWith(expect.objectContaining({
       provider: "google",
     }));
@@ -130,7 +130,7 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    const input = screen.getByPlaceholderText(/enter your name/i);
+    const input = screen.getByPlaceholderText(/guest alias/i);
     await user.type(input, "TestUser{enter}");
 
     expect(mockSignInAnonymously).toHaveBeenCalledWith({
@@ -146,7 +146,7 @@ describe("LoginPage integration", () => {
 
     await user.type(screen.getByPlaceholderText(/email address/i), "test@example.com");
     await user.type(screen.getByPlaceholderText(/^password$/i), "secret123");
-    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+    await user.click(screen.getByRole("button", { name: /^subscribe$/i }));
 
     expect(mockSignInWithPassword).toHaveBeenCalledWith({
       email: "test@example.com",
@@ -158,7 +158,7 @@ describe("LoginPage integration", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+    await user.click(screen.getByRole("button", { name: /^subscribe$/i }));
     expect(screen.getByText(/please enter your email/i)).toBeInTheDocument();
   });
 
@@ -167,18 +167,18 @@ describe("LoginPage integration", () => {
     render(<LoginPage />);
 
     // Start in sign-in mode
-    expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^subscribe$/i })).toBeInTheDocument();
 
-    // Switch to sign-up — click the "Sign up" link (not the Google button)
-    const signUpLink = screen.getByRole("button", { name: /^sign up$/i });
+    // Switch to sign-up — click the "Start a new subscription" link
+    const signUpLink = screen.getByRole("button", { name: /subscription/i });
     await user.click(signUpLink);
-    expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^subscribe$/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/display name/i)).toBeInTheDocument();
 
     // Switch back — click the "Sign in" link
-    const signInLink = screen.getByRole("button", { name: /^sign in$/i });
+    const signInLink = screen.getByRole("button", { name: /sign in/i });
     await user.click(signInLink);
-    expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^subscribe$/i })).toBeInTheDocument();
   });
 
   it("saves intended board path to localStorage before Google OAuth redirect", async () => {
@@ -194,7 +194,7 @@ describe("LoginPage integration", () => {
     const localStorageSpy = vi.spyOn(Storage.prototype, "setItem");
 
     render(<LoginPage />);
-    await user.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     expect(localStorageSpy).toHaveBeenCalledWith(
       "collabboard_oauth_return_to",
@@ -224,7 +224,7 @@ describe("LoginPage integration", () => {
     const localStorageSpy = vi.spyOn(Storage.prototype, "setItem");
 
     render(<LoginPage />);
-    await user.click(screen.getByRole("button", { name: /sign in with google/i }));
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     expect(localStorageSpy).not.toHaveBeenCalledWith(
       "collabboard_oauth_return_to",

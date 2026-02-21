@@ -71,30 +71,32 @@ export function HelpPanel() {
       {/* Help button — inline, sits inside parent container */}
       <button
         onClick={() => setOpen(true)}
-        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-gray-100 transition text-gray-400 hover:text-gray-700"
+        className="w-8 h-8 sharp-corners flex items-center justify-center hover:bg-neutral-200 border border-transparent hover:border-newsprint-fg transition-colors text-newsprint-fg"
         title="Keyboard shortcuts (?)"
       >
-        <HelpCircle size={16} />
+        <HelpCircle size={16} strokeWidth={1.5} />
       </button>
 
       {/* Modal overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          data-testid="help-panel-backdrop"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => setOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
+            className="bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[8px_8px_0px_0px_#111111] w-full max-w-md mx-4 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900">Keyboard Shortcuts</h2>
+            <div className="flex items-center justify-between px-6 py-4 border-b-2 border-newsprint-fg">
+              <h2 className="text-xl font-black font-serif text-newsprint-fg uppercase tracking-widest">Keyboard Shortcuts</h2>
               <button
                 onClick={() => setOpen(false)}
-                className="p-1 rounded-lg hover:bg-gray-100 transition text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+                className="p-1 sharp-corners hover:bg-neutral-200 border border-transparent hover:border-newsprint-fg transition-colors text-newsprint-fg"
               >
-                <X size={18} />
+                <X size={18} strokeWidth={1.5} />
               </button>
             </div>
 
@@ -103,16 +105,16 @@ export function HelpPanel() {
               {resolvedShortcuts.map((item, i) => {
                 if ("section" in item && !("key" in item)) {
                   return (
-                    <div key={i} className={`text-xs font-semibold uppercase tracking-wider text-gray-400 ${i > 0 ? "pt-4 pb-1" : "pb-1"}`}>
+                    <div key={i} className={`text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-muted ${i > 0 ? "pt-4 pb-1" : "pb-1"}`}>
                       {item.section}
                     </div>
                   );
                 }
                 if ("key" in item && "desc" in item) {
                   return (
-                    <div key={i} className="flex items-center justify-between py-1.5">
-                      <span className="text-sm text-gray-600">{item.desc}</span>
-                      <kbd className="inline-flex items-center px-2 py-0.5 text-xs font-mono bg-gray-100 border border-gray-200 rounded text-gray-600">
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-newsprint-muted last:border-0">
+                      <span className="text-xs font-mono uppercase tracking-widest text-newsprint-fg font-bold">{item.desc}</span>
+                      <kbd className="inline-flex items-center px-2 py-0.5 text-[10px] font-mono font-bold bg-neutral-200 border border-newsprint-fg sharp-corners text-newsprint-fg">
                         {item.key}
                       </kbd>
                     </div>
@@ -123,8 +125,8 @@ export function HelpPanel() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 text-center">
-              <p className="text-xs text-gray-400">Press <kbd className="px-1 py-0.5 bg-gray-200 rounded text-xs">?</kbd> to toggle this panel</p>
+            <div className="px-6 py-3 bg-neutral-100 border-t-2 border-newsprint-fg text-center">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg">Press <kbd className="px-1.5 py-0.5 bg-white border border-newsprint-fg sharp-corners">?</kbd> to toggle this panel</p>
             </div>
           </div>
         </div>

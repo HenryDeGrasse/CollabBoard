@@ -96,8 +96,8 @@ describe("BoardActionMenu", () => {
 
     expect(screen.getByRole("button", { name: /^open$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy invite link/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copy board id/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /delete board owner board/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy id/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete board/i })).toBeInTheDocument();
   });
 
   it("clicking 'Copy invite link' calls onCopyInvite and closes the menu", async () => {
@@ -118,7 +118,7 @@ describe("BoardActionMenu", () => {
     renderInCard({ isOwner: true, title: "ID Board", onCopyBoardId });
 
     await user.click(screen.getByRole("button", { name: /board actions id board/i }));
-    await user.click(screen.getByRole("button", { name: /copy board id/i }));
+    await user.click(screen.getByRole("button", { name: /copy id/i }));
 
     expect(onCopyBoardId).toHaveBeenCalledOnce();
     expect(screen.queryByTestId("board-action-dropdown")).not.toBeInTheDocument();
@@ -127,10 +127,10 @@ describe("BoardActionMenu", () => {
   it("clicking 'Delete board' calls onDelete and closes the menu", async () => {
     const user = userEvent.setup();
     const onDelete = vi.fn();
-    renderInCard({ isOwner: true, title: "Delete Board", onDelete });
+    renderInCard({ isOwner: true, title: "Trash Me", onDelete });
 
-    await user.click(screen.getByRole("button", { name: /board actions delete board/i }));
-    await user.click(screen.getByRole("button", { name: /delete board delete board/i }));
+    await user.click(screen.getByRole("button", { name: /board actions trash me/i }));
+    await user.click(screen.getByRole("button", { name: /delete board trash me/i }));
 
     expect(onDelete).toHaveBeenCalledOnce();
     expect(screen.queryByTestId("board-action-dropdown")).not.toBeInTheDocument();
@@ -144,8 +144,8 @@ describe("BoardActionMenu", () => {
     await user.click(screen.getByRole("button", { name: /board actions shared board/i }));
 
     expect(screen.getByRole("button", { name: /^open$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copy board id/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /leave board shared board/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy id/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /leave/i })).toBeInTheDocument();
     // Owners-only action must be absent
     expect(screen.queryByRole("button", { name: /copy invite link/i })).not.toBeInTheDocument();
   });
@@ -156,7 +156,7 @@ describe("BoardActionMenu", () => {
     renderInCard({ isOwner: false, title: "Shared Board", onDelete });
 
     await user.click(screen.getByRole("button", { name: /board actions shared board/i }));
-    await user.click(screen.getByRole("button", { name: /leave board shared board/i }));
+    await user.click(screen.getByRole("button", { name: /leave/i }));
 
     expect(onDelete).toHaveBeenCalledOnce();
     expect(screen.queryByTestId("board-action-dropdown")).not.toBeInTheDocument();

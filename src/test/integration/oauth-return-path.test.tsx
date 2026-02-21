@@ -106,6 +106,6 @@ describe("OAuth return-path restoration (App.tsx)", () => {
 
     render(<App />);
     // LoginPage renders the guest name input
-    expect(screen.getByPlaceholderText(/enter your name/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/guest alias/i)).toBeInTheDocument();
   });
 });

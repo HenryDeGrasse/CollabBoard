@@ -91,9 +91,9 @@ function ColorDropdown({
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-[60] min-w-[140px]">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider px-1 mb-1.5">{label}</p>
-          <div className="grid grid-cols-4 gap-1.5">
+        <div className="absolute bottom-full left-0 mb-1 bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[4px_4px_0px_0px_#111111] p-2 z-[60] min-w-[140px]">
+          <p className="text-[10px] text-newsprint-fg uppercase tracking-widest font-mono font-bold px-1 mb-2">{label}</p>
+          <div className="grid grid-cols-4 gap-2">
             {colors.map((color) => (
               <button
                 key={color}
@@ -101,10 +101,10 @@ function ColorDropdown({
                   onColorChange(color);
                   setOpen(false);
                 }}
-                className={`w-7 h-7 rounded-md border-2 transition-transform hover:scale-110 ${
+                className={`w-7 h-7 sharp-corners border-2 transition-transform hover:scale-110 ${
                   activeColor === color
-                    ? "border-gray-800 scale-110 ring-1 ring-gray-800 ring-offset-1"
-                    : "border-gray-200 hover:border-gray-400"
+                    ? "border-newsprint-fg scale-110 shadow-[2px_2px_0px_0px_#111111]"
+                    : "border-transparent hover:border-newsprint-fg"
                 }`}
                 style={{ backgroundColor: color }}
                 title={color}
@@ -154,21 +154,21 @@ function StrokeWidthPicker({
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1.5 bg-white rounded-lg shadow-xl border border-gray-200 p-2 z-[60] min-w-[100px]">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider px-1 mb-1.5">{label}</p>
+        <div className="absolute bottom-full left-0 mb-1 bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[4px_4px_0px_0px_#111111] p-2 z-[60] min-w-[120px]">
+          <p className="text-[10px] text-newsprint-fg uppercase tracking-widest font-mono font-bold px-1 mb-2">{label}</p>
           <div className="space-y-1">
             {STROKE_WIDTHS.map((w) => (
               <button
                 key={w}
                 onClick={() => { onChange(w); setOpen(false); }}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 transition ${
-                  value === w ? "bg-emerald-50" : ""
+                className={`w-full flex items-center gap-2 px-2 py-1.5 sharp-corners hover:bg-neutral-200 transition-colors border border-transparent ${
+                  value === w ? "border-newsprint-fg" : "hover:border-newsprint-fg"
                 }`}
               >
                 <div className="w-8 flex items-center justify-center">
-                  <div className="rounded-full bg-gray-700" style={{ width: 24, height: Math.max(1, w) }} />
+                  <div className="sharp-corners bg-newsprint-fg" style={{ width: 24, height: Math.max(1, w) }} />
                 </div>
-                <span className="text-xs text-gray-500">{w}px</span>
+                <span className="text-[10px] font-mono text-newsprint-fg">{w}PX</span>
               </button>
             ))}
           </div>
@@ -207,15 +207,15 @@ export function Toolbar({
   const allColors = [...new Set([...getStickyColorArray(), ...getShapeColorArray()])];
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 bg-newsprint-bg border border-newsprint-fg sharp-corners p-1 shadow-[4px_4px_0px_0px_#111111]">
       {tools.map((tool) => (
         <button
           key={tool.id}
           onClick={() => onToolChange(tool.id)}
-          className={`group h-10 flex items-center rounded-lg transition-colors duration-150 ${
+          className={`group h-10 flex items-center sharp-corners transition-colors duration-150 ${
             activeTool === tool.id
-              ? "bg-emerald-50 text-emerald-600"
-              : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+              ? "bg-newsprint-fg text-newsprint-bg"
+              : "text-newsprint-fg hover:bg-neutral-200"
           }`}
           title={`${tool.label} (${tool.shortcut})`}
           aria-label={`${tool.label} (${tool.shortcut})`}

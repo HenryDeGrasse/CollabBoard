@@ -70,8 +70,8 @@ describe("colors utility", () => {
   });
 
   describe("DEFAULT_SHAPE_COLOR", () => {
-    it("is the blue shape color", () => {
-      expect(DEFAULT_SHAPE_COLOR).toBe(SHAPE_COLORS.blue);
+    it("is the black shape color", () => {
+      expect(DEFAULT_SHAPE_COLOR).toBe(SHAPE_COLORS.black);
     });
 
     it("is in the shape color array", () => {

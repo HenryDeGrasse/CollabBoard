@@ -61,15 +61,15 @@ export const Frame = React.memo(function Frame({
       <Rect
         width={object.width}
         height={object.height}
-        fill="rgba(248, 250, 252, 0.95)"
+        fill="#F9F9F7"
         stroke={borderColor}
         strokeWidth={borderWidth}
-        cornerRadius={CORNER_RADIUS}
+        cornerRadius={0}
         dash={isSelected ? undefined : [8, 4]}
-        shadowColor="rgba(0, 0, 0, 0.12)"
-        shadowBlur={8}
-        shadowOffsetX={0}
-        shadowOffsetY={2}
+        shadowColor="#111111"
+        shadowBlur={0}
+        shadowOffsetX={isSelected ? 4 : 0}
+        shadowOffsetY={isSelected ? 4 : 0}
         listening={false}
       />
 
@@ -105,8 +105,8 @@ export const Frame = React.memo(function Frame({
         y={0}
         width={object.width}
         height={titleHeight}
-        fill="rgba(241, 245, 249, 0.95)"
-        cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+        fill="#E5E5E0"
+        cornerRadius={0}
         listening={false}
       />
 
@@ -114,8 +114,7 @@ export const Frame = React.memo(function Frame({
       <Line
         points={[0, titleHeight, object.width, titleHeight]}
         stroke={borderColor}
-        strokeWidth={1}
-        opacity={0.5}
+        strokeWidth={2}
         listening={false}
       />
 
@@ -123,9 +122,9 @@ export const Frame = React.memo(function Frame({
       <Text
         x={10}
         y={titleHeight / 2 - 6}
-        text="⊞"
+        text="■"
         fontSize={12}
-        fill="#94A3B8"
+        fill="#111111"
         listening={false}
       />
 
@@ -137,7 +136,7 @@ export const Frame = React.memo(function Frame({
           width={object.width - 80}
           text={object.text || "Frame"}
           fontSize={titleFontSize}
-          fontFamily="Inter, system-ui, sans-serif"
+          fontFamily="'Playfair Display', serif"
           fontStyle="bold"
           fill={titleColor}
           ellipsis
@@ -258,7 +257,7 @@ export const FrameOverlay = React.memo(function FrameOverlay({
         fill="transparent"
         stroke={borderColor}
         strokeWidth={borderWidth}
-        cornerRadius={CORNER_RADIUS}
+        cornerRadius={0}
         dash={isSelected ? undefined : [8, 4]}
         listening={false}
       />
@@ -269,8 +268,8 @@ export const FrameOverlay = React.memo(function FrameOverlay({
         y={0}
         width={object.width}
         height={titleHeight}
-        fill="rgba(241, 245, 249, 0.98)"
-        cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+        fill="#E5E5E0"
+        cornerRadius={0}
         listening={false}
       />
 
@@ -278,8 +277,7 @@ export const FrameOverlay = React.memo(function FrameOverlay({
       <Line
         points={[0, titleHeight, object.width, titleHeight]}
         stroke={borderColor}
-        strokeWidth={1}
-        opacity={0.5}
+        strokeWidth={2}
         listening={false}
       />
 
@@ -287,9 +285,9 @@ export const FrameOverlay = React.memo(function FrameOverlay({
       <Text
         x={10}
         y={titleHeight / 2 - 6}
-        text="⊞"
+        text="■"
         fontSize={12}
-        fill="#94A3B8"
+        fill="#111111"
         listening={false}
       />
 
@@ -301,7 +299,7 @@ export const FrameOverlay = React.memo(function FrameOverlay({
           width={object.width - 80}
           text={object.text || "Frame"}
           fontSize={titleFontSize}
-          fontFamily="Inter, system-ui, sans-serif"
+          fontFamily="'Playfair Display', serif"
           fontStyle="bold"
           fill={titleColor}
           ellipsis

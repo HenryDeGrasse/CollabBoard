@@ -118,23 +118,23 @@ export const StickyNote = React.memo(function StickyNote({
         width={object.width}
         height={object.height}
         fill={object.color}
-        cornerRadius={4}
+        cornerRadius={0}
         stroke={borderColor}
         strokeWidth={borderWidth}
-        shadowColor="rgba(0,0,0,0.1)"
+        shadowColor="#111111"
         shadowBlur={0}
-        shadowOffsetX={3}
-        shadowOffsetY={3}
+        shadowOffsetX={isSelected && !isEditing ? 4 : 0}
+        shadowOffsetY={isSelected && !isEditing ? 4 : 0}
         shadowForStrokeEnabled={false}
       />
-      {/* Fold effect */}
+      {/* Top border emphasis instead of fold */}
       <Rect
         x={0}
         y={0}
         width={object.width}
-        height={6}
-        fill="rgba(0,0,0,0.05)"
-        cornerRadius={[4, 4, 0, 0]}
+        height={4}
+        fill="rgba(0,0,0,0.2)"
+        cornerRadius={0}
       />
       {/* Text - hidden while editing locally */}
       {!isEditing && (
@@ -145,7 +145,7 @@ export const StickyNote = React.memo(function StickyNote({
           height={object.height - PADDING * 2}
           text={draftText ?? object.text ?? ""}
           fontSize={fontSize}
-          fontFamily="Inter, system-ui, sans-serif"
+          fontFamily="Lora, Georgia, serif"
           fill={draftText ? (lockedByColor || "#6366F1") : textColor}
           fontStyle={draftText ? "italic" : "normal"}
           wrap="word"

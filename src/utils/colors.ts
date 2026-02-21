@@ -1,34 +1,32 @@
 export const STICKY_COLORS = {
-  yellow: "#FBBF24",
-  pink: "#F472B6",
-  blue: "#3B82F6",
-  green: "#22C55E",
-  orange: "#F97316",
-  purple: "#A855F7",
+  yellow: "#FAD84E",   // Post-it yellow (more saturated)
+  pink: "#F5A8C4",     // Post-it pink
+  blue: "#7FC8E8",     // Post-it blue
+  green: "#9DD9A3",    // Post-it green
+  grey: "#E5E5E0",     // Newsprint divider grey
+  offwhite: "#F9F9F7", // Newsprint background
 } as const;
 
 export const SHAPE_COLORS = {
-  red: "#EF4444",
-  blue: "#3B82F6",
-  green: "#22C55E",
-  yellow: "#FBBF24",
-  gray: "#9CA3AF",
-  black: "#1F2937",
+  black: "#111111",     // Ink black
+  darkgrey: "#404040",  // Neutral 700
+  grey: "#E5E5E0",      // Divider grey
+  offwhite: "#F9F9F7",  // Newsprint background
+  red: "#CC0000",       // Editorial Red
+  blue: "#3B82F6",      // Standard blue (for markup/diagrams)
 } as const;
 
 export const CURSOR_COLORS = [
-  "#EF4444", // red
-  "#3B82F6", // blue
-  "#22C55E", // green
-  "#F97316", // orange
-  "#A855F7", // purple
-  "#EC4899", // pink
-  "#14B8A6", // teal
-  "#F59E0B", // amber
+  "#CC0000", // Editorial Red
+  "#111111", // Ink Black
+  "#404040", // Neutral 700
+  "#525252", // Neutral 600
+  "#737373", // Neutral 500
+  "#A3A3A3", // Neutral 400
 ] as const;
 
 export const DEFAULT_STICKY_COLOR = STICKY_COLORS.yellow;
-export const DEFAULT_SHAPE_COLOR = SHAPE_COLORS.blue;
+export const DEFAULT_SHAPE_COLOR = SHAPE_COLORS.black;
 
 export function getRandomCursorColor(index: number): string {
   return CURSOR_COLORS[index % CURSOR_COLORS.length];

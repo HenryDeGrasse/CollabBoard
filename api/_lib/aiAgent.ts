@@ -81,9 +81,9 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 - Place items starting around x:100, y:100 for a clean board. Check existing objects to avoid overlap.
 
 ## Color conventions:
-- Sticky colors: yellow (#FBBF24), pink (#F472B6), blue (#3B82F6), green (#22C55E), orange (#F97316), purple (#A855F7)
-- Shape colors: red (#EF4444), blue (#3B82F6), green (#22C55E), gray (#9CA3AF), black (#1F2937)
-- Frame default: #E5E7EB (light gray)
+- Sticky colors: yellow (#FAD84E), pink (#F5A8C4), blue (#7FC8E8), green (#9DD9A3), grey (#E5E5E0), offwhite (#F9F9F7)
+- Shape colors: black (#111111), red (#CC0000), blue (#3B82F6), darkgrey (#404040), grey (#E5E5E0)
+- Frame default: #F9F9F7 (offwhite)
 
 ## Common patterns:
 - **SWOT analysis**: 4 colored frames in a 2×2 grid, each with a title (Strengths, Weaknesses, Opportunities, Threats) and a few stickies inside

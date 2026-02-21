@@ -41,7 +41,7 @@ function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: st
     return (
       <button
         onClick={() => setEditing(true)}
-        className="text-sm font-medium text-gray-700 hover:text-gray-900 truncate max-w-[260px] px-2 py-1 rounded hover:bg-gray-100 transition"
+        className="text-newsprint-fg hover:text-newsprint-accent truncate max-w-[260px] px-2 py-1 sharp-corners transition-colors"
         title="Click to rename board"
       >
         {title}
@@ -59,7 +59,7 @@ function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: st
         if (e.key === "Enter") commit();
         if (e.key === "Escape") { setDraft(title); setEditing(false); }
       }}
-      className="text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-400 w-[220px] text-center"
+      className="text-newsprint-fg bg-transparent border-b-2 border-newsprint-fg sharp-corners px-2 py-1 outline-none focus-visible:bg-neutral-200 w-[220px] text-center uppercase"
       maxLength={60}
     />
   );
@@ -420,12 +420,12 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   // ── Access-denied / not-found screens ────────────────────────
   if (accessStatus === "private") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-          <div className="text-4xl mb-4">🔒</div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">This board is private</h1>
-          <p className="text-gray-500 text-sm mb-4">
-            Ask the board owner to share an invite link with you, or send an access request.
+      <div className="min-h-screen flex items-center justify-center bg-newsprint-bg newsprint-texture px-4">
+        <div className="bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[8px_8px_0px_0px_#111111] p-8 max-w-sm w-full text-center">
+          <div className="text-4xl mb-6">🔒</div>
+          <h1 className="text-2xl font-black font-serif text-newsprint-fg mb-4 uppercase tracking-widest">Private Board</h1>
+          <p className="text-newsprint-fg font-body text-sm mb-8 leading-relaxed">
+            Request clearance from the editor-in-chief to access this board.
           </p>
 
           {session?.access_token && (
@@ -444,25 +444,24 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
                   setRequestingAccess(false);
                 }
               }}
-              className="w-full py-2.5 rounded-xl text-sm border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition mb-3 disabled:opacity-60"
+              className="w-full py-3 sharp-corners text-xs font-mono uppercase tracking-widest font-bold border border-newsprint-fg text-newsprint-fg hover:bg-neutral-200 transition-colors mb-4 disabled:opacity-60 disabled:cursor-not-allowed"
               disabled={requestingAccess || accessRequested}
             >
               {accessRequested
-                ? "✓ Access request sent"
+                ? "✓ Clearance Requested"
                 : requestingAccess
-                  ? "Sending request..."
-                  : "Request Access"}
+                  ? "Transmitting..."
+                  : "Request Clearance"}
             </button>
           )}
 
           {accessRequestError && (
-            <p className="text-xs text-red-600 mb-3">{accessRequestError}</p>
+            <p className="text-xs text-newsprint-accent font-mono uppercase tracking-widest mb-4">{accessRequestError}</p>
           )}
 
           <button
             onClick={() => onNavigateHome?.()}
-            className="w-full py-3 rounded-xl text-white font-medium transition shadow-md hover:opacity-90"
-            style={{ backgroundColor: "#0F2044" }}
+            className="w-full py-3 sharp-corners text-xs font-mono uppercase tracking-widest font-bold bg-newsprint-fg text-newsprint-bg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg transition-colors"
           >
             Back to Dashboard
           </button>
@@ -473,17 +472,16 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
 
   if (accessStatus === "not_found") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-          <div className="text-4xl mb-4">🗂️</div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Board not found</h1>
-          <p className="text-gray-500 text-sm mb-6">
+      <div className="min-h-screen flex items-center justify-center bg-newsprint-bg newsprint-texture px-4">
+        <div className="bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[8px_8px_0px_0px_#111111] p-8 max-w-sm w-full text-center">
+          <div className="text-4xl mb-6">🗂️</div>
+          <h1 className="text-2xl font-black font-serif text-newsprint-fg mb-4 uppercase tracking-widest">Board Not Found</h1>
+          <p className="text-newsprint-fg font-body text-sm mb-8 leading-relaxed">
             This board doesn't exist or may have been deleted.
           </p>
           <button
             onClick={() => onNavigateHome?.()}
-            className="w-full py-3 rounded-xl text-white font-medium transition shadow-md hover:opacity-90"
-            style={{ backgroundColor: "#0F2044" }}
+            className="w-full py-3 sharp-corners text-xs font-mono uppercase tracking-widest font-bold bg-newsprint-fg text-newsprint-bg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg transition-colors"
           >
             Back to Dashboard
           </button>
@@ -494,10 +492,10 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
 
   if (!joined || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex items-center gap-3">
-          <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
-          <span className="text-gray-600 font-medium">
+      <div className="min-h-screen flex items-center justify-center bg-newsprint-bg newsprint-texture">
+        <div className="flex items-center gap-4">
+          <div className="animate-spin w-8 h-8 border-4 border-newsprint-muted border-t-newsprint-fg rounded-full" />
+          <span className="text-newsprint-fg font-mono uppercase tracking-widest font-bold text-sm">
             {!joined ? "Joining board…" : "Loading board…"}
           </span>
         </div>
@@ -508,7 +506,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   const isBoardEmpty = Object.keys(objects).length === 0 && Object.keys(connectors).length === 0;
 
   return (
-    <div className="w-screen h-screen overflow-hidden">
+    <div className="w-screen h-screen overflow-hidden bg-newsprint-bg newsprint-texture">
       {/* Toolbar */}
       <Toolbar
         activeTool={activeTool}
@@ -550,32 +548,32 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       )}
 
       {/* ── Top header bar ─────────────────────────────────── */}
-      <div className="fixed top-0 left-0 right-0 z-50 h-11 bg-white/90 backdrop-blur-sm border-b border-gray-200 flex items-center px-3">
+      <div className="fixed top-0 left-0 right-0 z-50 h-12 bg-newsprint-bg border-b-2 border-newsprint-fg flex items-center px-4">
         {/* Left: dashboard button */}
         <div className="flex items-center gap-2 min-w-[140px]">
           <button
             onClick={() => { captureThumbnail(); onNavigateHome?.(); }}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800 transition px-2 py-1.5 rounded-lg hover:bg-gray-100"
+            className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg hover:bg-neutral-200 transition-colors px-3 py-1.5 sharp-corners border border-transparent hover:border-newsprint-fg"
             title="Back to Dashboard"
           >
-            ← <span className="font-medium">Dashboard</span>
+            ← <span>Dashboard</span>
           </button>
         </div>
 
         {/* Center: board title (editable on click) */}
-        <div className="flex-1 flex justify-center">
+        <div className="flex-1 flex justify-center font-serif text-lg font-bold uppercase">
           <BoardTitleEditor title={boardTitle} onRename={updateBoardTitle} />
         </div>
 
         {/* Right: settings, help */}
-        <div className="flex items-center gap-1 min-w-[140px] justify-end">
+        <div className="flex items-center gap-2 min-w-[140px] justify-end">
           <button
             onClick={() => setShowSettings(true)}
-            className="px-2.5 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition flex items-center gap-1.5"
+            className="px-3 py-1.5 sharp-corners text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg hover:bg-neutral-200 transition-colors flex items-center gap-2 border border-transparent hover:border-newsprint-fg"
             title="Share & Board Settings"
           >
-            <Settings size={14} />
-            <span className="font-medium">Share & Settings</span>
+            <Settings size={14} strokeWidth={1.5} />
+            <span>Settings</span>
           </button>
           <HelpPanel />
         </div>
@@ -589,20 +587,20 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         />
       </div>
 
-      {/* ── Zoom indicator — bottom-left ─────────────────── */}
-      <div className="fixed bottom-4 left-4 z-50 bg-white/80 backdrop-blur rounded-lg px-3 py-1.5 text-xs text-gray-500 border border-gray-200 tabular-nums">
+      {/* Zoom indicator — bottom-left */}
+      <div className="fixed bottom-4 left-4 z-50 bg-newsprint-bg border border-newsprint-fg sharp-corners px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg shadow-[2px_2px_0px_0px_#111111] tabular-nums">
         {Math.round(canvas.viewport.scale * 100)}%
       </div>
 
       {/* Empty-board quick start chips */}
       {isBoardEmpty && (
-        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-40 bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow-sm px-3 py-2 flex items-center gap-2">
-          <span className="text-xs text-gray-500 pr-1">Quick start:</span>
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[4px_4px_0px_0px_#111111] px-4 py-3 flex items-center gap-3">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg pr-2 border-r border-newsprint-muted">Actions</span>
           {emptySuggestions.map((s) => (
             <button
               key={s.id}
               onClick={() => handleEmptySuggestion(s.id)}
-              className="text-xs px-2.5 py-1 rounded-full border border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50 transition"
+              className="text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-1.5 sharp-corners border border-newsprint-fg bg-transparent text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg transition-colors"
             >
               {s.label}
             </button>
@@ -701,19 +699,19 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${toast.type === "error" ? "bg-red-600" : "bg-slate-700"}`}
+          className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 sharp-corners border-2 shadow-[4px_4px_0px_0px_#111111] text-sm font-mono uppercase tracking-widest font-bold ${toast.type === "error" ? "bg-newsprint-accent text-white border-newsprint-fg" : "bg-newsprint-bg text-newsprint-fg border-newsprint-fg"}`}
           style={{ animation: "toastIn 0.2s ease-out" }}
         >
           <span>{toast.message}</span>
-          <button onClick={() => setToast(null)} className="ml-1 opacity-70 hover:opacity-100 transition leading-none">✕</button>
+          <button onClick={() => setToast(null)} className="ml-2 opacity-70 hover:opacity-100 transition leading-none text-lg border border-transparent hover:border-current px-1">✕</button>
           <style>{`@keyframes toastIn { from { opacity:0; transform:translate(-50%,8px); } to { opacity:1; transform:translate(-50%,0); } }`}</style>
         </div>
       )}
 
       {/* Rotation hint — above toolbar */}
       {isRotating && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 bg-gray-900/80 backdrop-blur text-white text-xs px-4 py-2 rounded-full pointer-events-none">
-          Hold <kbd className="px-1.5 py-0.5 bg-white/20 rounded text-[11px] font-medium mx-0.5">Shift</kbd> while rotating to snap to 15° increments
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-newsprint-fg text-newsprint-bg text-[10px] font-mono uppercase tracking-widest font-bold px-4 py-2 sharp-corners pointer-events-none shadow-[4px_4px_0px_0px_rgba(0,0,0,0.5)]">
+          Hold <kbd className="px-1.5 py-0.5 border border-newsprint-bg text-newsprint-bg mx-0.5 sharp-corners">Shift</kbd> to snap
         </div>
       )}
     </div>

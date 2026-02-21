@@ -169,31 +169,31 @@ export function BoardSettingsPanel({
 
       {/* Panel */}
       <div
-        className="relative w-full max-w-sm bg-white h-full shadow-2xl flex flex-col"
+        className="relative w-full max-w-sm bg-newsprint-bg border-l-4 border-newsprint-fg h-full shadow-[-8px_0px_0px_0px_rgba(17,17,17,0.1)] flex flex-col sharp-corners"
         onClick={(e) => e.stopPropagation()}
         style={{ animation: "slideInRight 0.18s ease-out" }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900">Board Settings</h2>
+        <div className="flex items-center justify-between px-6 py-6 border-b-4 border-newsprint-fg">
+          <h2 className="text-xl font-black font-serif text-newsprint-fg uppercase tracking-widest">Board Settings</h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition"
+            className="p-1.5 sharp-corners border border-transparent hover:border-newsprint-fg text-newsprint-fg hover:bg-neutral-200 transition-colors"
           >
-            <X size={16} />
+            <X size={18} strokeWidth={1.5} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-100 px-5">
+        <div className="flex border-b-2 border-newsprint-fg px-6 bg-neutral-100">
           {(["share", "members"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`py-2.5 px-1 mr-5 text-sm font-medium border-b-2 transition ${
+              className={`py-3 px-2 mr-6 text-xs font-mono font-bold uppercase tracking-widest border-b-4 transition-colors ${
                 tab === t
-                  ? "border-emerald-500 text-emerald-600"
-                  : "border-transparent text-gray-400 hover:text-gray-600"
+                  ? "border-newsprint-fg text-newsprint-fg"
+                  : "border-transparent text-newsprint-muted hover:text-newsprint-fg"
               }`}
             >
               {t === "share" ? "Share" : "Members"}
@@ -217,37 +217,37 @@ export function BoardSettingsPanel({
                 Access
               </h3>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-4">
                 <button
                   onClick={() => handleVisibilityChange("public")}
                   disabled={!isOwner || visibilityLoading}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition ${
+                  className={`flex flex-col items-center gap-2 px-3 py-4 sharp-corners border-2 transition-colors ${
                     visibility === "public"
-                      ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                      ? "border-newsprint-fg bg-newsprint-fg text-newsprint-bg"
+                      : "border-newsprint-muted text-newsprint-fg hover:border-newsprint-fg"
                   } ${!isOwner ? "opacity-60 cursor-not-allowed" : ""}`}
                   title={!isOwner ? "Only owners can change access" : "Set board to public"}
                 >
-                  <Globe size={14} />
-                  Public
+                  <Globe size={18} strokeWidth={1.5} />
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest">Public</span>
                 </button>
 
                 <button
                   onClick={() => handleVisibilityChange("private")}
                   disabled={!isOwner || visibilityLoading}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm transition ${
+                  className={`flex flex-col items-center gap-2 px-3 py-4 sharp-corners border-2 transition-colors ${
                     visibility === "private"
-                      ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-                      : "border-gray-200 text-gray-600 hover:border-gray-300"
+                      ? "border-newsprint-fg bg-newsprint-fg text-newsprint-bg"
+                      : "border-newsprint-muted text-newsprint-fg hover:border-newsprint-fg"
                   } ${!isOwner ? "opacity-60 cursor-not-allowed" : ""}`}
                   title={!isOwner ? "Only owners can change access" : "Set board to private"}
                 >
-                  <Lock size={14} />
-                  Private
+                  <Lock size={18} strokeWidth={1.5} />
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-widest">Private</span>
                 </button>
               </div>
 
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs font-body text-newsprint-fg mt-4 border-l-2 border-newsprint-fg pl-3">
                 {visibility === "public"
                   ? "Anyone with the board link or board ID can join and edit."
                   : "Only members and approved access requests can join."}
@@ -262,10 +262,10 @@ export function BoardSettingsPanel({
 
             {/* Invite link */}
             <section>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+              <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-muted mb-3 border-b border-newsprint-muted pb-1">
                 Invite Link
               </h3>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs font-body text-newsprint-fg mb-4">
                 {visibility === "public"
                   ? "Share this link — anyone who clicks it will be added as an editor."
                   : "Only people with this link can join. The link expires in 30 days."}
@@ -273,31 +273,31 @@ export function BoardSettingsPanel({
 
               {inviteLoading ? (
                 <div className="flex items-center justify-center py-6">
-                  <div className="animate-spin w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                  <div className="animate-spin w-6 h-6 border-4 border-newsprint-muted border-t-newsprint-fg rounded-full" />
                 </div>
               ) : inviteUrl ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
-                    <span className="flex-1 text-xs text-gray-600 truncate font-mono">{inviteUrl}</span>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 bg-neutral-100 border border-newsprint-fg px-3 py-3 sharp-corners">
+                    <span className="flex-1 text-xs text-newsprint-fg truncate font-mono">{inviteUrl}</span>
                     <button
                       onClick={handleCopyInvite}
-                      className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition ${
+                      className={`shrink-0 flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-widest px-3 py-2 sharp-corners border transition-colors ${
                         copied === "invite"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-white border border-gray-200 text-gray-600 hover:border-emerald-300 hover:text-emerald-600"
+                          ? "bg-newsprint-fg text-newsprint-bg border-newsprint-fg"
+                          : "bg-white border-newsprint-fg text-newsprint-fg hover:bg-newsprint-fg hover:text-newsprint-bg"
                       }`}
                     >
-                      <Copy size={12} />
-                      {copied === "invite" ? "Copied!" : "Copy"}
+                      <Copy size={12} strokeWidth={1.5} />
+                      {copied === "invite" ? "COPIED" : "COPY"}
                     </button>
                   </div>
                   {isOwner && (
                     <button
                       onClick={() => loadInviteUrl(true)}
-                      className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition px-1"
+                      className="flex items-center gap-2 text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg hover:bg-neutral-200 transition-colors px-2 py-1 sharp-corners border border-transparent hover:border-newsprint-fg"
                     >
-                      <RefreshCw size={11} />
-                      Regenerate link (invalidates old one)
+                      <RefreshCw size={12} strokeWidth={1.5} />
+                      Regenerate link
                     </button>
                   )}
                 </div>

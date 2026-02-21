@@ -102,7 +102,11 @@ export const Shape = React.memo(function Shape({
               fill={object.color}
               stroke={borderColor}
               strokeWidth={borderWidth}
-              cornerRadius={4}
+              cornerRadius={0}
+              shadowColor="#111111"
+              shadowBlur={0}
+              shadowOffsetX={isSelected && !isEditing ? 4 : 0}
+              shadowOffsetY={isSelected && !isEditing ? 4 : 0}
             />
             {!isEditing && (object.text || draftText) && (
               <Text
@@ -112,7 +116,7 @@ export const Shape = React.memo(function Shape({
                 height={object.height - PADDING * 2}
                 text={draftText ?? object.text ?? ""}
                 fontSize={fontSize}
-                fontFamily="Inter, system-ui, sans-serif"
+                fontFamily="Lora, Georgia, serif"
                 fill={draftText ? (lockedByColor || "#6366F1") : textColor}
                 fontStyle={draftText ? "italic" : "normal"}
                 opacity={draftText ? 0.7 : 1}
@@ -136,6 +140,10 @@ export const Shape = React.memo(function Shape({
               fill={object.color}
               stroke={borderColor || object.color}
               strokeWidth={borderWidth || 1}
+              shadowColor="#111111"
+              shadowBlur={0}
+              shadowOffsetX={isSelected && !isEditing ? 4 : 0}
+              shadowOffsetY={isSelected && !isEditing ? 4 : 0}
             />
             {!isEditing && (object.text || draftText) && (
               <Text
@@ -145,7 +153,7 @@ export const Shape = React.memo(function Shape({
                 height={inscribedSide}
                 text={draftText ?? object.text ?? ""}
                 fontSize={fontSize}
-                fontFamily="Inter, system-ui, sans-serif"
+                fontFamily="Lora, Georgia, serif"
                 fill={draftText ? (lockedByColor || "#6366F1") : textColor}
                 fontStyle={draftText ? "italic" : "normal"}
                 opacity={draftText ? 0.7 : 1}

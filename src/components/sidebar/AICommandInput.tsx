@@ -327,28 +327,22 @@ export function AICommandInput({
       <button
         onClick={() => setIsOpen(true)}
         aria-label="AI Assistant"
-        className="fixed bottom-4 right-4 z-50 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg transition"
-        style={{ backgroundColor: "#0F2044" }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        className="fixed bottom-4 right-4 z-50 bg-newsprint-fg text-newsprint-bg sharp-corners w-12 h-12 flex items-center justify-center border-2 border-newsprint-fg shadow-[4px_4px_0px_0px_#111111] hover:bg-white hover:text-newsprint-fg transition-colors duration-200"
         title="AI Assistant"
       >
-        <span className="text-xl" aria-hidden>✨</span>
+        <span className="text-lg font-mono font-bold" aria-hidden>AI</span>
       </button>
     );
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 bg-white rounded-xl shadow-lg border border-gray-200 w-80">
+    <div className="fixed bottom-4 right-4 z-50 bg-newsprint-bg border-2 border-newsprint-fg sharp-corners shadow-[6px_6px_0px_0px_#111111] w-80">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">✨</span>
-          <span className="text-sm font-semibold text-gray-800">AI Assistant</span>
-        </div>
+      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-newsprint-fg">
+        <span className="text-xs font-mono font-bold uppercase tracking-widest text-newsprint-fg">AI Assistant</span>
         <button
           onClick={() => setIsOpen(false)}
-          className="text-gray-400 hover:text-gray-600 text-lg"
+          className="text-newsprint-fg hover:bg-neutral-200 px-2 py-1 sharp-corners border border-transparent hover:border-newsprint-fg transition-colors"
         >
           ✕
         </button>
@@ -357,26 +351,26 @@ export function AICommandInput({
       {/* History */}
       <div ref={scrollRef} className="px-4 py-3 max-h-64 overflow-y-auto space-y-3">
         {history.length === 0 && (
-          <div className="text-xs text-gray-400 space-y-1.5">
+          <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg space-y-2">
             <p>AI-powered board commands. Try:</p>
-            <ul className="space-y-1 text-gray-500">
+            <ul className="space-y-2 text-neutral-600">
               <li
-                className="cursor-pointer hover:text-emerald-600"
+                className="cursor-pointer hover:text-newsprint-fg hover:bg-neutral-200 px-2 py-1 sharp-corners border border-transparent hover:border-newsprint-fg transition-colors"
                 onClick={() => setCommand("Create a SWOT analysis")}
               >
-                → "Create a SWOT analysis"
+                → Create a SWOT analysis
               </li>
               <li
-                className="cursor-pointer hover:text-emerald-600"
+                className="cursor-pointer hover:text-newsprint-fg hover:bg-neutral-200 px-2 py-1 sharp-corners border border-transparent hover:border-newsprint-fg transition-colors"
                 onClick={() => setCommand("Add 3 yellow sticky notes")}
               >
-                → "Add 3 yellow sticky notes"
+                → Add 3 yellow sticky notes
               </li>
               <li
-                className="cursor-pointer hover:text-emerald-600"
+                className="cursor-pointer hover:text-newsprint-fg hover:bg-neutral-200 px-2 py-1 sharp-corners border border-transparent hover:border-newsprint-fg transition-colors"
                 onClick={() => setCommand("Set up a retrospective board")}
               >
-                → "Set up a retrospective board"
+                → Set up a retrospective board
               </li>
             </ul>
           </div>
@@ -386,7 +380,7 @@ export function AICommandInput({
           <div key={i} className="space-y-1.5">
             {/* User message */}
             <div className="flex justify-end">
-              <div className="bg-slate-100 text-slate-700 text-sm rounded-lg px-3 py-1.5 max-w-[85%]">
+              <div className="bg-neutral-200 text-newsprint-fg text-xs font-mono px-3 py-1.5 max-w-[85%] sharp-corners border border-newsprint-fg">
                 {entry.command}
               </div>
             </div>
@@ -394,8 +388,8 @@ export function AICommandInput({
             {/* Tool actions indicator */}
             {entry.toolActions && entry.toolActions.length > 0 && entry.status === "streaming" && (
               <div className="flex justify-start">
-                <div className="text-xs text-gray-400 flex items-center gap-1.5 px-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg flex items-center gap-2 px-1">
+                  <span className="inline-block w-2 h-2 sharp-corners bg-newsprint-fg animate-pulse" />
                   {entry.toolActions[entry.toolActions.length - 1]}…
                 </div>
               </div>
@@ -405,24 +399,24 @@ export function AICommandInput({
             {entry.response && (
               <div className="flex justify-start flex-col gap-1">
                 <div
-                  className={`text-sm rounded-lg px-3 py-2 max-w-[85%] ${
+                  className={`text-xs font-body px-3 py-2 max-w-[85%] sharp-corners border ${
                     entry.status === "error"
-                      ? "bg-red-50 border border-red-200 text-red-700"
-                      : "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                      ? "bg-newsprint-accent/10 border-newsprint-accent text-newsprint-fg"
+                      : "bg-neutral-100 border-newsprint-fg text-newsprint-fg"
                   }`}
                 >
                   {entry.response}
                   {entry.status === "streaming" && (
-                    <span className="inline-block w-1.5 h-4 bg-emerald-400 ml-0.5 animate-pulse align-text-bottom" />
+                    <span className="inline-block w-1.5 h-4 bg-newsprint-fg ml-0.5 animate-pulse align-text-bottom" />
                   )}
                 </div>
                 {/* Model badge — shown once response is done */}
                 {entry.status === "done" && entry.model && (
                   <div className="flex items-center gap-1 px-1">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                    <span className={`text-[10px] px-1.5 py-0.5 sharp-corners font-mono font-bold uppercase tracking-widest ${
                       entry.complexity === "complex"
-                        ? "bg-violet-100 text-violet-600"
-                        : "bg-gray-100 text-gray-400"
+                        ? "bg-newsprint-fg text-newsprint-bg border border-newsprint-fg"
+                        : "bg-neutral-200 text-newsprint-fg border border-newsprint-fg"
                     }`}>
                       {entry.model}
                     </span>
@@ -445,7 +439,7 @@ export function AICommandInput({
                           entry.snapshot ?? { objects: {}, connectors: {} }
                         )
                       }
-                      className="text-[11px] text-gray-500 hover:text-gray-700 underline underline-offset-2"
+                      className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg hover:text-newsprint-accent underline underline-offset-2 decoration-newsprint-accent"
                     >
                       Undo last AI change
                     </button>
@@ -457,8 +451,8 @@ export function AICommandInput({
             {/* Pending state */}
             {entry.status === "pending" && !entry.response && (
               <div className="flex justify-start">
-                <div className="text-xs text-gray-400 flex items-center gap-1.5 px-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-newsprint-fg flex items-center gap-2 px-1">
+                  <span className="inline-block w-2 h-2 sharp-corners bg-newsprint-fg animate-pulse" />
                   Thinking…
                 </div>
               </div>
@@ -468,7 +462,7 @@ export function AICommandInput({
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="px-4 pb-3 pt-1 border-t border-gray-100">
+      <form onSubmit={handleSubmit} className="px-4 pb-4 pt-3 border-t-2 border-newsprint-fg">
         <div className="flex gap-2">
           <input
             id="ai-command-input"
@@ -478,14 +472,14 @@ export function AICommandInput({
             onChange={(e) => setCommand(e.target.value)}
             onFocus={handleFocus}
             placeholder={isLoading ? "Working…" : "Ask AI to create or arrange..."}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none disabled:opacity-50"
+            className="flex-1 px-3 py-2 border-b-2 border-newsprint-fg bg-transparent text-newsprint-fg text-sm font-mono focus-visible:bg-neutral-100 focus-visible:outline-none sharp-corners placeholder:text-neutral-500 disabled:opacity-50"
             autoComplete="off"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={!command.trim() || isLoading}
-            className="px-3 py-2 bg-[#0F2044] text-white rounded-lg text-sm font-medium hover:opacity-85 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-newsprint-fg text-newsprint-bg border border-transparent hover:bg-white hover:text-newsprint-fg hover:border-newsprint-fg sharp-corners text-xs font-mono font-bold uppercase tracking-widest transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -55,9 +55,9 @@ describe("HomePage integration", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /new board/i }));
-    const titleInput = screen.getByPlaceholderText(/board title/i);
+    const titleInput = screen.getByPlaceholderText(/headline/i);
     await user.type(titleInput, "My Board");
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
+    await user.click(screen.getByRole("button", { name: /^publish$/i }));
 
     // createBoard now receives visibility as 3rd arg (default "public")
     expect(mockCreateBoard).toHaveBeenCalledWith("My Board", "user-123", "public");
