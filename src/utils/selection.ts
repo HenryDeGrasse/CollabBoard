@@ -1,11 +1,7 @@
 import type { BoardObject, Connector } from "../types/board";
+import { getRectCenter, rectsIntersect, type Rect } from "./geometry";
 
-export interface SelectionRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export type SelectionRect = Rect;
 
 /**
  * Returns IDs of objects that intersect (overlap) the selection rectangle.
@@ -15,13 +11,7 @@ export function getObjectIdsInRect(
   rect: SelectionRect
 ): string[] {
   return Object.values(objects)
-    .filter(
-      (obj) =>
-        obj.x < rect.x + rect.width &&
-        obj.x + obj.width > rect.x &&
-        obj.y < rect.y + rect.height &&
-        obj.y + obj.height > rect.y
-    )
+    .filter((obj) => rectsIntersect(obj, rect))
     .map((obj) => obj.id);
 }
 
@@ -41,12 +31,10 @@ export function getConnectorIdsInRect(
       const toObj = objects[conn.toId];
       if (!fromObj || !toObj) return false;
 
-      const x1 = fromObj.x + fromObj.width / 2;
-      const y1 = fromObj.y + fromObj.height / 2;
-      const x2 = toObj.x + toObj.width / 2;
-      const y2 = toObj.y + toObj.height / 2;
+      const from = getRectCenter(fromObj);
+      const to = getRectCenter(toObj);
 
-      return lineSegmentIntersectsRect(x1, y1, x2, y2, rect);
+      return lineSegmentIntersectsRect(from.x, from.y, to.x, to.y, rect);
     })
     .map((c) => c.id);
 }

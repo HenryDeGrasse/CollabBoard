@@ -1,11 +1,7 @@
 import type { BoardObject } from "../types/board";
+import { getOverlapRatio, rectContains, clampRectInside, rectsIntersect, type Rect } from "./geometry";
 
-interface RectLike {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+type RectLike = Rect;
 
 /**
  * Get IDs of non-frame objects that are spatially contained within a frame.
@@ -15,24 +11,12 @@ export function getContainedObjectIds(
   frame: BoardObject,
   objects: Record<string, BoardObject>
 ): string[] {
-  const fx = frame.x;
-  const fy = frame.y;
-  const fw = frame.width;
-  const fh = frame.height;
-
   return Object.values(objects)
     .filter((obj) => {
       // Don't include the frame itself or other frames
       if (obj.id === frame.id || obj.type === "frame") return false;
-
-      // Calculate overlap area
-      const overlapX = Math.max(0, Math.min(fx + fw, obj.x + obj.width) - Math.max(fx, obj.x));
-      const overlapY = Math.max(0, Math.min(fy + fh, obj.y + obj.height) - Math.max(fy, obj.y));
-      const overlapArea = overlapX * overlapY;
-      const objArea = obj.width * obj.height;
-
       // Object is contained if >= 50% of its area overlaps the frame
-      return objArea > 0 && overlapArea / objArea >= 0.5;
+      return getOverlapRatio(obj, frame) >= 0.5;
     })
     .map((obj) => obj.id);
 }
@@ -101,37 +85,18 @@ export function snapToFrame(
   frame: BoardObject,
   snapThreshold = 0.3
 ): { x: number; y: number } | null {
-  const fx = frame.x;
-  const fy = frame.y;
-  const fw = frame.width;
-  const fh = frame.height;
-
-  // Calculate overlap
-  const overlapX = Math.max(0, Math.min(fx + fw, obj.x + obj.width) - Math.max(fx, obj.x));
-  const overlapY = Math.max(0, Math.min(fy + fh, obj.y + obj.height) - Math.max(fy, obj.y));
-  const overlapArea = overlapX * overlapY;
-  const objArea = obj.width * obj.height;
-
-  // If < 30% overlap, don't snap
-  if (objArea === 0 || overlapArea / objArea < snapThreshold) {
+  // If overlap is below threshold, don't snap
+  if (getOverlapRatio(obj, frame) < snapThreshold) {
     return null;
   }
 
   // If already fully inside, no snap needed
-  if (obj.x >= fx && obj.y >= fy && obj.x + obj.width <= fx + fw && obj.y + obj.height <= fy + fh) {
+  if (rectContains(frame, obj)) {
     return null;
   }
 
   // Snap to be fully inside
-  let newX = obj.x;
-  let newY = obj.y;
-
-  if (obj.x < fx) newX = fx;
-  if (obj.y < fy) newY = fy;
-  if (obj.x + obj.width > fx + fw) newX = fx + fw - obj.width;
-  if (obj.y + obj.height > fy + fh) newY = fy + fh - obj.height;
-
-  return { x: newX, y: newY };
+  return clampRectInside(obj, frame);
 }
 
 /**
@@ -206,32 +171,22 @@ export function minFrameSizeForChildren(
   };
 }
 
-function intersects(a: RectLike, b: RectLike): boolean {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-}
-
-export function getRectOverlapRatio(rect: RectLike, frame: RectLike): number {
-  const overlapX = Math.max(0, Math.min(rect.x + rect.width, frame.x + frame.width) - Math.max(rect.x, frame.x));
-  const overlapY = Math.max(0, Math.min(rect.y + rect.height, frame.y + frame.height) - Math.max(rect.y, frame.y));
-  const overlapArea = overlapX * overlapY;
-  const rectArea = rect.width * rect.height;
-  if (rectArea <= 0) return 0;
-  return overlapArea / rectArea;
-}
+// Re-export for backwards compatibility
+export { getOverlapRatio as getRectOverlapRatio } from "./geometry";
 
 export function shouldPopOutFromFrame(
   rect: RectLike,
   frame: RectLike,
   popOutThreshold = 0.5
 ): boolean {
-  return getRectOverlapRatio(rect, frame) < popOutThreshold;
+  return getOverlapRatio(rect, frame) < popOutThreshold;
 }
 
 /**
  * Push a rectangle to the closest non-overlapping position outside a frame.
  */
 export function pushRectOutsideFrame(rect: RectLike, frame: RectLike): { x: number; y: number } {
-  if (!intersects(rect, frame)) {
+  if (!rectsIntersect(rect, frame)) {
     return { x: rect.x, y: rect.y };
   }
 
@@ -280,7 +235,7 @@ export function constrainObjectOutsideFrames(
         height: frame.height,
       };
 
-      if (intersects(current, frameRect)) {
+      if (rectsIntersect(current, frameRect)) {
         const pushed = pushRectOutsideFrame(current, frameRect);
         if (pushed.x !== current.x || pushed.y !== current.y) {
           current = { ...current, x: pushed.x, y: pushed.y };

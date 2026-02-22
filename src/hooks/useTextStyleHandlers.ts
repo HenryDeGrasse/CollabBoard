@@ -64,39 +64,44 @@ export function useTextStyleHandlers({
       : "middle";
   }, [textStyleTargets]);
 
-  const handleAdjustSelectedTextSize = useCallback(
-    (delta: number) => {
+  const forEachTextTarget = useCallback(
+    (fn: (obj: BoardObject, id: string) => void) => {
       selectedIds.forEach((id) => {
         const obj = objects[id];
         if (!obj || !isTextCapableObjectType(obj.type)) return;
+        fn(obj, id);
+      });
+    },
+    [selectedIds, objects]
+  );
+
+  const handleAdjustSelectedTextSize = useCallback(
+    (delta: number) => {
+      forEachTextTarget((obj, id) => {
         const base = resolveObjectTextSize(obj);
         const next = clampTextSizeForType(obj.type, base + delta);
         updateObject(id, { textSize: next });
       });
     },
-    [selectedIds, objects, updateObject]
+    [forEachTextTarget, updateObject]
   );
 
   const handleChangeSelectedTextColor = useCallback(
     (color: string) => {
-      selectedIds.forEach((id) => {
-        const obj = objects[id];
-        if (!obj || !isTextCapableObjectType(obj.type)) return;
+      forEachTextTarget((_obj, id) => {
         updateObject(id, { textColor: color });
       });
     },
-    [selectedIds, objects, updateObject]
+    [forEachTextTarget, updateObject]
   );
 
   const handleChangeTextVerticalAlign = useCallback(
     (align: VAlign) => {
-      selectedIds.forEach((id) => {
-        const obj = objects[id];
-        if (!obj || !isTextCapableObjectType(obj.type)) return;
+      forEachTextTarget((_obj, id) => {
         updateObject(id, { textVerticalAlign: align });
       });
     },
-    [selectedIds, objects, updateObject]
+    [forEachTextTarget, updateObject]
   );
 
   return {
