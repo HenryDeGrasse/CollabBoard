@@ -68,7 +68,7 @@ export const TopLevelConnectors = React.memo(function TopLevelConnectors({
             (conn.toId && poppedOutDraggedObjectIds.has(conn.toId))
           ) return true;
           if (!conn.fromId || !conn.toId) return true;
-          return !(fromFrame != null && fromFrame === toFrame);
+          return !(fromFrame !== null && fromFrame === toFrame);
         })
         .filter((conn) =>
           isConnectorInViewport(conn, objectsWithLivePositions, visibleBounds)

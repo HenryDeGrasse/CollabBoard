@@ -3,6 +3,9 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HomePage } from "../../pages/HomePage";
 
+// Test fixture constants
+const TEST_ACCESS_TOKEN = "token-123";
+
 // Mock auth context
 const mockSignOut = vi.fn();
 vi.mock("../../components/auth/AuthProvider", () => ({
@@ -11,7 +14,7 @@ vi.mock("../../components/auth/AuthProvider", () => ({
     displayName: "TestUser",
     signOut: mockSignOut,
     loading: false,
-    session: { access_token: "token-123" },
+    session: { access_token: TEST_ACCESS_TOKEN },
   }),
 }));
 

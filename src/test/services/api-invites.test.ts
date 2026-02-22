@@ -1,6 +1,13 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+// Test fixture constants
+const TEST_AUTH_TOKEN = "test-token";
+const TEST_UNKNOWN_TOKEN = "unknown-token";
+const TEST_EXPIRED_TOKEN = "expired-token";
+const TEST_VALID_TOKEN = "valid-token";
+const TEST_EXISTING_INVITE_TOKEN = "existing-invite-token";
+
 // ── Shared mock stubs ──────────────────────────────────────────
 const mockResult = { data: null, error: null };
 const chain: any = {};
@@ -44,7 +51,7 @@ import handler from "../../../api/invites";
 function createReq(overrides: Partial<any> = {}): any {
   return {
     method: "POST",
-    headers: { authorization: "Bearer test-token" },
+    headers: { authorization: `Bearer ${TEST_AUTH_TOKEN}` },
     query: {},
     body: {},
     ...overrides,
@@ -112,7 +119,7 @@ describe("/api/invites", () => {
 
     it("returns 404 when token is not found", async () => {
       chain.maybeSingle.mockResolvedValue({ data: null, error: null });
-      const req = createReq({ method: "GET", query: { token: "unknown-token" } });
+      const req = createReq({ method: "GET", query: { token: TEST_UNKNOWN_TOKEN } });
       const res = createRes();
       await handler(req, res);
       expect(res.statusCode).toBe(404);
@@ -125,7 +132,7 @@ describe("/api/invites", () => {
         data: { expires_at: pastDate, boards: { title: "Old Board" } },
         error: null,
       });
-      const req = createReq({ method: "GET", query: { token: "expired-token" } });
+      const req = createReq({ method: "GET", query: { token: TEST_EXPIRED_TOKEN } });
       const res = createRes();
       await handler(req, res);
       expect(res.statusCode).toBe(200);
@@ -138,7 +145,7 @@ describe("/api/invites", () => {
         data: { expires_at: futureDate, boards: { title: "My Board" } },
         error: null,
       });
-      const req = createReq({ method: "GET", query: { token: "valid-token" } });
+      const req = createReq({ method: "GET", query: { token: TEST_VALID_TOKEN } });
       const res = createRes();
       await handler(req, res);
       expect(res.statusCode).toBe(200);
@@ -174,7 +181,7 @@ describe("/api/invites", () => {
         if (maybeSingleCallCount === 1) {
           return Promise.resolve({ data: { role: "editor" }, error: null });
         }
-        return Promise.resolve({ data: { token: "existing-invite-token" }, error: null });
+        return Promise.resolve({ data: { token: TEST_EXISTING_INVITE_TOKEN }, error: null });
       });
 
       const req = createReq({
@@ -184,7 +191,7 @@ describe("/api/invites", () => {
       const res = createRes();
       await handler(req, res);
       expect(res.statusCode).toBe(200);
-      expect(res.body).toEqual({ token: "existing-invite-token" });
+      expect(res.body).toEqual({ token: TEST_EXISTING_INVITE_TOKEN });
     });
   });
 

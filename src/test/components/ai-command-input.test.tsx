@@ -15,9 +15,12 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { AICommandInput } from "../../components/sidebar/AICommandInput";
 
+// Test fixture constants
+const TEST_ACCESS_TOKEN = "tok-123";
+
 // ── Auth mock ─────────────────────────────────────────────────────────────────
 vi.mock("../../components/auth/AuthProvider", () => ({
-  useAuth: () => ({ session: { access_token: "tok-123" } }),
+  useAuth: () => ({ session: { access_token: TEST_ACCESS_TOKEN } }),
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

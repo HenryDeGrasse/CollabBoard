@@ -98,15 +98,17 @@ export function useKeyboardShortcuts({
         let offsetY = 20;
         if (pointer && stage) {
           const canvasPos = canvas.screenToCanvas(pointer.x, pointer.y);
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const obj of clipObjs) {
-            minX = Math.min(minX, obj.x);
-            minY = Math.min(minY, obj.y);
-            maxX = Math.max(maxX, obj.x + obj.width);
-            maxY = Math.max(maxY, obj.y + obj.height);
-          }
-          const centerX = (minX + maxX) / 2;
-          const centerY = (minY + maxY) / 2;
+          const bounds = clipObjs.reduce(
+            (acc, obj) => ({
+              minX: Math.min(acc.minX, obj.x),
+              minY: Math.min(acc.minY, obj.y),
+              maxX: Math.max(acc.maxX, obj.x + obj.width),
+              maxY: Math.max(acc.maxY, obj.y + obj.height),
+            }),
+            { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+          );
+          const centerX = (bounds.minX + bounds.maxX) / 2;
+          const centerY = (bounds.minY + bounds.maxY) / 2;
           offsetX = canvasPos.x - centerX;
           offsetY = canvasPos.y - centerY;
         }

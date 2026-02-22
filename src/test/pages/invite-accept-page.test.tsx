@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// Test fixture constants
+const TEST_INVITE_TOKEN = "test-token-123";
+const TEST_ACCESS_TOKEN = "test-access-token";
+
 const mockUseAuth = vi.fn();
 vi.mock("../../components/auth/AuthProvider", () => ({
   useAuth: () => mockUseAuth(),
@@ -15,7 +19,7 @@ vi.mock("../../services/board", () => ({
 import { InviteAcceptPage } from "../../pages/InviteAcceptPage";
 
 const defaultProps = {
-  token: "test-token-123",
+  token: TEST_INVITE_TOKEN,
   onNavigateToBoard: vi.fn(),
   onNavigateHome: vi.fn(),
 };
@@ -26,7 +30,7 @@ describe("InviteAcceptPage", () => {
     // Default: authenticated user
     mockUseAuth.mockReturnValue({
       user: { id: "user-1" },
-      session: { access_token: "test-access-token" },
+      session: { access_token: TEST_ACCESS_TOKEN },
       loading: false,
     });
 

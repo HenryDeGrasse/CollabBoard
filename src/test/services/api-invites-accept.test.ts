@@ -1,6 +1,10 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+// Test fixture constants
+const TEST_AUTH_TOKEN = "test-token";
+const TEST_INVITE_TOKEN = "invite-token";
+
 const mockResult = { data: null, error: null };
 const chain: any = {};
 chain.select = vi.fn().mockReturnValue(chain);
@@ -33,8 +37,8 @@ import handler from "../../../api/invites/accept";
 function makeReq(overrides: Record<string, any> = {}): any {
   return {
     method: "POST",
-    headers: { authorization: "Bearer test-token" },
-    body: { token: "invite-token" },
+    headers: { authorization: `Bearer ${TEST_AUTH_TOKEN}` },
+    body: { token: TEST_INVITE_TOKEN },
     ...overrides,
   };
 }

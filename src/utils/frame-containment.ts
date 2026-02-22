@@ -68,24 +68,27 @@ export function getFrameBounds(
 ): { x: number; y: number; width: number; height: number } | null {
   if (containedIds.length === 0) return null;
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const containedObjects = containedIds
+    .map((id) => objects[id])
+    .filter((obj): obj is BoardObject => obj !== undefined);
 
-  for (const id of containedIds) {
-    const obj = objects[id];
-    if (!obj) continue;
-    minX = Math.min(minX, obj.x);
-    minY = Math.min(minY, obj.y);
-    maxX = Math.max(maxX, obj.x + obj.width);
-    maxY = Math.max(maxY, obj.y + obj.height);
-  }
+  if (containedObjects.length === 0) return null;
 
-  if (!isFinite(minX)) return null;
+  const bounds = containedObjects.reduce(
+    (acc, obj) => ({
+      minX: Math.min(acc.minX, obj.x),
+      minY: Math.min(acc.minY, obj.y),
+      maxX: Math.max(acc.maxX, obj.x + obj.width),
+      maxY: Math.max(acc.maxY, obj.y + obj.height),
+    }),
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+  );
 
   return {
-    x: minX - padding,
-    y: minY - padding,
-    width: maxX - minX + padding * 2,
-    height: maxY - minY + padding * 2,
+    x: bounds.minX - padding,
+    y: bounds.minY - padding,
+    width: bounds.maxX - bounds.minX + padding * 2,
+    height: bounds.maxY - bounds.minY + padding * 2,
   };
 }
 
