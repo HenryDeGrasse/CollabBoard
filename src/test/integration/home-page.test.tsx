@@ -23,12 +23,16 @@ const mockJoinBoard       = vi.fn().mockResolvedValue({ status: "joined" });
 const mockSoftDeleteBoard = vi.fn().mockResolvedValue(undefined);
 const mockRemoveBoardMember = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("../../services/board", () => ({
-  getUserBoards:      (...args: any[]) => mockGetUserBoards(...args),
-  createBoard:        (...args: any[]) => mockCreateBoard(...args),
-  joinBoard:          (...args: any[]) => mockJoinBoard(...args),
-  softDeleteBoard:    (...args: any[]) => mockSoftDeleteBoard(...args),
-  removeBoardMember:  (...args: any[]) => mockRemoveBoardMember(...args),
+vi.mock("../../services/board-crud", () => ({
+  getUserBoards:   (...args: any[]) => mockGetUserBoards(...args),
+  createBoard:     (...args: any[]) => mockCreateBoard(...args),
+  softDeleteBoard: (...args: any[]) => mockSoftDeleteBoard(...args),
+}));
+
+vi.mock("../../services/board-access", () => ({
+  joinBoard:         (...args: any[]) => mockJoinBoard(...args),
+  removeBoardMember: (...args: any[]) => mockRemoveBoardMember(...args),
+  getInviteToken:    vi.fn().mockResolvedValue("invite-token-123"),
 }));
 
 describe("HomePage integration", () => {

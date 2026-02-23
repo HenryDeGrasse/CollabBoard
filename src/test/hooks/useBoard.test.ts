@@ -19,7 +19,7 @@ const mockRemoveChannel = vi.fn();
 let objectChangeHandler: ((eventType: "INSERT" | "UPDATE" | "DELETE", row: any) => void) | null = null;
 let connectorChangeHandler: ((eventType: "INSERT" | "UPDATE" | "DELETE", row: any) => void) | null = null;
 
-vi.mock("../../services/board", () => ({
+vi.mock("../../services/board-crud", () => ({
   fetchBoardObjects: (...args: any[]) => mockFetchBoardObjects(...args),
   fetchBoardConnectors: (...args: any[]) => mockFetchBoardConnectors(...args),
   fetchBoardMetadata: (...args: any[]) => mockFetchBoardMetadata(...args),
