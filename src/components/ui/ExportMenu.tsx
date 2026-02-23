@@ -6,8 +6,10 @@ import { exportAsPNG, exportAsSVG, exportAsJSON } from "../../utils/export";
 
 interface ExportMenuProps {
   stageRef: React.RefObject<Konva.Stage | null>;
-  objects: Record<string, BoardObject>;
-  connectors: Record<string, Connector>;
+  /** Ref to objects — read on click, not during render (avoids re-renders) */
+  objectsRef: React.RefObject<Record<string, BoardObject>>;
+  /** Ref to connectors — read on click, not during render (avoids re-renders) */
+  connectorsRef: React.RefObject<Record<string, Connector>>;
   boardTitle: string;
 }
 
@@ -17,7 +19,7 @@ const exportOptions = [
   { id: "json", label: "Export as JSON", icon: <FileJson size={14} /> },
 ] as const;
 
-export function ExportMenu({ stageRef, objects, connectors, boardTitle }: ExportMenuProps) {
+export function ExportMenu({ stageRef, objectsRef, connectorsRef, boardTitle }: ExportMenuProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -36,7 +38,7 @@ export function ExportMenu({ stageRef, objects, connectors, boardTitle }: Export
     const stage = stageRef.current;
 
     if (format === "json") {
-      exportAsJSON(objects, connectors, boardTitle);
+      exportAsJSON(objectsRef.current ?? {}, connectorsRef.current ?? {}, boardTitle);
       return;
     }
 

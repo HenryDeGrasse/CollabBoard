@@ -121,6 +121,7 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
   // Track whether the user is actively zooming so consumers can enable
   // performance optimizations (e.g. layer caching).
   const [isZooming, setIsZooming] = useState(false);
+  const isZoomingRef = useRef(false);
   const zoomTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Batch rapid wheel events (e.g. trackpad zoom) into a single RAF update.
@@ -171,17 +172,39 @@ export function useCanvas(boardId?: string): UseCanvasReturn {
     pendingWheelRef.current = pending;
 
     // Mark as zooming; clear after ZOOM_IDLE_TIMEOUT ms of no wheel events.
-    setIsZooming(true);
+    if (!isZoomingRef.current) {
+      isZoomingRef.current = true;
+      setIsZooming(true);
+    }
     if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
-    zoomTimeoutRef.current = setTimeout(() => setIsZooming(false), ZOOM_IDLE_TIMEOUT);
+    zoomTimeoutRef.current = setTimeout(() => {
+      isZoomingRef.current = false;
+      setIsZooming(false);
+      // Commit final viewport to React state so Board re-renders once with
+      // correct culling / layout. Read from the ref since pendingWheelRef
+      // may have been consumed by a prior rAF.
+      setViewport(viewportRef.current);
+    }, ZOOM_IDLE_TIMEOUT);
 
+    // During zoom: apply transform directly to the Konva Stage node and
+    // update the viewportRef (for localStorage saves + zoom indicator),
+    // but do NOT call setViewport — this skips the entire React render
+    // cascade (Board JSX reconciliation of hundreds of objects).
+    // React state is committed once when zooming stops (timeout above).
     if (wheelRafRef.current === null) {
       wheelRafRef.current = requestAnimationFrame(() => {
         wheelRafRef.current = null;
         const final = pendingWheelRef.current;
         pendingWheelRef.current = null;
         if (final) {
-          setViewport(final);
+          // Apply directly to Konva — no React render
+          stage.x(final.x);
+          stage.y(final.y);
+          stage.scaleX(final.scale);
+          stage.scaleY(final.scale);
+          stage.batchDraw();
+          // Keep ref in sync for localStorage persistence + screenToCanvas
+          viewportRef.current = final;
         }
       });
     }

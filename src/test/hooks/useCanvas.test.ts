@@ -148,11 +148,14 @@ describe("useCanvas hook", () => {
     let rafId: number;
 
     function makeMockStage(scale = 1, x = 0, y = 0) {
-      const stage = {
-        scaleX: () => scale,
-        x: () => x,
-        y: () => y,
+      let _x = x, _y = y, _scaleX = scale, _scaleY = scale;
+      const stage: any = {
+        scaleX: (v?: number) => { if (v !== undefined) { _scaleX = v; return stage; } return _scaleX; },
+        scaleY: (v?: number) => { if (v !== undefined) { _scaleY = v; return stage; } return _scaleY; },
+        x: (v?: number) => { if (v !== undefined) { _x = v; return stage; } return _x; },
+        y: (v?: number) => { if (v !== undefined) { _y = v; return stage; } return _y; },
         getPointerPosition: () => ({ x: 400, y: 300 }),
+        batchDraw: vi.fn(),
       };
       return stage;
     }
@@ -165,6 +168,7 @@ describe("useCanvas hook", () => {
     }
 
     beforeEach(() => {
+      vi.useFakeTimers();
       rafCallbacks = [];
       rafId = 0;
       vi.stubGlobal(
@@ -178,6 +182,7 @@ describe("useCanvas hook", () => {
     });
 
     afterEach(() => {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
     });
 
@@ -186,6 +191,9 @@ describe("useCanvas hook", () => {
       rafCallbacks = [];
       cbs.forEach((cb) => cb(performance.now()));
     }
+
+    // Zoom idle timeout (ms) — viewport is committed to React state after this.
+    const ZOOM_IDLE_TIMEOUT = 150;
 
     it("does not update viewport synchronously on wheel event", () => {
       const { result } = renderHook(() => useCanvas());
@@ -211,7 +219,18 @@ describe("useCanvas hook", () => {
         flushRAF();
       });
 
-      // After RAF, viewport should have zoomed in (deltaY < 0 → zoom in)
+      // During zoom, viewport is NOT committed to React state — the transform
+      // is applied directly to the Konva Stage. React state updates once zoom
+      // ends (after ZOOM_IDLE_TIMEOUT).
+      expect(result.current.viewport.scale).toBe(1); // unchanged during zoom
+
+      // Stage should have the new scale applied directly
+      expect(stage.scaleX()).toBeGreaterThan(1);
+
+      // After zoom idle timeout, React state is committed
+      act(() => {
+        vi.advanceTimersByTime(ZOOM_IDLE_TIMEOUT);
+      });
       expect(result.current.viewport.scale).toBeGreaterThan(1);
     });
 
@@ -233,8 +252,14 @@ describe("useCanvas hook", () => {
         flushRAF();
       });
 
-      // Scale should reflect all 5 zoom-in ticks compounded: 1.08^5
+      // Stage should reflect all 5 zoom-in ticks compounded: 1.08^5
       const expectedScale = Math.pow(1.08, 5);
+      expect(stage.scaleX()).toBeCloseTo(expectedScale, 4);
+
+      // After zoom idle timeout, React state is committed
+      act(() => {
+        vi.advanceTimersByTime(ZOOM_IDLE_TIMEOUT);
+      });
       expect(result.current.viewport.scale).toBeCloseTo(expectedScale, 4);
     });
 
@@ -254,6 +279,12 @@ describe("useCanvas hook", () => {
 
       // Scale should reflect 3 zoom-out ticks: 1 / 1.08^3
       const expectedScale = Math.pow(1 / 1.08, 3);
+      expect(stage.scaleX()).toBeCloseTo(expectedScale, 4);
+
+      // After zoom idle timeout, React state is committed
+      act(() => {
+        vi.advanceTimersByTime(ZOOM_IDLE_TIMEOUT);
+      });
       expect(result.current.viewport.scale).toBeCloseTo(expectedScale, 4);
     });
 
@@ -273,6 +304,12 @@ describe("useCanvas hook", () => {
         flushRAF();
       });
 
+      expect(stage.scaleX()).toBeGreaterThanOrEqual(0.1);
+
+      // After zoom idle timeout, React state is committed
+      act(() => {
+        vi.advanceTimersByTime(ZOOM_IDLE_TIMEOUT);
+      });
       expect(result.current.viewport.scale).toBeGreaterThanOrEqual(0.1);
     });
 
@@ -290,6 +327,12 @@ describe("useCanvas hook", () => {
         flushRAF();
       });
 
+      expect(stage.scaleX()).toBeLessThanOrEqual(4.0);
+
+      // After zoom idle timeout, React state is committed
+      act(() => {
+        vi.advanceTimersByTime(ZOOM_IDLE_TIMEOUT);
+      });
       expect(result.current.viewport.scale).toBeLessThanOrEqual(4.0);
     });
 
@@ -356,12 +399,16 @@ describe("useCanvas hook", () => {
     let rafId: number;
 
     function makeMockStage(scale = 1, x = 0, y = 0) {
-      return {
-        scaleX: () => scale,
-        x: () => x,
-        y: () => y,
+      let _x = x, _y = y, _scaleX = scale, _scaleY = scale;
+      const stage: any = {
+        scaleX: (v?: number) => { if (v !== undefined) { _scaleX = v; return stage; } return _scaleX; },
+        scaleY: (v?: number) => { if (v !== undefined) { _scaleY = v; return stage; } return _scaleY; },
+        x: (v?: number) => { if (v !== undefined) { _x = v; return stage; } return _x; },
+        y: (v?: number) => { if (v !== undefined) { _y = v; return stage; } return _y; },
         getPointerPosition: () => ({ x: 400, y: 300 }),
+        batchDraw: vi.fn(),
       };
+      return stage;
     }
 
     function makeWheelEvent(deltaY: number, stage: any) {
