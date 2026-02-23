@@ -1,8 +1,8 @@
 import { useState, useCallback } from "react";
-import type { BoardObject } from "../types/board";
-import type { ToolType } from "../components/canvas/Board";
-import { computeFrameFromGesture } from "../utils/frame-create";
-import type { UndoAction } from "./useUndoRedo";
+import type { BoardObject } from "../../types/board";
+import type { ToolType } from "../../types/tool";
+import { computeFrameFromGesture } from "../../utils/frame";
+import type { UndoAction } from "../useUndoRedo";
 
 // Frame layout constants
 const MIN_FRAME_WIDTH = 200;

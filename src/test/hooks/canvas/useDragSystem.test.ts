@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useDragSystem } from "../../hooks/useDragSystem";
-import type { UseDragSystemParams } from "../../hooks/useDragSystem";
-import type { BoardObject } from "../../types/board";
+import { useDragSystem } from "../../../hooks/canvas/useDragSystem";
+import type { UseDragSystemParams } from "../../../hooks/canvas/useDragSystem";
+import type { BoardObject } from "../../../types/board";
 
 // ── Helpers ──────────────────────────────────────────────────────
 

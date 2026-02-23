@@ -2,17 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-vi.mock("../../utils/text-fit", () => ({
+vi.mock("../../utils/text", () => ({
   calculateFontSize: vi.fn(() => 16),
-}));
-
-vi.mock("../../utils/text-style", () => ({
   getAutoContrastingTextColor: vi.fn(() => "#1F2937"),
   getFrameHeaderHeight: vi.fn(() => 40),
   resolveObjectTextSize: vi.fn(() => 14),
-}));
-
-vi.mock("../../utils/text-overlay-layout", () => ({
   estimateVerticalPaddingTop: vi.fn(() => 10),
 }));
 

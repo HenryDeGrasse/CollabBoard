@@ -4,11 +4,11 @@ import Konva from "konva";
 import type { BoardObject } from "../../types/board";
 import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles";
 import { RotationHandle } from "./RotationHandle";
-import { calculateFontSize } from "../../utils/text-fit";
+import { calculateFontSize } from "../../utils/text";
 import {
   getAutoContrastingTextColor,
   resolveObjectTextSize,
-} from "../../utils/text-style";
+} from "../../utils/text";
 
 interface ShapeProps {
   object: BoardObject;

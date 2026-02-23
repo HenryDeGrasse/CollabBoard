@@ -1,11 +1,12 @@
-import type { RemoteUser } from "../../hooks/usePresence";
+import React from "react";
+import type { RemoteUser } from "../../hooks/presence/usePresence";
 
 interface PresencePanelProps {
   users: Record<string, RemoteUser>;
   currentUserId: string;
 }
 
-export function PresencePanel({ users, currentUserId }: PresencePanelProps) {
+export const PresencePanel = React.memo(function PresencePanel({ users, currentUserId }: PresencePanelProps) {
   const onlineUsers = Object.entries(users).filter(
     ([, presence]) => presence.online
   );
@@ -43,4 +44,4 @@ export function PresencePanel({ users, currentUserId }: PresencePanelProps) {
       </div>
     </div>
   );
-}
+});

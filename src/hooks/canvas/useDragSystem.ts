@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Konva from "konva";
-import type { BoardObject } from "../types/board";
-import type { UndoAction } from "./useUndoRedo";
+import type { BoardObject } from "../../types/board";
+import type { UndoAction } from "../useUndoRedo";
 import {
   constrainObjectOutsideFrames,
   shouldPopOutFromFrame,
-} from "../utils/frame-containment";
+} from "../../utils/frame";
 
 const BROADCAST_INTERVAL = 50;
 

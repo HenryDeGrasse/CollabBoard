@@ -1,8 +1,8 @@
 import React from "react";
 import { Layer } from "react-konva";
 import { RemoteCursor } from "./RemoteCursor";
-import { useCursorInterpolation } from "../../hooks/useCursorInterpolation";
-import type { CursorStore } from "../../hooks/usePresence";
+import { useCursorInterpolation } from "../../hooks/presence/useCursorInterpolation";
+import type { CursorStore } from "../../hooks/presence/usePresence";
 
 interface RemoteCursorsLayerProps {
   cursorStore: CursorStore;

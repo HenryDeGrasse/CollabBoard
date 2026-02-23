@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useCursorInterpolation } from "../../hooks/useCursorInterpolation";
-import type { CursorStore } from "../../hooks/usePresence";
+import { useCursorInterpolation } from "../../../hooks/presence/useCursorInterpolation";
+import type { CursorStore } from "../../../hooks/presence/usePresence";
 
 /** Helper: create a mock CursorStore backed by a plain object */
 function createMockCursorStore(initial: Record<string, { x: number; y: number }> = {}) {

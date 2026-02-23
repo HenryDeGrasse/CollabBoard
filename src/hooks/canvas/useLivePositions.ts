@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useRef, useEffect } from "react";
-import type { BoardObject } from "../types/board";
-import { shouldPopOutFromFrame } from "../utils/frame-containment";
+import type { BoardObject } from "../../types/board";
+import { shouldPopOutFromFrame } from "../../utils/frame";
 
 export interface LiveDragPosition {
   x: number;
@@ -159,6 +159,12 @@ export function useLivePositions(
   const objectsWithLivePositions = useMemo(() => {
     const cache = livePositionCacheRef.current;
     const liveIds = Object.keys(resolvedLiveDragPositions);
+
+    // NEW: Isomorphic Short-circuit
+    // If no one is dragging anything, we can return the objects dictionary directly.
+    if (liveIds.length === 0) {
+      return objects;
+    }
 
     // Fast path: if the base objects record hasn't changed (same reference),
     // only update the entries that have live positions. This avoids iterating

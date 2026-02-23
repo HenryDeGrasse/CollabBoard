@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   MousePointer2,
   StickyNote,
@@ -10,7 +10,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import type Konva from "konva";
-import type { ToolType } from "../canvas/Board";
+import type { ToolType } from "../../types/tool";
 import type { BoardObject, Connector } from "../../types/board";
 import { getStickyColorArray, getShapeColorArray } from "../../utils/colors";
 import { ExportMenu } from "../ui/ExportMenu";
@@ -35,8 +35,9 @@ interface ToolbarProps {
   onChangeSelectedStrokeWidth: (w: number) => void;
   onChangeSelectedConnectorColor: (color: string) => void;
   stageRef?: React.RefObject<Konva.Stage | null>;
-  objects?: Record<string, BoardObject>;
-  connectors?: Record<string, Connector>;
+  /** Use refs so Toolbar doesn't re-render on every object/connector change */
+  objectsRef?: React.RefObject<Record<string, BoardObject>>;
+  connectorsRef?: React.RefObject<Record<string, Connector>>;
   boardTitle?: string;
 }
 
@@ -178,7 +179,7 @@ function StrokeWidthPicker({
   );
 }
 
-export function Toolbar({
+export const Toolbar = React.memo(function Toolbar({
   activeTool,
   activeColor,
   activeStrokeWidth,
@@ -195,8 +196,8 @@ export function Toolbar({
   onChangeSelectedStrokeWidth,
   onChangeSelectedConnectorColor,
   stageRef,
-  objects,
-  connectors,
+  objectsRef,
+  connectorsRef,
   boardTitle,
 }: ToolbarProps) {
   const isConnectorTool = activeTool === "arrow" || activeTool === "line";
@@ -304,17 +305,17 @@ export function Toolbar({
       )}
 
       {/* Export menu */}
-      {stageRef && objects && connectors && boardTitle != null && (
+      {stageRef && objectsRef && connectorsRef && boardTitle != null && (
         <>
           <div className="w-px h-6 bg-gray-200 mx-1" />
           <ExportMenu
             stageRef={stageRef}
-            objects={objects}
-            connectors={connectors}
+            objectsRef={objectsRef}
+            connectorsRef={connectorsRef}
             boardTitle={boardTitle}
           />
         </>
       )}
     </div>
   );
-}
+});

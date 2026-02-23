@@ -1,4 +1,4 @@
-import type { ToolType } from "./Board";
+import type { ToolType } from "../../types/tool";
 
 interface ToolHintsProps {
   activeTool: ToolType;

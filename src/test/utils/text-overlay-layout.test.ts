@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateVerticalPaddingTop } from "../../utils/text-overlay-layout";
+import { estimateVerticalPaddingTop } from "../../utils/text";
 
 describe("estimateVerticalPaddingTop", () => {
   const base = {

@@ -1,7 +1,7 @@
 import { Arrow, Line, Rect, Circle as KonvaCircle } from "react-konva";
-import type { ConnectorDrawState } from "../../hooks/useConnectorDraw";
-import type { DrawState } from "../../hooks/useDrawingTools";
-import type { ToolType } from "./Board";
+import type { ConnectorDrawState } from "../../hooks/canvas/useConnectorDraw";
+import type { DrawState } from "../../hooks/canvas/useDrawingTools";
+import type { ToolType } from "../../types/tool";
 
 const MIN_FRAME_WIDTH = 200;
 const MIN_FRAME_HEIGHT = 150;

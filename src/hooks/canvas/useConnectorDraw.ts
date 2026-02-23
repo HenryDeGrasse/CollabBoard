@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { BoardObject, Connector } from "../types/board";
-import type { ToolType } from "../components/canvas/Board";
+import type { BoardObject, Connector } from "../../types/board";
+import type { ToolType } from "../../types/tool";
 
 export interface ConnectorDrawState {
   fromId: string;      // "" = free point

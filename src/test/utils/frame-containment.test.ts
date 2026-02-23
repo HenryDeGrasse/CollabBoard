@@ -9,7 +9,7 @@ import {
   shouldPopOutFromFrame,
   constrainChildrenInFrame,
   minFrameSizeForChildren,
-} from "../../utils/frame-containment";
+} from "../../utils/frame";
 import type { BoardObject } from "../../types/board";
 
 function makeObj(id: string, x: number, y: number, w = 100, h = 100, type: BoardObject["type"] = "sticky"): BoardObject {
