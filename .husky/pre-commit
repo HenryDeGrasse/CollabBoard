@@ -1,6 +1,13 @@
 #!/bin/sh
 set -e
 
+# Use bun if available, otherwise npm
+if command -v bun >/dev/null 2>&1; then
+  PM="bun"
+else
+  PM="npm"
+fi
+
 echo "🧪 Running tests before commit..."
-npm test
+$PM test
 echo "✅ Tests passed."

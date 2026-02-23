@@ -24,6 +24,9 @@ const CI_EXTRA_MS = process.env.CI ? 150 : 0;
 /**
  * Poll a predicate on a page, returning the Date.now() timestamp at which it
  * first returns true.  Rejects if the deadline passes without a match.
+ *
+ * Uses Playwright's waitForFunction which properly serializes the predicate
+ * without requiring eval() or new Function().
  */
 async function pollUntil(
   page: Page,
@@ -31,29 +34,10 @@ async function pollUntil(
   options: { pollMs?: number; timeoutMs?: number } = {}
 ): Promise<number> {
   const { pollMs = 10, timeoutMs = 3000 } = options;
-  return page.evaluate(
-    ({ predicateSrc, pollMs, timeoutMs }) => {
-      return new Promise<number>((resolve, reject) => {
-        // Reconstruct the predicate function from its source string
-        // eslint-disable-next-line no-new-func
-        const fn = new Function(`return (${predicateSrc})`)() as () => boolean;
-        const deadline = Date.now() + timeoutMs;
-        const tick = () => {
-          if (fn()) {
-            resolve(Date.now());
-            return;
-          }
-          if (Date.now() > deadline) {
-            reject(new Error("pollUntil timed out"));
-            return;
-          }
-          setTimeout(tick, pollMs);
-        };
-        tick();
-      });
-    },
-    { predicateSrc: predicate.toString(), pollMs, timeoutMs }
-  );
+  // Use Playwright's built-in waitForFunction which handles serialization safely
+  await page.waitForFunction(predicate, { polling: pollMs, timeout: timeoutMs });
+  // Return timestamp after condition is met
+  return await page.evaluate(() => Date.now());
 }
 
 test.describe("Test 11: End-to-end sync latency", () => {

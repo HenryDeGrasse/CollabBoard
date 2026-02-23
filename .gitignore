@@ -38,3 +38,12 @@ blob-report/
 
 # Local debug artifacts
 tmp-*.png
+
+# bv (beads viewer) local config and caches
+.bv/
+
+# beads local database and config
+.beads/
+
+# ntm local config and logs
+.ntm/

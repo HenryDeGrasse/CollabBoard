@@ -148,28 +148,33 @@ export function useDrawingTools(
       const dy = Math.abs(shapeDraw.endY - shapeDraw.startY);
       const isClick = dx < SHAPE_CLICK_THRESHOLD && dy < SHAPE_CLICK_THRESHOLD;
 
-      let x: number, y: number, w: number, h: number;
-      if (isClick) {
-        if (activeTool === "rectangle") {
-          w = 150; h = 100;
-        } else if (activeTool === "circle") {
-          w = 100; h = 100;
-        } else {
-          w = 150; h = 150;
+      const { x, y, w, h } = (() => {
+        if (isClick) {
+          const [width, height] =
+            activeTool === "rectangle" ? [150, 100] :
+            activeTool === "circle" ? [100, 100] :
+            [150, 150];
+          return {
+            x: shapeDraw.startX - width / 2,
+            y: shapeDraw.startY - height / 2,
+            w: width,
+            h: height,
+          };
         }
-        x = shapeDraw.startX - w / 2;
-        y = shapeDraw.startY - h / 2;
-      } else {
-        x = Math.min(shapeDraw.startX, shapeDraw.endX);
-        y = Math.min(shapeDraw.startY, shapeDraw.endY);
-        w = Math.max(20, dx);
-        h = Math.max(20, dy);
+        let width = Math.max(20, dx);
+        let height = Math.max(20, dy);
         if (activeTool === "circle" || activeTool === "sticky") {
-          const side = Math.max(w, h);
-          w = side;
-          h = side;
+          const side = Math.max(width, height);
+          width = side;
+          height = side;
         }
-      }
+        return {
+          x: Math.min(shapeDraw.startX, shapeDraw.endX),
+          y: Math.min(shapeDraw.startY, shapeDraw.endY),
+          w: width,
+          h: height,
+        };
+      })();
 
       const objType = activeTool === "sticky" ? "sticky" : activeTool;
       // Use Date.now() as zIndex so concurrent users creating objects in the

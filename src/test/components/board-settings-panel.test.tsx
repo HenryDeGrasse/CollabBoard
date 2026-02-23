@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+// Test fixture constants
+const TEST_ACCESS_TOKEN = "test-token";
+
 const mockGetBoardMembers = vi.fn();
 const mockGetInviteToken = vi.fn();
 const mockListBoardAccessRequests = vi.fn();
@@ -39,7 +42,7 @@ describe("BoardSettingsPanel", () => {
     vi.clearAllMocks();
     mockUseAuth.mockReturnValue({
       user: { id: "user-1" },
-      session: { access_token: "test-token" },
+      session: { access_token: TEST_ACCESS_TOKEN },
       loading: false,
     });
     mockGetInviteToken.mockResolvedValue("invite-token-123");

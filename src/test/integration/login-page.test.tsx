@@ -3,6 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LoginPage } from "../../components/auth/LoginPage";
 
+// Test fixture constants
+const TEST_PASSWORD = "secret123";
+
 // Mock supabase
 const mockSignInAnonymously = vi.fn().mockResolvedValue({ error: null });
 const mockSignUp = vi.fn().mockResolvedValue({ error: null });
@@ -150,7 +153,7 @@ describe("LoginPage integration", () => {
 
     expect(mockSignInWithPassword).toHaveBeenCalledWith({
       email: "test@example.com",
-      password: "secret123",
+      password: TEST_PASSWORD,
     });
   });
 

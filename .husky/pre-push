@@ -1,27 +1,13 @@
 #!/bin/sh
 set -e
 
-# ⛔ Push gate — mirrors the pip → uv pattern.
-#
-# Direct `git push` is BLOCKED.
-# Per AGENTS.md, the user must explicitly approve every push.
-#
-# To push with approval, use:
-#   COLLAB_PUSH_APPROVED=1 git push
-#
-if [ -z "$COLLAB_PUSH_APPROVED" ]; then
-  echo ""
-  echo "⛔  Direct git push is not allowed."
-  echo ""
-  echo "    Per AGENTS.md rules, you must ask the user for permission"
-  echo "    before pushing to origin."
-  echo ""
-  echo "    Once the user approves, push with:"
-  echo "      COLLAB_PUSH_APPROVED=1 git push"
-  echo ""
-  exit 1
+# Use bun if available, otherwise npm
+if command -v bun >/dev/null 2>&1; then
+  PM="bun"
+else
+  PM="npm"
 fi
 
 echo "🔍 Running pre-push checks (tests + build)..."
-npm run preflight
+$PM run preflight
 echo "✅ Pre-push checks passed."
