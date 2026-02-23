@@ -1,6 +1,10 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { buildBoardContext } from "../../../api/_lib/aiAgent";
+import {
+  buildBoardContext,
+  hasFastPathMatch,
+  selectToolDefinitions,
+} from "../../../api/_lib/aiAgent";
 
 function makeObject(id: number) {
   return {
@@ -52,5 +56,51 @@ describe("buildBoardContext", () => {
     expect(payload.selectedObjects.map((o: any) => o.id)).toEqual(
       expect.arrayContaining(["obj-5", "obj-42"])
     );
+  });
+});
+
+describe("selectToolDefinitions", () => {
+  it("includes layout tools for layout-heavy commands", () => {
+    const tools = selectToolDefinitions(
+      "Create a mind map for launch planning",
+      "complex",
+      false
+    );
+
+    const names = tools.map((t) => t.function.name);
+    expect(names).toContain("createMindMap");
+    expect(names).toContain("get_board_context");
+    expect(names).toContain("search_objects");
+  });
+
+  it("keeps clear_board out unless explicitly requested", () => {
+    const tools = selectToolDefinitions("Add 3 yellow sticky notes", "simple", false);
+    const names = tools.map((t) => t.function.name);
+    expect(names).not.toContain("clear_board");
+  });
+
+  it("excludes selection tools when no selection and no selection keywords", () => {
+    const tools = selectToolDefinitions("Add a blue sticky note", "simple", false);
+    const names = tools.map((t) => t.function.name);
+    expect(names).not.toContain("arrange_objects");
+    expect(names).not.toContain("duplicate_objects");
+  });
+
+  it("includes selection tools when hasSelection is true", () => {
+    const tools = selectToolDefinitions("Move these to a grid", "simple", true);
+    const names = tools.map((t) => t.function.name);
+    expect(names).toContain("arrange_objects");
+    expect(names).toContain("duplicate_objects");
+  });
+});
+
+describe("hasFastPathMatch", () => {
+  it("matches canonical template commands", () => {
+    expect(hasFastPathMatch("Create a SWOT analysis for Q2")).toBe(true);
+    expect(hasFastPathMatch("Set up a retrospective board")).toBe(true);
+  });
+
+  it("does not match non-template commands", () => {
+    expect(hasFastPathMatch("Rename these two stickies")).toBe(false);
   });
 });

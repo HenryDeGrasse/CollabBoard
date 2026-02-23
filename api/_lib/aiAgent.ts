@@ -7,6 +7,7 @@
  */
 import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers/openai";
+import { createExecutionPlan, validateExecutionPlan } from "./aiPlanner.js";
 import { TOOL_DEFINITIONS, executeTool } from "./aiTools.js";
 
 // Default tracing to enabled so production traces are captured even when
@@ -62,6 +63,95 @@ export function classifyComplexity(command: string): "simple" | "complex" {
 export const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
 export const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
 
+const TOOL_BY_NAME = new Map(
+  TOOL_DEFINITIONS.map((tool) => [tool.function.name, tool] as const)
+);
+
+function hasKeyword(commandLower: string, keywords: string[]) {
+  return keywords.some((kw) => commandLower.includes(kw));
+}
+
+const TOOL_GROUPS = {
+  // Core CRUD — always available. Excludes destructive maintenance tools
+  // and layout templates to keep the tool list compact for simple commands.
+  core: [
+    "create_objects",
+    "bulk_create_objects",
+    "create_connectors",
+    "update_objects",
+    "update_objects_by_filter",
+    "delete_objects",
+    "delete_objects_by_filter",
+    "delete_connectors",
+    "search_objects",
+    "get_board_context",
+    "read_board_state",
+    "navigate_to_objects",
+  ],
+  selection: ["arrange_objects", "duplicate_objects"],
+  layout: [
+    "createQuadrant",
+    "createColumnLayout",
+    "createMindMap",
+    "createFlowchart",
+    "createWireframe",
+  ],
+  maintenance: ["fit_frames_to_contents", "clear_board"],
+} as const;
+
+export function selectToolDefinitions(
+  command: string,
+  complexity: "simple" | "complex",
+  hasSelection: boolean
+) {
+  const lower = command.toLowerCase();
+  const selectedNames = new Set<string>(TOOL_GROUPS.core);
+
+  // Selection-aware tools: only added when relevant to avoid tool clutter.
+  if (hasSelection || hasKeyword(lower, ["selected", "align", "distribute", "grid", "duplicate", "copy", "arrange"])) {
+    for (const name of TOOL_GROUPS.selection) selectedNames.add(name);
+  }
+
+  const layoutRequested =
+    complexity === "complex" ||
+    hasKeyword(lower, [
+      "swot",
+      "kanban",
+      "retro",
+      "retrospective",
+      "mind map",
+      "mindmap",
+      "flowchart",
+      "flow chart",
+      "wireframe",
+      "layout",
+      "column",
+      "quadrant",
+      "matrix",
+      "diagram",
+      "reorganize",
+      "organize",
+      "categorize",
+      "group",
+    ]);
+
+  if (layoutRequested) {
+    for (const name of TOOL_GROUPS.layout) selectedNames.add(name);
+  }
+
+  if (complexity === "complex" || hasKeyword(lower, ["fit frame", "fit frames", "tighten frame", "resize frame"])) {
+    selectedNames.add("fit_frames_to_contents");
+  }
+
+  if (hasKeyword(lower, ["clear board", "wipe board", "empty board", "start over", "delete everything"])) {
+    selectedNames.add("clear_board");
+  }
+
+  return Array.from(selectedNames)
+    .map((name) => TOOL_BY_NAME.get(name))
+    .filter((tool): tool is (typeof TOOL_DEFINITIONS)[number] => Boolean(tool));
+}
+
 // ─── Fast-path handlers ────────────────────────────────────────
 // Bypass the general agent loop for well-known template requests.
 // These run a cheap content-generation call + deterministic template tool.
@@ -92,6 +182,10 @@ const FAST_PATHS: FastPathMatch[] = [
     handler: fastPathRetro,
   },
 ];
+
+export function hasFastPathMatch(command: string): boolean {
+  return FAST_PATHS.some((fp) => fp.pattern.test(command));
+}
 
 async function* fastPathSWOT(
   match: RegExpMatchArray,
@@ -262,13 +356,14 @@ export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collabo
 - **Flowchart / process** -> createFlowchart
 - **Wireframe / mockup** -> createWireframe
 - **Add items inside a frame** -> bulk_create_objects with parentFrameId
-- **Find specific objects** -> search_objects (prefer over read_board_state)
-- **Need full board picture** -> read_board_state (use sparingly on large boards)
+- **Find specific objects** -> search_objects
+- **Need scoped context (selected/viewport/frame/ids)** -> get_board_context
+- **Need full board picture** -> read_board_state (last resort on large boards)
 
 ## Working with existing objects (CRITICAL)
 When the user asks to organize, categorize, group, sort, separate, reorganize, convert, or rearrange existing objects into a layout:
 
-1. First, call search_objects (or read_board_state if needed) to get the IDs of existing objects.
+1. First, call search_objects (or get_board_context/read_board_state if needed) to get the IDs of existing objects.
 2. Analyze the objects' text content to determine how they should be categorized or ordered.
 3. Call the appropriate layout tool with the \`sourceIds\` parameter, mapping each object ID to the correct branch/column/step.
 4. NEVER duplicate existing objects. The sourceIds parameter REPOSITIONS them — it does not create copies.
@@ -283,7 +378,18 @@ The sourceIds parameter is available on: createMindMap, createFlowchart, createC
 5. Use specialized layout tools (createQuadrant, createColumnLayout, createMindMap, createFlowchart, createWireframe) instead of manually placing frames and stickies.`;
 
 export interface AgentStreamEvent {
-  type: "text" | "tool_start" | "tool_result" | "done" | "error" | "meta" | "navigate";
+  type:
+    | "text"
+    | "tool_start"
+    | "tool_result"
+    | "done"
+    | "error"
+    | "meta"
+    | "navigate"
+    | "plan_ready"
+    | "step_started"
+    | "step_succeeded"
+    | "step_failed";
   content: string;
 }
 
@@ -508,7 +614,7 @@ export function buildBoardContext(
         connectorsOmitted: Math.max(0, connectorCount - sampledConnectors.length),
       },
       note:
-        "Context is intentionally compact for latency. Call read_board_state when you need exact full board details or IDs not listed in this digest.",
+        "Context is intentionally compact for latency. Call get_board_context for scoped retrieval, or read_board_state only when you need exact full board details.",
     },
   };
 }
@@ -560,6 +666,27 @@ export async function* runAgent(
 
   const complexity = classifyComplexity(userCommand);
   const model = complexity === "complex" ? MODEL_COMPLEX : MODEL_SIMPLE;
+  const scopedTools = selectToolDefinitions(
+    userCommand,
+    complexity,
+    Boolean(selectedIds?.length)
+  );
+  const executionPlan = createExecutionPlan({
+    command: userCommand,
+    complexity,
+    selectedCount: selectedIds?.length ?? 0,
+    toolNames: scopedTools.map((tool) => tool.function.name),
+    hasFastPath: false,
+  });
+  const planValidation = validateExecutionPlan(executionPlan);
+  if (!planValidation.valid) {
+    yield {
+      type: "error",
+      content: `Plan validation failed (${planValidation.code}): ${planValidation.message}`,
+    };
+    return;
+  }
+
   const boardContext = buildBoardContext(boardState, complexity, selectedIds);
   const boardContextJson = JSON.stringify(boardContext.payload);
 
@@ -573,7 +700,13 @@ export async function* runAgent(
       contextChars: boardContextJson.length,
       boardObjectCount: boardContext.objectCount,
       boardConnectorCount: boardContext.connectorCount,
+      toolCount: scopedTools.length,
     }),
+  };
+
+  yield {
+    type: "plan_ready",
+    content: JSON.stringify(executionPlan),
   };
 
   // Build viewport context block if we have the data
@@ -616,7 +749,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
 
   const digestUsageHint =
     boardContext.scope === "digest"
-      ? "\nIf you need exact full board details or object IDs not present in this digest, call read_board_state before applying mutations."
+      ? "\nIf you need details not present in this digest, call get_board_context first (selected/viewport/frame/ids), and use read_board_state only as a last resort."
       : "";
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -641,7 +774,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       const stream = await openai.chat.completions.create({
         model,
         messages,
-        tools: TOOL_DEFINITIONS,
+        tools: scopedTools,
         tool_choice: "auto",
         stream: true,
         temperature: 0.3,
@@ -719,8 +852,19 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       messages.push(assistantMsg);
 
       // Signal tool starts
-      for (const tc of toolCallEntries) {
+      for (let i = 0; i < toolCallEntries.length; i++) {
+        const tc = toolCallEntries[i];
         yield { type: "tool_start", content: tc.name };
+        yield {
+          type: "step_started",
+          content: JSON.stringify({
+            stepId: `iter-${iteration}-tool-${i + 1}`,
+            iteration,
+            index: i + 1,
+            total: toolCallEntries.length,
+            tool: tc.name,
+          }),
+        };
       }
 
       // Execute all tool calls in parallel
@@ -755,7 +899,8 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       );
 
       // Yield tool results — emit a navigate event if any tool returned _viewport
-      for (const tr of toolResults) {
+      for (let i = 0; i < toolResults.length; i++) {
+        const tr = toolResults[i];
         const res = tr.result as any;
         if (res?._viewport) {
           yield { type: "navigate", content: JSON.stringify(res._viewport) };
@@ -763,6 +908,19 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
         yield {
           type: "tool_result",
           content: JSON.stringify({ tool: tr.name, result: tr.result }),
+        };
+
+        const failed = Boolean(res?.error);
+        yield {
+          type: failed ? "step_failed" : "step_succeeded",
+          content: JSON.stringify({
+            stepId: `iter-${iteration}-tool-${i + 1}`,
+            iteration,
+            index: i + 1,
+            total: toolResults.length,
+            tool: tr.name,
+            ...(failed ? { error: String(res.error) } : {}),
+          }),
         };
       }
 

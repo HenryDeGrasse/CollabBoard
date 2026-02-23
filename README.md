@@ -52,13 +52,14 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 
 ### 🤖 AI Agent
 - **Natural Language Commands** — Type commands like "create a SWOT analysis" or "add 3 sticky notes"
-- **Intent Router** — Heuristic router selects model, tools, and context scope per command
-- **Board Digest** — Compact board summary (~95% token reduction vs. full JSON)
-- **Template Engine** — Pre-built layouts (SWOT, Kanban, etc.) with fail-fast rollback
-- **Plan → Validate → Execute** — Structured pipeline with progress updates and backend validation
-- **Resumable Jobs** — Continue interrupted commands via stable `commandId`
-- **Board Versioning + Idempotency** — Version-tracked mutations and retry-safe object creation (`client_id`)
-- **Bulk Tools** — `bulkCreate` and `bulkDelete` for efficient multi-object operations
+- **Complexity Router** — Heuristic classifier routes simple vs. complex requests to different models
+- **Fast-path Templates** — Deterministic SWOT / Kanban / Retro builders with AI-generated content
+- **Compact Board Context** — Uses full board state for small boards and digest mode for large boards
+- **Search-first Tooling** — `search_objects` for targeted lookup, `read_board_state` when full context is needed
+- **Specialized Layout Tools** — Quadrant, columns, mind map, flowchart, and wireframe creation tools
+- **Streaming UX** — SSE progress updates (`tool_start`, `tool_result`, text tokens, and navigation events)
+
+> Planned next-phase improvements are tracked in [`docs/agent-improvements.md`](docs/agent-improvements.md).
 
 ### 🔐 Authentication
 - **Email / Password** — Full sign-up and sign-in via Supabase Auth
@@ -71,13 +72,13 @@ A real-time collaborative whiteboard for brainstorming, diagramming, and running
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18 + TypeScript (strict) + Vite |
+| Frontend | React 19 + TypeScript (strict) + Vite |
 | Styling | Tailwind CSS |
 | Canvas | Konva.js via react-konva |
 | Database & Auth | Supabase (Postgres + Row Level Security + Realtime) |
-| API / AI Backend | Vercel Serverless Functions + OpenAI GPT-4o |
+| API / AI Backend | Vercel Serverless Functions + OpenAI (tool-calling models) |
 | Hosting | Vercel |
-| Testing | Vitest (278 unit/integration tests) + Playwright E2E |
+| Testing | Vitest (unit/integration) + Playwright E2E |
 
 ---
 
@@ -221,22 +222,25 @@ src/
 │   ├── sidebar/      # PresencePanel, TextStylePanel, AICommandInput
 │   ├── ui/           # HelpPanel
 │   └── auth/         # AuthProvider, LoginPage
-├── hooks/            # useBoard, usePresence, useCanvas, useSelection, useAIAgent,
+├── hooks/            # useBoard, usePresence, useCanvas, useSelection,
 │                     # useUndoRedo, useCursorInterpolation
-├── services/         # supabase, board, presence, ai-agent
+├── services/         # supabase, board CRUD/access, presence
 ├── types/            # board, presence, ai
 ├── utils/            # colors, geometry, throttle, ids, text-fit, text-style,
 │                     # text-overlay-layout, selection, frame-containment, frame-placement
-├── test/             # 272 Vitest tests across 31 files
+├── test/             # Vitest suites (hooks, components, services, integrations)
 └── pages/            # HomePage (dashboard), BoardPage (canvas)
 api/
-├── ai-agent.ts       # Main AI entrypoint
-├── ai-continue.ts    # Resume interrupted AI runs
+├── ai.ts             # Main AI entrypoint (SSE stream at /api/ai)
 ├── health.ts         # Local API diagnostics (/api/health)
 ├── _dev-server.mjs   # Local API dev server
-└── _lib/ai/          # agent, router, digest, planner, templates, tools, versioning, errors
+└── _lib/
+   ├── aiAgent.ts     # Agent loop, complexity routing, board digesting
+   ├── aiTools.ts     # Tool schemas + Supabase execution layer
+   ├── auth.ts
+   └── supabaseAdmin.ts
 supabase/
-└── migrations/       # 001–008 SQL migrations (versioning + text vertical align included)
+└── migrations/       # 001–013 SQL migrations
 docs/                 # PRDs, planning artifacts
 ```
 
@@ -249,7 +253,7 @@ docs/                 # PRDs, planning artifacts
 │  React + Konva (Browser)            │
 │  useBoard → Supabase Realtime       │
 │  usePresence → cursor broadcast     │
-│  useAIAgent → /api/ai-agent         │
+│  AICommandInput → /api/ai           │
 └──────────┬──────────────────────────┘
            │ HTTPS / WebSocket
 ┌──────────▼──────────────────────────┐
@@ -261,11 +265,11 @@ docs/                 # PRDs, planning artifacts
 └──────────────────────────────────────┘
            │ Vercel Serverless
 ┌──────────▼──────────────────────────┐
-│  /api/ai-agent                      │
-│  ├── Intent router                  │
-│  ├── Board digest (compact context) │
-│  ├── OpenAI GPT-4o                  │
-│  └── Tool executor (bulk CRUD)      │
+│  /api/ai                            │
+│  ├── Complexity classifier          │
+│  ├── Board context (full/digest)    │
+│  ├── OpenAI tool-calling loop       │
+│  └── Tool executor (Supabase CRUD)  │
 └──────────────────────────────────────┘
 ```
 
@@ -276,40 +280,31 @@ docs/                 # PRDs, planning artifacts
 - **Drag heartbeat** — re-broadcasts every 600ms while dragging to prevent jump-back on collaborators' screens
 - **Last-write-wins** conflict resolution
 
-### AI Agent Pipeline
+### AI Agent Pipeline (current)
 ```
-useAIAgent.ts
-  → /api/ai-agent (Vercel)
-    → routeCommand()     — selects model, tools, context scope
-    → buildDigest()      — compact board summary (not full JSON)
-    → plan()             — structured action plan
-    → validate()         — pre-flight checks
-    → execute()          — bulk CRUD via Supabase service role
-    → versioning()       — board version bump + idempotent job tracking
-  → /api/ai-continue     — resume interrupted runs by commandId
+AICommandInput.tsx
+  → POST /api/ai (SSE)
+    → verifyToken() + assertCanWriteBoard()
+    → fetchBoardState()
+    → classifyComplexity()      — simple vs complex model selection
+    → buildBoardContext()       — full or digest context payload
+    → runAgent() tool loop      — stream text + tool events
+      → executeTool()           — Supabase mutations/search/layout tools
 ```
+
+Future architecture work (planner, resumability, idempotent command runs) is defined in `docs/agent-improvements.md`.
 
 ---
 
 ## ✅ Testing
 
 ```bash
-npm test              # Run all 278 tests once
+npm test              # Run all Vitest unit/integration suites
 npm run test:watch    # Watch mode
 npm run test:e2e      # Playwright end-to-end suite
 ```
 
-**30 Vitest files covering:**
-- Hooks: `useCanvas`, `useSelection`, `useUndoRedo`, `usePresence`, `useBoard`
-- Components: `computeResize`, `frame-interaction`, `help-panel`
-- Services (client): `board`, `rls-policies`, `ai-agent`
-- Services (API route + backend helpers): `ai-continue` route, `health` route, AI `versioning`
-- Utils: `colors`, `frame-containment`, `frame-create`, `frame-placement`, `geometry`,
-  `ids`, `selection`, `text-fit`, `text-overlay-layout`, `throttle`, `ai-router`
-- Integration: `ai-command-input`, `home-page`, `login-page`, `toolbar`
-- Types: `board`
-
-Detailed mapping: see [`docs/regression-test-matrix.md`](docs/regression-test-matrix.md).
+Test coverage includes hooks, canvas rendering/interaction, API routes, AI tool execution, and integration flows.
 
 ---
 
@@ -317,7 +312,7 @@ Detailed mapping: see [`docs/regression-test-matrix.md`](docs/regression-test-ma
 
 Husky hooks run on every commit and push:
 
-- **Pre-commit**: all 278 Vitest tests must pass
+- **Pre-commit**: all Vitest tests must pass
 - **Pre-push**: tests + production build must both pass
 
 ---

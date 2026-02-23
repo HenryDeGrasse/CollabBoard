@@ -1,9 +1,9 @@
 /**
- * POST /api/ai — AI Agent endpoint
+ * POST /api/ai-continue — Resume/replay AI command runs
  *
- * Accepts { boardId, command, commandId? } in the request body.
- * Verifies JWT, checks board write access, runs the AI agent loop,
- * and streams Server-Sent Events back to the client.
+ * Accepts { boardId, commandId } and either:
+ * - replays a completed run's stored response, or
+ * - resumes a failed/timed-out run from stored request context.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { traceable } from "langsmith/traceable";
@@ -11,7 +11,6 @@ import { verifyToken, assertCanWriteBoard, AuthError } from "./_lib/auth.js";
 import { hasFastPathMatch, runAgent } from "./_lib/aiAgent.js";
 import { fetchBoardState } from "./_lib/aiTools.js";
 import {
-  createAiRun,
   findAiRun,
   isInProgressStatus,
   isUuid,
@@ -38,7 +37,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // ── Fail-fast checks before any DB work ────────────────
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
     return res.status(500).json({ error: "OPENAI_API_KEY not configured" });
@@ -54,50 +52,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Auth check failed" });
   }
 
-  const {
-    boardId,
-    command,
-    commandId: rawCommandId,
-    conversationHistory,
-    viewport,
-    screenSize,
-    selectedIds,
-  } = req.body || {};
+  const { boardId, commandId } = req.body || {};
 
   if (!boardId || typeof boardId !== "string") {
     return res.status(400).json({ error: "Missing boardId" });
   }
-  if (!command || typeof command !== "string" || command.trim().length === 0) {
-    return res.status(400).json({ error: "Missing command" });
-  }
-  if (command.length > 2000) {
-    return res.status(400).json({ error: "Command too long (max 2000 chars)" });
-  }
-
-  if (rawCommandId !== undefined && (typeof rawCommandId !== "string" || !isUuid(rawCommandId))) {
+  if (!commandId || typeof commandId !== "string" || !isUuid(commandId)) {
     return res.status(400).json({ error: "commandId must be a valid UUID" });
   }
 
-  const commandId = typeof rawCommandId === "string" ? rawCommandId : crypto.randomUUID();
-  const trimmedCommand = command.trim();
-
-  // ── Board access check + board state (parallel when possible) ──
-  // Running them concurrently saves ~80ms of sequential Supabase latency.
-  const hasHistory = Array.isArray(conversationHistory) && conversationHistory.length > 0;
-  const hasSelection = Array.isArray(selectedIds) && selectedIds.length > 0;
-  const skipBoardStateFetch = !hasHistory && !hasSelection && hasFastPathMatch(trimmedCommand);
-
-  let boardState: unknown = {};
   try {
-    if (skipBoardStateFetch) {
-      await assertCanWriteBoard(userId, boardId);
-    } else {
-      const [, bs] = await Promise.all([
-        assertCanWriteBoard(userId, boardId),
-        fetchBoardState(boardId),
-      ]);
-      boardState = bs;
-    }
+    await assertCanWriteBoard(userId, boardId);
   } catch (err) {
     if (err instanceof AuthError) {
       return res.status(err.status).json({ error: err.message });
@@ -105,15 +70,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Board access check failed" });
   }
 
-  // ── Idempotency: check existing run for this commandId ──
   let aiRun = await findAiRun(boardId, commandId);
+  if (!aiRun) {
+    return res.status(404).json({ error: "Run not found", commandId });
+  }
+
+  // Security: only the user who created the run can resume/replay it.
+  if (aiRun.user_id !== userId) {
+    return res.status(403).json({ error: "Not authorized to access this run" });
+  }
 
   // Recover stale in-progress runs (server crash / Vercel timeout)
-  if (aiRun && isInProgressStatus(aiRun.status)) {
+  if (isInProgressStatus(aiRun.status)) {
     aiRun = await recoverStaleRun(aiRun);
   }
 
-  if (aiRun?.status === "completed") {
+  if (aiRun.status === "completed") {
     setSseHeaders(res);
     for (const event of replayStoredResponse(aiRun)) {
       writeSse(res, event);
@@ -123,15 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  if (aiRun?.status === "needs_confirmation") {
-    return res.status(409).json({
-      error: "Command requires confirmation",
-      commandId,
-      status: aiRun.status,
-    });
-  }
-
-  if (aiRun && isInProgressStatus(aiRun.status)) {
+  if (isInProgressStatus(aiRun.status)) {
     return res.status(409).json({
       error: "Command is already in progress",
       commandId,
@@ -139,46 +103,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // ── Create or re-use run row ────────────────────────────
-  const requestContext = {
-    conversationHistory: Array.isArray(conversationHistory) ? conversationHistory.slice(-10) : [],
-    viewport,
-    screenSize,
-    selectedIds: Array.isArray(selectedIds) ? selectedIds : [],
-  };
+  // At this point status is 'failed' or 'needs_confirmation' — resumable.
+  const requestContext =
+    aiRun.plan_json && typeof aiRun.plan_json === "object" && aiRun.plan_json.request
+      ? aiRun.plan_json.request
+      : {};
 
-  if (!aiRun) {
-    aiRun = await createAiRun({
-      boardId,
-      userId,
-      commandId,
-      command: trimmedCommand,
-      requestContext,
-    });
+  const conversationHistory = Array.isArray(requestContext.conversationHistory)
+    ? requestContext.conversationHistory
+    : undefined;
+  const viewport = requestContext.viewport;
+  const screenSize = requestContext.screenSize;
+  const selectedIds = Array.isArray(requestContext.selectedIds)
+    ? requestContext.selectedIds
+    : undefined;
 
-    if (!aiRun) {
-      // Race recovery: another request may have inserted with the same commandId.
-      aiRun = await findAiRun(boardId, commandId);
-      if (!aiRun) {
-        return res.status(500).json({ error: "Failed to initialize AI run", commandId });
-      }
-      if (isInProgressStatus(aiRun.status)) {
-        return res.status(409).json({
-          error: "Command is already in progress",
-          commandId,
-          status: aiRun.status,
-        });
-      }
-    }
-  } else {
-    // Existing run with failed status — update context and retry.
-    await updateAiRun(boardId, commandId, {
-      status: "started",
-      plan_json: { request: requestContext },
-    });
+  const hasHistory = Array.isArray(conversationHistory) && conversationHistory.length > 0;
+  const hasSelection = Array.isArray(selectedIds) && selectedIds.length > 0;
+  const skipBoardStateFetch = !hasHistory && !hasSelection && hasFastPathMatch(aiRun.command);
+
+  let boardState: unknown = {};
+  if (!skipBoardStateFetch) {
+    boardState = await fetchBoardState(boardId);
   }
 
-  // ── Execute ─────────────────────────────────────────────
+  // Single status update — go directly to executing.
+  await updateAiRun(boardId, commandId, { status: "executing" });
+
   setSseHeaders(res);
 
   const startedAt = Date.now();
@@ -189,8 +140,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let toolCallsCount = 0;
   let capturedPlan: Record<string, any> | null = null;
   let streamError: string | null = null;
-
-  await updateAiRun(boardId, commandId, { status: "executing" });
 
   const runTraceable = traceable(
     async (input: { boardId: string; command: string; userId: string }) => {
@@ -240,12 +189,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return { response: responseText };
     },
     {
-      name: "CollabBoard Agent",
+      name: "CollabBoard Agent Continue",
       run_type: "chain",
-      tags: [
-        hasSelection ? "has-selection" : "no-selection",
-        skipBoardStateFetch ? "fastpath-skip-board-fetch" : "fetched-board-state",
-      ],
+      tags: ["resume", skipBoardStateFetch ? "fastpath-skip-board-fetch" : "fetched-board-state"],
     }
   );
 
@@ -261,7 +207,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   });
 
   try {
-    await runTraceable({ boardId, command: trimmedCommand, userId });
+    await runTraceable({ boardId, command: aiRun.command, userId });
 
     const durationMs = Date.now() - startedAt;
 

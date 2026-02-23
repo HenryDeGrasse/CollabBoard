@@ -31,6 +31,7 @@ const TOOL_LABELS: Record<string, string> = {
   delete_connectors: "Removing connectors",
   read_board_state: "Reading board",
   search_objects: "Searching board",
+  get_board_context: "Reading board context",
   clear_board: "Clearing board",
   navigate_to_objects: "Navigating",
   arrange_objects: "Arranging objects",
@@ -174,7 +175,9 @@ export const AICommandInput = React.memo(function AICommandInput({
         const apiBase = import.meta.env.VITE_API_URL || "";
         const url = `${apiBase}/api/ai`;
 
-        const resp = await fetch(url, {
+        const commandId = crypto.randomUUID();
+
+        let resp = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -183,6 +186,7 @@ export const AICommandInput = React.memo(function AICommandInput({
           body: JSON.stringify({
             boardId,
             command: userCommand,
+            commandId,
             conversationHistory: priorTurns,
             viewport: viewportRef.current,
             screenSize: {
@@ -193,6 +197,24 @@ export const AICommandInput = React.memo(function AICommandInput({
           }),
           signal: controller.signal,
         });
+
+        if (!resp.ok && resp.status === 409) {
+          const inProgress = await resp.json().catch(() => ({} as any));
+          const resumeId = typeof inProgress.commandId === "string" ? inProgress.commandId : commandId;
+
+          resp = await fetch(`${apiBase}/api/ai-continue`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              boardId,
+              commandId: resumeId,
+            }),
+            signal: controller.signal,
+          });
+        }
 
         if (!resp.ok) {
           const errBody = await resp.json().catch(() => ({ error: "Request failed" }));
@@ -288,6 +310,51 @@ export const AICommandInput = React.memo(function AICommandInput({
                       const summary = `${parsed.tool}: ${typeof msg === "string" ? msg.slice(0, 120) : JSON.stringify(parsed.result).slice(0, 120)}`;
                       last.toolSummary = ((last.toolSummary || "") + summary + "; ").slice(0, 500);
                     } catch { /* ignore parse errors */ }
+                    break;
+                  }
+
+                  case "plan_ready": {
+                    try {
+                      const plan = JSON.parse(event.content) as { steps?: Array<{ label?: string }> };
+                      if (Array.isArray(plan.steps) && plan.steps.length > 0) {
+                        const label = plan.steps[0]?.label ? `Plan: ${plan.steps[0].label}` : "Plan ready";
+                        last.toolActions = [...(last.toolActions || []), label];
+                      }
+                    } catch {
+                      last.toolActions = [...(last.toolActions || []), "Plan ready"];
+                    }
+                    last.status = "streaming";
+                    break;
+                  }
+
+                  case "step_started": {
+                    try {
+                      const step = JSON.parse(event.content) as { tool?: string };
+                      const label = step.tool ? `Running ${step.tool}` : "Running step";
+                      last.toolActions = [...(last.toolActions || []), label];
+                    } catch {
+                      last.toolActions = [...(last.toolActions || []), "Running step"];
+                    }
+                    last.status = "streaming";
+                    break;
+                  }
+
+                  case "step_succeeded":
+                    // Keep the latest running label; no-op beyond status update.
+                    last.status = "streaming";
+                    break;
+
+                  case "step_failed": {
+                    try {
+                      const step = JSON.parse(event.content) as { tool?: string; error?: string };
+                      const failLabel = step.tool
+                        ? `${step.tool} failed${step.error ? `: ${step.error}` : ""}`
+                        : "Step failed";
+                      last.toolActions = [...(last.toolActions || []), failLabel];
+                    } catch {
+                      last.toolActions = [...(last.toolActions || []), "Step failed"];
+                    }
+                    last.status = "streaming";
                     break;
                   }
 

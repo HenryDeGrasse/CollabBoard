@@ -15,6 +15,8 @@ function freshChain() {
   c.in = vi.fn().mockReturnValue(c);
   c.or = vi.fn().mockReturnValue(c);
   c.ilike = vi.fn().mockReturnValue(c);
+  c.gte = vi.fn().mockReturnValue(c);
+  c.lte = vi.fn().mockReturnValue(c);
   c.limit = vi.fn().mockReturnValue(c);
   c.single = vi.fn().mockResolvedValue(mockResult);
   c.maybeSingle = vi.fn().mockResolvedValue(mockResult);
@@ -48,8 +50,8 @@ beforeEach(() => {
 // ── TOOL_DEFINITIONS ─────────────────────────────────────────
 
 describe("TOOL_DEFINITIONS", () => {
-  it("has 20 tool definitions", () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(20);
+  it("has 21 tool definitions", () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(21);
     for (const tool of TOOL_DEFINITIONS) {
       expect(tool.type).toBe("function");
       expect(tool.function.name).toBeTruthy();
@@ -237,6 +239,79 @@ describe("executeTool", () => {
     expect(result.objects).toHaveLength(1);
     expect(result.objects[0]).toEqual(
       expect.objectContaining({ id: "obj-1", type: "sticky", text: "Hello" }),
+    );
+  });
+
+  it("get_board_context board_summary returns counts and frame summaries", async () => {
+    const objChain = freshChain();
+    const connChain = freshChain();
+
+    objChain.eq.mockResolvedValueOnce({
+      data: [
+        { id: "frame-1", type: "frame", x: 0, y: 0, width: 800, height: 600, text: "Main", parent_frame_id: null },
+        { id: "obj-1", type: "sticky", x: 10, y: 80, width: 150, height: 150, text: "A", parent_frame_id: "frame-1" },
+      ],
+      error: null,
+    });
+
+    connChain.eq.mockResolvedValueOnce({
+      data: [{ id: "conn-1" }],
+      error: null,
+    });
+
+    let callIdx = 0;
+    mockSupabase.from.mockImplementation(() => {
+      callIdx++;
+      return callIdx === 1 ? objChain : connChain;
+    });
+
+    const result: any = await executeTool(
+      "get_board_context",
+      { scope: "board_summary" },
+      BOARD_ID,
+      USER_ID,
+    );
+
+    expect(result.scope).toBe("board_summary");
+    expect(result.objectCount).toBe(2);
+    expect(result.connectorCount).toBe(1);
+    expect(result.frames[0]).toEqual(
+      expect.objectContaining({ id: "frame-1", childCount: 1 })
+    );
+  });
+
+  it("get_board_context selected uses selectedIds from context", async () => {
+    chain.in.mockResolvedValueOnce({
+      data: [
+        {
+          id: "obj-1",
+          type: "sticky",
+          x: 10,
+          y: 20,
+          width: 150,
+          height: 150,
+          color: "#FAD84E",
+          text: "Hello",
+          rotation: 0,
+          z_index: 1,
+          parent_frame_id: null,
+        },
+      ],
+      error: null,
+    });
+
+    const result: any = await executeTool(
+      "get_board_context",
+      { scope: "selected" },
+      BOARD_ID,
+      USER_ID,
+      { selectedIds: ["obj-1"] }
+    );
+
+    expect(result.scope).toBe("selected");
+    expect(result.found).toBe(1);
+    expect(result.objects[0]).toEqual(
+      expect.objectContaining({ id: "obj-1", type: "sticky" })
     );
   });
 

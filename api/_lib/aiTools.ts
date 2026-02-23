@@ -567,6 +567,58 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "get_board_context",
+      description:
+        "Read scoped board context instead of the full board when possible. " +
+        "Use this for selected objects, viewport objects, frame children, object IDs, or a compact board summary.",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["board_summary", "selected", "viewport", "frame", "ids"],
+            description: "Which context slice to fetch.",
+          },
+          ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Object IDs (required for scope='ids').",
+          },
+          frameId: {
+            type: "string",
+            description: "Frame ID (required for scope='frame').",
+          },
+          bbox: {
+            type: "object",
+            description: "Bounding box in canvas coordinates for scope='viewport'.",
+            properties: {
+              x1: { type: "number" },
+              y1: { type: "number" },
+              x2: { type: "number" },
+              y2: { type: "number" },
+            },
+            required: ["x1", "y1", "x2", "y2"],
+          },
+          types: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["sticky", "rectangle", "circle", "line", "frame", "text"],
+            },
+            description: "Optional type filter for object scopes.",
+          },
+          limit: {
+            type: "number",
+            description: "Max objects to return for viewport/frame scopes (default: 120, max: 500).",
+          },
+        },
+        required: ["scope"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "createWireframe",
       description:
         "Create a wireframe/mockup for a UI screen. Generates a frame with rectangular sections representing UI components. " +
@@ -2292,6 +2344,118 @@ export async function executeTool(
       };
     }
 
+    // ── Scoped board context ───────────────────────────────
+    case "get_board_context": {
+      const scope: string = args.scope || "board_summary";
+      const limit: number =
+        typeof args.limit === "number" && Number.isFinite(args.limit)
+          ? Math.min(Math.max(1, Math.floor(args.limit)), 500)
+          : 120;
+      const types: string[] | undefined = Array.isArray(args.types)
+        ? args.types.filter((t: unknown) => typeof t === "string")
+        : undefined;
+
+      if (scope === "board_summary") {
+        const summary = await fetchBoardSummary(boardId);
+        return { scope, ...summary };
+      }
+
+      if (scope === "selected") {
+        const ids = Array.isArray(context.selectedIds) ? context.selectedIds : [];
+        if (ids.length === 0) {
+          return { scope, found: 0, objects: [], message: "No selected objects." };
+        }
+        const objects = await fetchObjectsByIds(boardId, ids, types);
+        return {
+          scope,
+          requested: ids.length,
+          found: objects.length,
+          objects,
+          message: `Loaded ${objects.length} selected object(s).`,
+        };
+      }
+
+      if (scope === "ids") {
+        const ids: string[] = Array.isArray(args.ids)
+          ? args.ids.filter((id: unknown) => typeof id === "string")
+          : [];
+        if (ids.length === 0) {
+          return { error: "scope='ids' requires a non-empty ids array." };
+        }
+        const objects = await fetchObjectsByIds(boardId, ids, types);
+        return {
+          scope,
+          requested: ids.length,
+          found: objects.length,
+          objects,
+          message: `Loaded ${objects.length} object(s) by ID.`,
+        };
+      }
+
+      if (scope === "viewport") {
+        const bbox = args.bbox;
+        if (!bbox || typeof bbox !== "object") {
+          return { error: "scope='viewport' requires bbox with x1,y1,x2,y2." };
+        }
+
+        const x1 = Number((bbox as any).x1);
+        const y1 = Number((bbox as any).y1);
+        const x2 = Number((bbox as any).x2);
+        const y2 = Number((bbox as any).y2);
+
+        if (![x1, y1, x2, y2].every(Number.isFinite)) {
+          return { error: "bbox values must be finite numbers." };
+        }
+
+        const objects = await fetchObjectsInBbox(boardId, { x1, y1, x2, y2 }, {
+          types,
+          limit,
+        });
+
+        return {
+          scope,
+          bbox: {
+            x1: Math.min(x1, x2),
+            y1: Math.min(y1, y2),
+            x2: Math.max(x1, x2),
+            y2: Math.max(y1, y2),
+          },
+          found: objects.length,
+          objects,
+          message: `Loaded ${objects.length} viewport object(s).`,
+        };
+      }
+
+      if (scope === "frame") {
+        const frameId: string | undefined = typeof args.frameId === "string" ? args.frameId : undefined;
+        if (!frameId) {
+          return { error: "scope='frame' requires frameId." };
+        }
+
+        const frameContext = await fetchFrameWithChildren(boardId, frameId, {
+          types,
+          limit,
+        });
+
+        if (!frameContext) {
+          return { error: `Frame not found: ${frameId}` };
+        }
+
+        return {
+          scope,
+          frame: frameContext.frame,
+          childCount: frameContext.children.length,
+          children: frameContext.children,
+          message: `Loaded frame and ${frameContext.children.length} child object(s).`,
+        };
+      }
+
+      return {
+        error:
+          "Invalid scope. Supported scopes: board_summary, selected, viewport, frame, ids.",
+      };
+    }
+
     // ── Create Wireframe ───────────────────────────────────
     case "createWireframe": {
       const { title, sections, deviceType = "desktop" } = args;
@@ -3005,6 +3169,194 @@ export async function findOpenCanvasSpace(boardId: string, reqWidth: number, req
   }
 }
 
+function annotateObjectRow(row: any) {
+  const hex: string = row.color ?? "";
+  const name = colorLabel(hex);
+  const colorAnnotated = name !== hex ? `${hex} (${name})` : hex;
+
+  return {
+    id: row.id,
+    type: row.type,
+    x: row.x,
+    y: row.y,
+    width: row.width,
+    height: row.height,
+    color: colorAnnotated,
+    text: row.text || "",
+    rotation: row.rotation,
+    zIndex: row.z_index,
+    parentFrameId: row.parent_frame_id || null,
+  };
+}
+
+function annotateConnectorRow(row: any) {
+  return {
+    id: row.id,
+    fromId: row.from_id ?? "",
+    toId: row.to_id ?? "",
+    style: row.style,
+    color: row.color ?? null,
+    strokeWidth: row.stroke_width ?? null,
+  };
+}
+
+export async function fetchBoardSummary(boardId: string) {
+  const supabase = getSupabaseAdmin();
+
+  const [objRes, connRes] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("id, type, x, y, width, height, text, parent_frame_id")
+      .eq("board_id", boardId),
+    supabase.from("connectors").select("id").eq("board_id", boardId),
+  ]);
+
+  const objects = objRes.data || [];
+  const typeCounts: Record<string, number> = {};
+  const childCounts: Record<string, number> = {};
+
+  for (const obj of objects) {
+    const type = typeof obj.type === "string" ? obj.type : "unknown";
+    typeCounts[type] = (typeCounts[type] ?? 0) + 1;
+    if (obj.parent_frame_id) {
+      childCounts[obj.parent_frame_id] = (childCounts[obj.parent_frame_id] ?? 0) + 1;
+    }
+  }
+
+  const frames = objects
+    .filter((o: any) => o.type === "frame")
+    .slice(0, 120)
+    .map((frame: any) => ({
+      id: frame.id,
+      text: frame.text || "",
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+      childCount: childCounts[frame.id] ?? 0,
+    }));
+
+  return {
+    objectCount: objects.length,
+    connectorCount: (connRes.data || []).length,
+    typeCounts,
+    frames,
+  };
+}
+
+export async function fetchObjectsByIds(
+  boardId: string,
+  ids: string[],
+  types?: string[]
+) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("objects")
+    .select("*")
+    .eq("board_id", boardId)
+    .in("id", ids);
+
+  if (types && types.length > 0) {
+    query = query.in("type", types);
+  }
+
+  const { data } = await query;
+  return (data || []).map(annotateObjectRow);
+}
+
+export async function fetchObjectsInBbox(
+  boardId: string,
+  bbox: { x1: number; y1: number; x2: number; y2: number },
+  options: { types?: string[]; limit?: number } = {}
+) {
+  const supabase = getSupabaseAdmin();
+  const minX = Math.min(bbox.x1, bbox.x2);
+  const maxX = Math.max(bbox.x1, bbox.x2);
+  const minY = Math.min(bbox.y1, bbox.y2);
+  const maxY = Math.max(bbox.y1, bbox.y2);
+
+  // PostgREST can't filter on computed expressions like (x + width).
+  // To catch objects whose body overlaps the viewport even when their
+  // origin (top-left) is outside it, we widen the query bounds by a
+  // generous padding. Frames can be 800-1200px; stickies ~150px.
+  // This over-fetches slightly but never misses visible objects.
+  const ORIGIN_PADDING = 1200;
+
+  let query = supabase
+    .from("objects")
+    .select("*")
+    .eq("board_id", boardId)
+    .gte("x", minX - ORIGIN_PADDING)
+    .lte("x", maxX)
+    .gte("y", minY - ORIGIN_PADDING)
+    .lte("y", maxY);
+
+  if (options.types && options.types.length > 0) {
+    query = query.in("type", options.types);
+  }
+
+  const limit =
+    typeof options.limit === "number" && Number.isFinite(options.limit)
+      ? Math.min(Math.max(1, Math.floor(options.limit)), 500)
+      : 120;
+
+  const { data } = await query.limit(limit);
+
+  // Post-filter: exclude objects whose right/bottom edge is still
+  // outside the viewport (the padding may have over-fetched).
+  return (data || [])
+    .filter((row: any) => {
+      const right = (row.x ?? 0) + (row.width ?? 0);
+      const bottom = (row.y ?? 0) + (row.height ?? 0);
+      return right >= minX && bottom >= minY;
+    })
+    .map(annotateObjectRow);
+}
+
+export async function fetchFrameWithChildren(
+  boardId: string,
+  frameId: string,
+  options: { types?: string[]; limit?: number } = {}
+) {
+  const supabase = getSupabaseAdmin();
+
+  const effectiveLimit =
+    typeof options.limit === "number" && Number.isFinite(options.limit)
+      ? Math.min(Math.max(1, Math.floor(options.limit)), 500)
+      : 120;
+
+  // Build children query — apply type filter at DB level so the limit
+  // operates on matching rows, not a mix of all types.
+  let childrenQuery = supabase
+    .from("objects")
+    .select("*")
+    .eq("board_id", boardId)
+    .eq("parent_frame_id", frameId);
+
+  if (options.types && options.types.length > 0) {
+    childrenQuery = childrenQuery.in("type", options.types);
+  }
+
+  const [frameRes, childrenRes] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("*")
+      .eq("board_id", boardId)
+      .eq("id", frameId)
+      .maybeSingle(),
+    childrenQuery.limit(effectiveLimit),
+  ]);
+
+  if (!frameRes.data) return null;
+
+  return {
+    frame: annotateObjectRow(frameRes.data),
+    children: (childrenRes.data || []).map(annotateObjectRow),
+  };
+}
+
 export async function fetchBoardState(boardId: string) {
   const supabase = getSupabaseAdmin();
 
@@ -3013,35 +3365,8 @@ export async function fetchBoardState(boardId: string) {
     supabase.from("connectors").select("*").eq("board_id", boardId),
   ]);
 
-  const objects = (objRes.data || []).map((row: any) => {
-    const hex: string = row.color ?? "";
-    const name = colorLabel(hex);
-    // Include the human-readable name alongside the hex so the agent can
-    // match user phrases like "purple" or "yellow" without guessing.
-    const colorAnnotated = name !== hex ? `${hex} (${name})` : hex;
-    return {
-      id: row.id,
-      type: row.type,
-      x: row.x,
-      y: row.y,
-      width: row.width,
-      height: row.height,
-      color: colorAnnotated,
-      text: row.text || "",
-      rotation: row.rotation,
-      zIndex: row.z_index,
-      parentFrameId: row.parent_frame_id || null,
-    };
-  });
-
-  const connectors = (connRes.data || []).map((row: any) => ({
-    id: row.id,
-    fromId: row.from_id ?? "",
-    toId: row.to_id ?? "",
-    style: row.style,
-    color: row.color ?? null,
-    strokeWidth: row.stroke_width ?? null,
-  }));
+  const objects = (objRes.data || []).map(annotateObjectRow);
+  const connectors = (connRes.data || []).map(annotateConnectorRow);
 
   return {
     objectCount: objects.length,
