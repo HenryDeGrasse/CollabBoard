@@ -327,6 +327,19 @@ export const Board = React.memo(function Board({
   // one image instead of hundreds of shapes per frame. Uncache when the
   // interaction ends so normal rendering resumes.
   //
+  // To avoid a lag spike when panning ends (where layer uncaching, hit-graph
+  // rebuilding, and viewport reconciliation all compete in the same frame),
+  // we use a deferred cache flag: caching starts immediately when pan/zoom
+  // begins, but uncaching is delayed by one animation frame so the
+  // viewport + culling re-render lands first. This means fewer shapes need
+  // to be redrawn when the cache finally clears. Hit detection (listening)
+  // is re-enabled one frame after uncaching to further spread the cost.
+  //
+  // Timeline when panning ends:
+  //   Frame N:   viewport + culling re-render (layer still cached)
+  //   Frame N+1: layer uncaches → scene canvas redrawn (listening still off)
+  //   Frame N+2: listening re-enabled → hit canvas rebuilt
+  //
   // The deps include `objects`, `remoteDragPositions`, and `connectors` so
   // that collaborator changes are re-baked into the cached bitmap while
   // panning/zooming. Without these deps the bitmap would freeze and
@@ -337,7 +350,23 @@ export const Board = React.memo(function Board({
   //  - Collaborator dragging → re-cache every ~50ms (broadcast interval)
   //    Each re-cache draws N shapes to a bitmap (~5ms for 500 shapes),
   //    then subsequent frames draw 1 bitmap instead of N shapes.
-  const shouldCacheLayer = isZooming || isAnyPanning;
+  const shouldCacheLayerRaw = isZooming || isAnyPanning;
+  const [shouldCacheLayer, setShouldCacheLayer] = useState(false);
+
+  // Defer uncaching by one animation frame so viewport/culling updates
+  // commit first, reducing the number of shapes Konva must redraw.
+  useEffect(() => {
+    if (shouldCacheLayerRaw) {
+      setShouldCacheLayer(true);
+    } else {
+      const raf = requestAnimationFrame(() => {
+        setShouldCacheLayer(false);
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [shouldCacheLayerRaw]);
+
+  // Cache/uncache the layer bitmap.
   useEffect(() => {
     const layer = objectsLayerRef.current;
     if (!layer) return;
@@ -354,6 +383,24 @@ export const Board = React.memo(function Board({
       layer.clearCache();
     }
   }, [shouldCacheLayer, objects, remoteDragPositions, connectors]);
+
+  // Control hit detection (listening) separately from caching.
+  // Disable immediately when caching starts; re-enable one frame after
+  // uncaching so the hit canvas rebuild doesn't compete with the visual
+  // scene canvas redraw — effectively halving the per-frame drawing cost.
+  useEffect(() => {
+    const layer = objectsLayerRef.current;
+    if (!layer) return;
+    if (shouldCacheLayer) {
+      layer.listening(false);
+    } else {
+      const raf = requestAnimationFrame(() => {
+        layer.listening(true);
+        layer.batchDraw();
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [shouldCacheLayer]);
 
   // Live position resolution: merge local/remote drag positions, compute
   // pop-out/entering frame previews, and resolve frame-child inference.
@@ -682,7 +729,13 @@ export const Board = React.memo(function Board({
       className="relative w-full h-full overflow-hidden bg-gray-50"
       style={{ cursor: cursorStyle }}
     >
-      <GridBackground viewportX={viewport.x} viewportY={viewport.y} viewportScale={viewport.scale} />
+      <GridBackground
+        viewportX={viewport.x}
+        viewportY={viewport.y}
+        viewportScale={viewport.scale}
+        stageRef={stageRef}
+        isInteracting={shouldCacheLayerRaw}
+      />
       <ToolHints
         activeTool={activeTool}
         isConnectorTool={isConnectorTool}
@@ -708,8 +761,10 @@ export const Board = React.memo(function Board({
         onMouseUp={handleMouseUp}
         onDragEnd={handleStageDragEnd}
       >
-        {/* Objects layer — cached as bitmap during zoom/pan for performance */}
-        <Layer ref={objectsLayerRef} listening={!shouldCacheLayer}>
+        {/* Objects layer — cached as bitmap during zoom/pan for performance.
+            Listening is controlled imperatively by the caching effects above
+            (not via prop) so it can be re-enabled one frame after uncaching. */}
+        <Layer ref={objectsLayerRef}>
           <DrawingPreviews
             connectorDraw={connectorDraw}
             frameDraw={frameDraw}

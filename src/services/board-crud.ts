@@ -226,23 +226,39 @@ export async function deleteObject(boardId: string, objectId: string): Promise<v
 /**
  * Restore multiple objects in FK-safe order (frames before children).
  * Used by undo to restore a frame and its contained objects.
+ *
+ * Objects are split into two batches — roots (frames + unparented) first,
+ * then children — so the FK constraint (parent_frame_id → objects.id) is
+ * satisfied. Each batch is a single DB round-trip instead of N sequential
+ * calls, reducing undo latency from O(N × RTT) to O(2 × RTT).
  */
 export async function restoreObjects(boardId: string, objects: BoardObject[]): Promise<void> {
-  // Sort: frames/unparented first, children second
-  const sorted = [...objects].sort((a, b) => {
-    const aChild = a.parentFrameId ? 1 : 0;
-    const bChild = b.parentFrameId ? 1 : 0;
-    return aChild - bChild;
-  });
+  if (objects.length === 0) return;
 
-  // Upsert sequentially to respect FK ordering.
-  // Upsert (not insert) so rapid undo/redo doesn't fail if a prior
-  // delete hasn't committed yet.
-  for (const obj of sorted) {
+  // Partition into roots (no FK dependency) and children (depend on parent frame).
+  const roots: typeof objects = [];
+  const children: typeof objects = [];
+  for (const obj of objects) {
+    (obj.parentFrameId ? children : roots).push(obj);
+  }
+
+  const toRow = (obj: BoardObject) => {
     const row = objectToDb({ ...obj, boardId } as any);
     row.board_id = boardId;
     row.id = obj.id;
-    const { error } = await supabase.from("objects").upsert(row);
+    return row;
+  };
+
+  // Upsert roots first, then children — respects FK ordering.
+  // Upsert (not insert) so rapid undo/redo doesn't fail if a prior
+  // delete hasn't committed yet.
+  if (roots.length > 0) {
+    const { error } = await supabase.from("objects").upsert(roots.map(toRow));
+    if (error) throw error;
+  }
+
+  if (children.length > 0) {
+    const { error } = await supabase.from("objects").upsert(children.map(toRow));
     if (error) throw error;
   }
 }

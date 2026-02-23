@@ -47,6 +47,85 @@ export function useBoard(boardId: string): UseBoardReturn {
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
 
+  // ── rAF-batched Realtime event processing ─────────────────
+  // Supabase Realtime delivers each event in a separate WebSocket message
+  // callback (separate macro-task). Without batching, N events in quick
+  // succession → N separate setObjects/setConnectors → N React renders,
+  // each doing an O(objects) spread. By accumulating events in refs and
+  // flushing once per animation frame we collapse the burst into a single
+  // render + single O(objects) spread.
+  const pendingRtObjectUpserts = useRef<Map<string, BoardObject>>(new Map());
+  const pendingRtObjectDeletes = useRef<Set<string>>(new Set());
+  const pendingRtConnUpserts = useRef<Map<string, Connector>>(new Map());
+  const pendingRtConnDeletes = useRef<Set<string>>(new Set());
+  const rtFlushRafRef = useRef<number | null>(null);
+
+  const flushRealtimeEvents = useCallback(() => {
+    rtFlushRafRef.current = null;
+
+    // ── Object events ──
+    const objUpserts = pendingRtObjectUpserts.current;
+    const objDeletes = pendingRtObjectDeletes.current;
+
+    if (objUpserts.size > 0 || objDeletes.size > 0) {
+      pendingRtObjectUpserts.current = new Map();
+      pendingRtObjectDeletes.current = new Set();
+
+      setObjects((prev) => {
+        let next: Record<string, BoardObject> | null = null;
+
+        for (const [id, obj] of objUpserts) {
+          // Keep optimistic local values while pending writes exist.
+          if (pendingObjectUpdatesRef.current[id]) continue;
+          const existing = (next ?? prev)[id];
+          if (existing && existing.updatedAt > obj.updatedAt) continue;
+          if (!next) next = { ...prev };
+          next[id] = obj;
+        }
+
+        for (const id of objDeletes) {
+          if (!(next ?? prev)[id]) continue;
+          delete pendingObjectUpdatesRef.current[id];
+          if (!next) next = { ...prev };
+          delete next[id];
+        }
+
+        return next ?? prev;
+      });
+    }
+
+    // ── Connector events ──
+    const connUpserts = pendingRtConnUpserts.current;
+    const connDeletes = pendingRtConnDeletes.current;
+
+    if (connUpserts.size > 0 || connDeletes.size > 0) {
+      pendingRtConnUpserts.current = new Map();
+      pendingRtConnDeletes.current = new Set();
+
+      setConnectors((prev) => {
+        let next: Record<string, Connector> | null = null;
+
+        for (const [id, conn] of connUpserts) {
+          if (!next) next = { ...prev };
+          next[id] = conn;
+        }
+
+        for (const id of connDeletes) {
+          if (!(next ?? prev)[id]) continue;
+          if (!next) next = { ...prev };
+          delete next[id];
+        }
+
+        return next ?? prev;
+      });
+    }
+  }, []);
+
+  const scheduleRealtimeFlush = useCallback(() => {
+    if (rtFlushRafRef.current !== null) return;
+    rtFlushRafRef.current = requestAnimationFrame(flushRealtimeEvents);
+  }, [flushRealtimeEvents]);
+
   const flushPendingObjectUpdates = useCallback(() => {
     if (flushTimerRef.current) {
       clearTimeout(flushTimerRef.current);
@@ -138,49 +217,31 @@ export function useBoard(boardId: string): UseBoardReturn {
         // realtime updates with stale data, and don't trigger React updates during loading.
         const channels = createBoardRealtimeChannels(
           boardId,
-          // Object changes
+          // Object changes — accumulated and flushed once per animation frame
           (eventType, row) => {
             if (eventType === "INSERT" || eventType === "UPDATE") {
               const obj = dbToObject(row);
-              setObjects((prev) => {
-                // If we have unflushed local changes, keep optimistic position/size to
-                // avoid flicker from slightly stale realtime echoes.
-                if (pendingObjectUpdatesRef.current[obj.id]) {
-                  return prev;
-                }
-
-                const existing = prev[obj.id];
-                // Ignore out-of-order older updates.
-                if (existing && existing.updatedAt > obj.updatedAt) {
-                  return prev;
-                }
-
-                return { ...prev, [obj.id]: obj };
-              });
+              pendingRtObjectUpserts.current.set(obj.id, obj);
+              pendingRtObjectDeletes.current.delete(obj.id);
             } else if (eventType === "DELETE") {
               const id = row.id;
-              // Clear pending updates for deleted objects
-              delete pendingObjectUpdatesRef.current[id];
-              setObjects((prev) => {
-                const next = { ...prev };
-                delete next[id];
-                return next;
-              });
+              pendingRtObjectDeletes.current.add(id);
+              pendingRtObjectUpserts.current.delete(id);
             }
+            scheduleRealtimeFlush();
           },
-          // Connector changes
+          // Connector changes — accumulated and flushed once per animation frame
           (eventType, row) => {
             if (eventType === "INSERT" || eventType === "UPDATE") {
               const conn = dbToConnector(row);
-              setConnectors((prev) => ({ ...prev, [conn.id]: conn }));
+              pendingRtConnUpserts.current.set(conn.id, conn);
+              pendingRtConnDeletes.current.delete(conn.id);
             } else if (eventType === "DELETE") {
               const id = row.id;
-              setConnectors((prev) => {
-                const next = { ...prev };
-                delete next[id];
-                return next;
-              });
+              pendingRtConnDeletes.current.add(id);
+              pendingRtConnUpserts.current.delete(id);
             }
+            scheduleRealtimeFlush();
           }
         );
         channelsRef.current = channels;
@@ -196,11 +257,17 @@ export function useBoard(boardId: string): UseBoardReturn {
     return () => {
       cancelled = true;
       subscribedRef.current = false;
+      // Flush any pending batched Realtime events synchronously before teardown.
+      if (rtFlushRafRef.current !== null) {
+        cancelAnimationFrame(rtFlushRafRef.current);
+        rtFlushRafRef.current = null;
+      }
+      flushRealtimeEvents();
       flushPendingObjectUpdates();
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
       channelsRef.current = [];
     };
-  }, [boardId, flushPendingObjectUpdates]);
+  }, [boardId, flushPendingObjectUpdates, flushRealtimeEvents]);
 
   // Optimistic create — generates a temporary local ID, writes to DB,
   // then realtime subscription will update with the real DB row.
