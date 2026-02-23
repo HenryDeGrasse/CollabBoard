@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { createPresenceChannel, getNextCursorColor, type PresenceState } from "../services/presence";
-import { throttle, type ThrottledFunction } from "../utils/throttle";
+import { createPresenceChannel, getNextCursorColor, type PresenceState } from "../../services/presence";
+import { throttle, type ThrottledFunction } from "../../utils/throttle";
 
 export interface RemoteUser {
   id: string;

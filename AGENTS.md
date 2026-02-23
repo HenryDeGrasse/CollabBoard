@@ -146,7 +146,7 @@ npm run test:watch    # Watch mode
 npm run test:e2e      # Playwright E2E
 ```
 
-All 509 tests must pass before committing (enforced by Husky pre-commit hook).
+All tests must pass before committing (enforced by Husky pre-commit hook).
 
 ## File Index
 
@@ -159,11 +159,11 @@ All 509 tests must pass before committing (enforced by Husky pre-commit hook).
 | `src/components/canvas/Shape.tsx` | Rectangle, circle, line rendering |
 | `src/components/canvas/Connector.tsx` | Arrow/connector rendering |
 | `src/hooks/useBoard.ts` | CRUD operations + Supabase Realtime sync |
-| `src/hooks/useDragSystem.ts` | Drag orchestration (single/group/bulk) |
-| `src/hooks/useFrameInteraction.ts` | Frame header drag + resize push |
+| `src/hooks/canvas/useDragSystem.ts` | Drag orchestration (single/group/bulk) |
+| `src/hooks/canvas/useFrameInteraction.ts` | Frame header drag + resize push |
 | `src/hooks/useKeyboardShortcuts.ts` | Keyboard shortcut handler |
 | `src/hooks/useTextStyleHandlers.ts` | Text style derived state + handlers |
 | `src/hooks/useThumbnailCapture.ts` | Thumbnail capture on navigate-away |
-| `src/utils/frame-containment.ts` | Frame child containment logic |
-| `src/utils/text-style.ts` | Text size resolution, auto-contrast, frame title sizing |
+| `src/utils/frame.ts` | Frame child containment + frame gesture logic |
+| `src/utils/text.ts` | Text size resolution, auto-contrast, frame title sizing |
 | `api/_lib/ai/` | AI agent backend (router, digest, planner, tools, versioning) |

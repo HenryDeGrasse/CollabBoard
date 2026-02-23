@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateFontSize } from "../../utils/text-fit";
+import { calculateFontSize } from "../../utils/text";
 
 describe("calculateFontSize", () => {
   it("returns default size for empty text", () => {

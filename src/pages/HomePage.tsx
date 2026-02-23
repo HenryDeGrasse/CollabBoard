@@ -4,12 +4,14 @@ import { useAuth } from "../components/auth/AuthProvider";
 import {
   getUserBoards,
   createBoard,
-  joinBoard,
   softDeleteBoard,
+} from "../services/board-crud";
+import {
+  joinBoard,
   removeBoardMember,
   getInviteToken,
-  type BoardMetadata,
-} from "../services/board";
+} from "../services/board-access";
+import type { BoardMetadata } from "../services/board-types";
 import {
   Plus,
   LogOut,

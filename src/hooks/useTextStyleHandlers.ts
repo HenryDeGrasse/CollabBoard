@@ -5,7 +5,7 @@ import {
   resolveObjectTextSize,
   clampTextSizeForType,
   getAutoContrastingTextColor,
-} from "../utils/text-style";
+} from "../utils/text";
 
 type VAlign = "top" | "middle" | "bottom";
 

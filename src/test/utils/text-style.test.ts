@@ -1,8 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
-
-vi.mock("../../utils/text-fit", () => ({
-  calculateFontSize: vi.fn(() => 16),
-}));
+import { describe, it, expect } from "vitest";
 
 import {
   isTextCapableObjectType,
@@ -17,8 +13,8 @@ import {
   FRAME_TITLE_FONT_MAX,
   FRAME_HEADER_MIN_HEIGHT,
   FRAME_HEADER_MAX_HEIGHT,
-} from "../../utils/text-style";
-import { calculateFontSize } from "../../utils/text-fit";
+} from "../../utils/text";
+import { calculateFontSize } from "../../utils/text";
 import type { BoardObject } from "../../types/board";
 
 function makeObject(overrides: Partial<BoardObject> = {}): BoardObject {
@@ -174,22 +170,25 @@ describe("getAutoTextSize", () => {
     expect(result).toBe(12); // 240/20 = 12
   });
 
-  it("calls calculateFontSize for sticky notes", () => {
-    getAutoTextSize(makeObject({ type: "sticky", text: "Test", width: 150, height: 150 }));
-    expect(calculateFontSize).toHaveBeenCalledWith("Test", 150, 150, 12, 10, 32);
+  it("uses calculateFontSize parameters for sticky notes", () => {
+    const result = getAutoTextSize(makeObject({ type: "sticky", text: "Test", width: 150, height: 150 }));
+    const expected = calculateFontSize("Test", 150, 150, 12, 10, 32);
+    expect(result).toBe(expected);
   });
 
-  it("calls calculateFontSize for rectangles", () => {
-    getAutoTextSize(makeObject({ type: "rectangle", text: "Test", width: 200, height: 100 }));
-    expect(calculateFontSize).toHaveBeenCalledWith("Test", 200, 100, 10, 9, 28);
+  it("uses calculateFontSize parameters for rectangles", () => {
+    const result = getAutoTextSize(makeObject({ type: "rectangle", text: "Test", width: 200, height: 100 }));
+    const expected = calculateFontSize("Test", 200, 100, 10, 9, 28);
+    expect(result).toBe(expected);
   });
 
-  it("calls calculateFontSize with inscribed square for circles", () => {
+  it("uses inscribed-square sizing for circles", () => {
     const obj = makeObject({ type: "circle", text: "Test", width: 100, height: 100 });
-    getAutoTextSize(obj);
+    const result = getAutoTextSize(obj);
     const r = 50; // min(100,100)/2
     const side = r * Math.sqrt(2);
-    expect(calculateFontSize).toHaveBeenCalledWith("Test", side, side, 8, 9, 28);
+    const expected = calculateFontSize("Test", side, side, 8, 9, 28);
+    expect(result).toBe(expected);
   });
 
   it("returns 16 for text type", () => {
@@ -201,8 +200,9 @@ describe("getAutoTextSize", () => {
   });
 
   it("uses empty string when text is undefined", () => {
-    getAutoTextSize(makeObject({ type: "sticky", text: undefined }));
-    expect(calculateFontSize).toHaveBeenCalledWith("", 200, 200, 12, 10, 32);
+    const result = getAutoTextSize(makeObject({ type: "sticky", text: undefined }));
+    const expected = calculateFontSize("", 200, 200, 12, 10, 32);
+    expect(result).toBe(expected);
   });
 });
 
@@ -213,9 +213,9 @@ describe("resolveObjectTextSize", () => {
   });
 
   it("falls back to auto size when textSize is null/undefined", () => {
-    vi.mocked(calculateFontSize).mockReturnValue(18);
+    const expectedAuto = calculateFontSize("Hello", 200, 200, 12, 10, 32);
     const result = resolveObjectTextSize(makeObject({ type: "sticky", textSize: undefined }));
-    expect(result).toBe(18);
+    expect(result).toBe(clampTextSizeForType("sticky", expectedAuto));
   });
 
   it("clamps the result to type-specific bounds", () => {

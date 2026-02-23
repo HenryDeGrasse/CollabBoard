@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { HelpCircle, X } from "lucide-react";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -44,7 +44,7 @@ export function getShortcuts(mac: boolean) {
 // For backward compat with tests
 export const shortcuts = getShortcuts(isMac);
 
-export function HelpPanel() {
+export const HelpPanel = React.memo(function HelpPanel() {
   const [open, setOpen] = useState(false);
   const resolvedShortcuts = useMemo(() => getShortcuts(isMac), []);
 
@@ -133,4 +133,4 @@ export function HelpPanel() {
       )}
     </>
   );
-}
+});

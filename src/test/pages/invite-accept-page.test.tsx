@@ -12,7 +12,7 @@ vi.mock("../../components/auth/AuthProvider", () => ({
 }));
 
 const mockAcceptInviteToken = vi.fn();
-vi.mock("../../services/board", () => ({
+vi.mock("../../services/board-access", () => ({
   acceptInviteToken: (...args: any[]) => mockAcceptInviteToken(...args),
 }));
 

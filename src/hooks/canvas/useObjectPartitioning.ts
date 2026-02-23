@@ -1,10 +1,10 @@
-import { useMemo } from "react";
-import type { BoardObject, Connector } from "../types/board";
+import { useMemo, useRef } from "react";
+import type { BoardObject, Connector } from "../../types/board";
 import {
   getFrameHeaderHeight,
   FRAME_HEADER_MIN_HEIGHT,
-} from "../utils/text-style";
-import { minFrameSizeForChildren } from "../utils/frame-containment";
+} from "../../utils/text";
+import { minFrameSizeForChildren } from "../../utils/frame";
 
 const DEFAULT_TITLE_HEIGHT = FRAME_HEADER_MIN_HEIGHT;
 const MIN_FRAME_WIDTH = 200;
@@ -33,6 +33,10 @@ export function useObjectPartitioning(
   objects: Record<string, BoardObject>,
   connectors: Record<string, Connector>
 ): UseObjectPartitioningReturn {
+  // Ref to current objects for stable access without triggering recreation
+  const objectsRef = useRef(objects);
+  objectsRef.current = objects;
+
   // Fingerprint of id:zIndex pairs — cheap O(N) string build that only
   // changes when the object set or z-indices change (not on position updates).
   const zIndexKey = useMemo(() => {
@@ -63,13 +67,25 @@ export function useObjectPartitioning(
   );
 
   // Map sorted IDs to fresh object references — O(N) lookup, no sort.
-  // Rebuilds on any objects change to ensure viewport culling uses current positions.
+  // Rebuilds only when z-order changes. Position updates are accessed via ref.
   const sortedObjects = useMemo(
-    () => sortedIds.map((id) => objects[id]).filter((o): o is BoardObject => o !== undefined),
-    [sortedIds, objects]
+    () => sortedIds.map((id) => objectsRef.current[id]).filter((o): o is BoardObject => o !== undefined),
+    [sortedIds] // objects intentionally omitted so position updates don't trigger recreation
   );
 
+  // Fingerprint for parent-frame membership — only changes when objects are
+  // added/removed or their parentFrameId changes (not on position-only drags).
+  const parentFrameKey = useMemo(() => {
+    let key = "";
+    for (const [id, obj] of Object.entries(objects)) {
+      key += id + ":" + (obj.parentFrameId ?? "") + "|";
+    }
+    return key;
+  }, [objects]);
+
   // Pre-computed map: frameId → contained objects (O(N) once, O(1) per lookup).
+  // Uses parentFrameKey fingerprint so it only rebuilds when containment changes,
+  // not on every position update during drag.
   const objectsByFrame = useMemo(() => {
     const map: Record<string, BoardObject[]> = {};
     for (const obj of Object.values(objects)) {
@@ -79,22 +95,26 @@ export function useObjectPartitioning(
       }
     }
     return map;
-  }, [objects]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentFrameKey]);
 
   // Pre-computed map: frameId → intra-frame connectors (both endpoints in same frame).
+  // Depends on parentFrameKey (not objects directly) so position-only updates don't trigger rebuild.
   const connectorsByFrame = useMemo(() => {
+    const objs = objectsRef.current;
     const map: Record<string, Connector[]> = {};
     for (const conn of Object.values(connectors)) {
       if (!conn.fromId || !conn.toId) continue;
-      const fromFrame = objects[conn.fromId]?.parentFrameId;
-      const toFrame = objects[conn.toId]?.parentFrameId;
+      const fromFrame = objs[conn.fromId]?.parentFrameId;
+      const toFrame = objs[conn.toId]?.parentFrameId;
       if (fromFrame && fromFrame === toFrame) {
         if (!map[fromFrame]) map[fromFrame] = [];
         map[fromFrame].push(conn);
       }
     }
     return map;
-  }, [connectors, objects]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectors, parentFrameKey]);
 
   // Per-frame minimum resize dimensions based on the largest contained child.
   const frameMinSizes = useMemo(() => {

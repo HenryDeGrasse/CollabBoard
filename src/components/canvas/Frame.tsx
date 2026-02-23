@@ -6,7 +6,7 @@ import { ResizeHandles, computeResize, type ResizeHandle } from "./ResizeHandles
 import {
   getFrameHeaderHeight,
   getFrameTitleFontSize,
-} from "../../utils/text-style";
+} from "../../utils/text";
 
 interface FrameProps {
   object: BoardObject;

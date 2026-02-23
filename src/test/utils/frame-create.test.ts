@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFrameFromGesture } from "../../utils/frame-create";
+import { computeFrameFromGesture } from "../../utils/frame";
 
 describe("frame create gesture", () => {
   it("creates a default-sized frame centered on click when movement is tiny", () => {

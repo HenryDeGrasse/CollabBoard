@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useViewportCulling } from "../../hooks/useViewportCulling";
-import type { BoardObject } from "../../types/board";
+import { useViewportCulling } from "../../../hooks/canvas/useViewportCulling";
+import type { BoardObject } from "../../../types/board";
 
 function makeObj(
   id: string,

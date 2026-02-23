@@ -12,26 +12,23 @@ import { ToolHints } from "./ToolHints";
 import { GridBackground } from "./GridBackground";
 import { TopLevelConnectors } from "./TopLevelConnectors";
 import type { BoardObject, Connector } from "../../types/board";
+import type { ToolType } from "../../types/tool";
 import type { UndoAction } from "../../hooks/useUndoRedo";
-import type { RemoteUser } from "../../hooks/usePresence";
+import type { RemoteUser } from "../../hooks/presence/usePresence";
 import type { UseCanvasReturn } from "../../hooks/useCanvas";
-import type { CursorStore } from "../../hooks/usePresence";
-import { useObjectPartitioning } from "../../hooks/useObjectPartitioning";
-import { useViewportCulling } from "../../hooks/useViewportCulling";
-import { useLivePositions } from "../../hooks/useLivePositions";
-import { useDragSystem } from "../../hooks/useDragSystem";
-import { useConnectorDraw } from "../../hooks/useConnectorDraw";
-import { useDrawingTools } from "../../hooks/useDrawingTools";
-import { useFrameInteraction } from "../../hooks/useFrameInteraction";
-import { useInputHandling } from "../../hooks/useInputHandling";
+import type { CursorStore } from "../../hooks/presence/usePresence";
+import { useObjectPartitioning } from "../../hooks/canvas/useObjectPartitioning";
+import { useViewportCulling } from "../../hooks/canvas/useViewportCulling";
+import { useLivePositions } from "../../hooks/canvas/useLivePositions";
+import { useDragSystem } from "../../hooks/canvas/useDragSystem";
+import { useConnectorDraw } from "../../hooks/canvas/useConnectorDraw";
+import { useDrawingTools } from "../../hooks/canvas/useDrawingTools";
+import { useFrameInteraction } from "../../hooks/canvas/useFrameInteraction";
+import { useInputHandling } from "../../hooks/canvas/useInputHandling";
 
 import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
-import {
-  constrainChildrenInFrame
-} from "../../utils/frame-containment";
-import { getFrameHeaderHeight } from "../../utils/text-style";
-
-export type ToolType = "select" | "sticky" | "rectangle" | "circle" | "arrow" | "line" | "frame";
+import { constrainChildrenInFrame } from "../../utils/frame";
+import { getFrameHeaderHeight } from "../../utils/text";
 
 const FRAME_CONTENT_PADDING = 6;
 
@@ -88,7 +85,7 @@ interface BoardProps {
   onRotatingChange?: (rotating: boolean) => void;
 }
 
-export function Board({
+export const Board = React.memo(function Board({
   objects,
   connectors,
   users,
@@ -123,24 +120,8 @@ export function Board({
 }: BoardProps) {
   const { viewport, setViewport, isZooming, onWheel, stageRef } = canvas;
 
-  // Ref for the main objects layer — used to cache/uncache during zoom.
+  // Ref for the main objects layer — used to cache/uncache during zoom/pan.
   const objectsLayerRef = useRef<Konva.Layer | null>(null);
-
-  // Cache the objects layer as a bitmap while zooming so Konva draws one image
-  // instead of hundreds of shapes per frame. Uncache when zoom ends so
-  // interactions and updates work normally.
-  useEffect(() => {
-    const layer = objectsLayerRef.current;
-    if (!layer) return;
-    if (isZooming) {
-      // Konva throws a warning if we try to cache an empty layer
-      if (layer.children && layer.children.length > 0) {
-        layer.cache();
-      }
-    } else {
-      layer.clearCache();
-    }
-  }, [isZooming]);
 
   // Stable ref for objects — used inside callbacks to avoid regenerating them
   // on every objects change. The ref is updated synchronously on every render,
@@ -309,6 +290,7 @@ export function Board({
   // Input handling: space/pan, right-click pan, resize, keyboard, selection rect
   const {
     isPanning,
+    isAnyPanning,
     spaceHeldRef,
     rightClickPanRef,
     selectionRect,
@@ -341,6 +323,38 @@ export function Board({
     onResetTool,
   });
 
+  // Cache the objects layer as a bitmap while zooming or panning so Konva draws
+  // one image instead of hundreds of shapes per frame. Uncache when the
+  // interaction ends so normal rendering resumes.
+  //
+  // The deps include `objects`, `remoteDragPositions`, and `connectors` so
+  // that collaborator changes are re-baked into the cached bitmap while
+  // panning/zooming. Without these deps the bitmap would freeze and
+  // collaborator drags/edits would be invisible until pan/zoom ends.
+  //
+  // Cost model:
+  //  - No collaborator activity → zero re-caches → optimal
+  //  - Collaborator dragging → re-cache every ~50ms (broadcast interval)
+  //    Each re-cache draws N shapes to a bitmap (~5ms for 500 shapes),
+  //    then subsequent frames draw 1 bitmap instead of N shapes.
+  const shouldCacheLayer = isZooming || isAnyPanning;
+  useEffect(() => {
+    const layer = objectsLayerRef.current;
+    if (!layer) return;
+    if (shouldCacheLayer) {
+      layer.clearCache();
+      // Konva throws a warning if we try to cache an empty layer
+      if (layer.children && layer.children.length > 0) {
+        layer.cache();
+        // Draw immediately so the updated bitmap is visible this frame
+        // (otherwise the stale bitmap persists until the next pan/zoom tick).
+        layer.batchDraw();
+      }
+    } else {
+      layer.clearCache();
+    }
+  }, [shouldCacheLayer, objects, remoteDragPositions, connectors]);
+
   // Live position resolution: merge local/remote drag positions, compute
   // pop-out/entering frame previews, and resolve frame-child inference.
   const {
@@ -372,7 +386,12 @@ export function Board({
       const canvasPoint = getCanvasPoint(stage);
       if (!canvasPoint) return;
 
-      onCursorMove(canvasPoint.x, canvasPoint.y);
+      // Skip cursor broadcast while panning — the canvas is moving under the
+      // pointer so the canvas-relative position is meaningless and would waste
+      // Supabase bandwidth.
+      if (!spaceHeldRef.current && !rightClickPanRef.current) {
+        onCursorMove(canvasPoint.x, canvasPoint.y);
+      }
 
       // Delegate to extracted hooks
       connectorDrawMouseMove(canvasPoint);
@@ -640,11 +659,23 @@ export function Board({
   // Viewport culling: filter partitioned objects to only those visible on screen
   const {
     visibleBounds,
+    isInViewport,
     visibleShapes,
     visibleStickies,
     visibleFrames,
     visibleLines,
-  } = useViewportCulling(viewport, stageWidth, stageHeight, partitionedObjects, draggingRef);
+    clippedObjectsByFrame,
+  } = useViewportCulling(
+    viewport, 
+    stageWidth, 
+    stageHeight, 
+    partitionedObjects, 
+    draggingRef,
+    Object.keys(resolvedLiveDragPositions),
+    remotePoppedOutDraggedObjectIds,
+    enteringFrameDraggedObjects,
+    objectsByFrame
+  );
 
   return (
     <div
@@ -677,8 +708,8 @@ export function Board({
         onMouseUp={handleMouseUp}
         onDragEnd={handleStageDragEnd}
       >
-        {/* Objects layer — cached as bitmap during zoom for performance */}
-        <Layer ref={objectsLayerRef} listening={!isZooming}>
+        {/* Objects layer — cached as bitmap during zoom/pan for performance */}
+        <Layer ref={objectsLayerRef} listening={!shouldCacheLayer}>
           <DrawingPreviews
             connectorDraw={connectorDraw}
             frameDraw={frameDraw}
@@ -722,7 +753,7 @@ export function Board({
           {visibleFrames.map((obj) => {
               const frameObj = objectsWithLivePositions[obj.id] || obj;
               const contained = (objectsByFrame[frameObj.id] || []).filter(
-                (cobj) => !remotePoppedOutDraggedObjectIds.has(cobj.id)
+                (cobj) => !remotePoppedOutDraggedObjectIds.has(cobj.id) && (draggingRef.current.has(cobj.id) || isInViewport(cobj))
               );
               const entering = enteringFrameDraggedObjects
                 .filter((entry) => entry.frameId === frameObj.id)
@@ -866,12 +897,17 @@ export function Board({
               const frameObj = objectsWithLivePositions[obj.id] || obj;
               const framePos =
                 resolvedLiveDragPositions[frameObj.id] || { x: frameObj.x, y: frameObj.y };
-              const contained = objectsByFrame[frameObj.id] || [];
+              const { contained } =
+                clippedObjectsByFrame[frameObj.id] ?? { contained: [] };
               const fMinSizes = frameMinSizes[obj.id];
+              const overlayObj = (framePos.x === frameObj.x && framePos.y === frameObj.y) 
+                ? frameObj 
+                : { ...frameObj, x: framePos.x, y: framePos.y };
+
               return (
                 <FrameOverlay
                   key={`overlay-${obj.id}`}
-                  object={{ ...frameObj, x: framePos.x, y: framePos.y }}
+                  object={overlayObj}
                   isSelected={selectedIds.has(obj.id)}
                   isEditing={editingObjectId === obj.id}
                   containedCount={contained.length}
@@ -1052,4 +1088,4 @@ export function Board({
       )}
     </div>
   );
-}
+});

@@ -4,12 +4,12 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 const mockCreatePresenceChannel = vi.fn();
 const mockGetNextCursorColor = vi.fn(() => "#EF4444");
 
-vi.mock("../../services/presence", () => ({
+vi.mock("../../../services/presence", () => ({
   createPresenceChannel: (...args: any[]) => mockCreatePresenceChannel(...args),
   getNextCursorColor: () => mockGetNextCursorColor(),
 }));
 
-import { usePresence } from "../../hooks/usePresence";
+import { usePresence } from "../../../hooks/presence/usePresence";
 
 describe("usePresence", () => {
   beforeEach(() => {

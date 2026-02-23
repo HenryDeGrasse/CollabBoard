@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd } from "lucide-react";
 
 type VAlign = "top" | "middle" | "bottom";
@@ -30,7 +30,7 @@ const VALIGN_OPTIONS: { value: VAlign; icon: React.ReactNode; label: string }[] 
   { value: "bottom", icon: <AlignVerticalJustifyEnd size={14} />, label: "Bottom" },
 ];
 
-export function TextStylePanel({
+export const TextStylePanel = React.memo(function TextStylePanel({
   textSize,
   textColor,
   textVerticalAlign,
@@ -136,4 +136,4 @@ export function TextStylePanel({
       </div>
     </div>
   );
-}
+});

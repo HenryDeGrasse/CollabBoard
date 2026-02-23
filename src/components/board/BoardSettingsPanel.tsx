@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { X, Copy, RefreshCw, Globe, Lock, Crown, UserPlus, Check, Ban } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -8,9 +8,8 @@ import {
   resolveBoardAccessRequest,
   removeBoardMember,
   updateBoardVisibility,
-  type BoardMember,
-  type BoardAccessRequest,
-} from "../../services/board";
+} from "../../services/board-access";
+import type { BoardMember, BoardAccessRequest } from "../../services/board-types";
 
 interface BoardSettingsPanelProps {
   boardId: string;
@@ -25,7 +24,7 @@ interface BoardSettingsPanelProps {
 
 type Tab = "members" | "share";
 
-export function BoardSettingsPanel({
+export const BoardSettingsPanel = React.memo(function BoardSettingsPanel({
   boardId,
   isOwner,
   visibility,
@@ -465,4 +464,4 @@ export function BoardSettingsPanel({
       `}</style>
     </div>
   );
-}
+});

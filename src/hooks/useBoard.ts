@@ -1,49 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { BoardObject, Connector } from "../types/board";
-import * as boardService from "../services/board";
+import * as boardService from "../services/board-crud";
+import { dbToObject, dbToConnector } from "../services/board-types";
 import { createBoardRealtimeChannels } from "../services/presence";
 import { supabase } from "../services/supabase";
-
-// DB row → BoardObject mapping
-function dbToObject(row: any): BoardObject {
-  return {
-    id: row.id,
-    type: row.type,
-    x: row.x,
-    y: row.y,
-    width: row.width,
-    height: row.height,
-    color: row.color,
-    text: row.text || "",
-    textSize: row.text_size ?? null,
-    textColor: row.text_color ?? null,
-    textVerticalAlign: row.text_vertical_align ?? null,
-    rotation: row.rotation,
-    zIndex: row.z_index,
-    createdBy: row.created_by,
-    createdAt: new Date(row.created_at).getTime(),
-    updatedAt: new Date(row.updated_at).getTime(),
-    parentFrameId: row.parent_frame_id || null,
-    points: row.points || undefined,
-    strokeWidth: row.stroke_width || undefined,
-  };
-}
-
-function dbToConnector(row: any): Connector {
-  return {
-    id: row.id,
-    // from_id / to_id are NULL in the DB when the endpoint is a free canvas
-    // point.  Map NULL → "" so the rest of the app can use empty-string as
-    // the sentinel for "no object pinned".
-    fromId: row.from_id ?? "",
-    toId: row.to_id ?? "",
-    style: row.style,
-    fromPoint: row.from_point ?? undefined,
-    toPoint: row.to_point ?? undefined,
-    color: row.color ?? undefined,
-    strokeWidth: row.stroke_width ?? undefined,
-  };
-}
 
 export type IdRemapCallback = (tempId: string, realId: string) => void;
 
@@ -156,59 +117,8 @@ export function useBoard(boardId: string): UseBoardReturn {
     if (!boardId || subscribedRef.current) return;
     subscribedRef.current = true;
 
-    // Create channels SYNCHRONOUSLY before the async fetch so the cleanup
-    // closure always holds a valid reference — even if the effect is torn down
-    // (e.g. React Strict Mode double-invoke) before init() completes.
-    // Without this, channels created inside init() are orphaned when cleanup
-    // runs with channels = null, causing a postgres_changes reconnect storm
-    // that destabilises the entire Realtime WebSocket server.
-    const channels = createBoardRealtimeChannels(
-      boardId,
-      // Object changes
-      (eventType, row) => {
-        if (eventType === "INSERT" || eventType === "UPDATE") {
-          const obj = dbToObject(row);
-          setObjects((prev) => {
-            // If we have unflushed local changes, keep optimistic position/size to
-            // avoid flicker from slightly stale realtime echoes.
-            if (pendingObjectUpdatesRef.current[obj.id]) {
-              return prev;
-            }
-
-            const existing = prev[obj.id];
-            // Ignore out-of-order older updates.
-            if (existing && existing.updatedAt > obj.updatedAt) {
-              return prev;
-            }
-
-            return { ...prev, [obj.id]: obj };
-          });
-        } else if (eventType === "DELETE") {
-          const id = row.id;
-          // Clear pending updates for deleted objects
-          delete pendingObjectUpdatesRef.current[id];
-          setObjects((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-        }
-      },
-      // Connector changes
-      (eventType, row) => {
-        if (eventType === "INSERT" || eventType === "UPDATE") {
-          const conn = dbToConnector(row);
-          setConnectors((prev) => ({ ...prev, [conn.id]: conn }));
-        } else if (eventType === "DELETE") {
-          const id = row.id;
-          setConnectors((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-        }
-      }
-    );
+    let cancelled = false;
+    const channelsRef: { current: RealtimeChannel[] } = { current: [] };
 
     async function init() {
       try {
@@ -218,22 +128,77 @@ export function useBoard(boardId: string): UseBoardReturn {
           boardService.fetchBoardConnectors(boardId),
           boardService.fetchBoardMetadata(boardId),
         ]);
+        if (cancelled) return;
+
         setObjects(objs);
         setConnectors(conns);
         if (meta?.title) setBoardTitle(meta.title);
+
+        // Subscribe to realtime AFTER applying snapshot so we don't overwrite
+        // realtime updates with stale data, and don't trigger React updates during loading.
+        const channels = createBoardRealtimeChannels(
+          boardId,
+          // Object changes
+          (eventType, row) => {
+            if (eventType === "INSERT" || eventType === "UPDATE") {
+              const obj = dbToObject(row);
+              setObjects((prev) => {
+                // If we have unflushed local changes, keep optimistic position/size to
+                // avoid flicker from slightly stale realtime echoes.
+                if (pendingObjectUpdatesRef.current[obj.id]) {
+                  return prev;
+                }
+
+                const existing = prev[obj.id];
+                // Ignore out-of-order older updates.
+                if (existing && existing.updatedAt > obj.updatedAt) {
+                  return prev;
+                }
+
+                return { ...prev, [obj.id]: obj };
+              });
+            } else if (eventType === "DELETE") {
+              const id = row.id;
+              // Clear pending updates for deleted objects
+              delete pendingObjectUpdatesRef.current[id];
+              setObjects((prev) => {
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            }
+          },
+          // Connector changes
+          (eventType, row) => {
+            if (eventType === "INSERT" || eventType === "UPDATE") {
+              const conn = dbToConnector(row);
+              setConnectors((prev) => ({ ...prev, [conn.id]: conn }));
+            } else if (eventType === "DELETE") {
+              const id = row.id;
+              setConnectors((prev) => {
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            }
+          }
+        );
+        channelsRef.current = channels;
       } catch (err) {
-        console.error("Failed to load board:", err);
+        if (!cancelled) console.error("Failed to load board:", err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     init();
 
     return () => {
+      cancelled = true;
       subscribedRef.current = false;
       flushPendingObjectUpdates();
-      channels.forEach((ch) => supabase.removeChannel(ch));
+      channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
+      channelsRef.current = [];
     };
   }, [boardId, flushPendingObjectUpdates]);
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../auth/AuthProvider";
 
 export interface AiSnapshot {
@@ -67,7 +67,7 @@ interface Props {
   onUndoSnapshot?: (snapshot: AiSnapshot) => void;
 }
 
-export function AICommandInput({
+export const AICommandInput = React.memo(function AICommandInput({
   boardId,
   viewport,
   selectedIds = [],
@@ -520,4 +520,4 @@ export function AICommandInput({
       </form>
     </div>
   );
-}
+});

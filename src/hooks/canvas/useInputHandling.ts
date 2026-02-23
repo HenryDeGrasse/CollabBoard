@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Konva from "konva";
-import type { BoardObject, Connector } from "../types/board";
-import type { UndoAction } from "./useUndoRedo";
-import type { ToolType } from "../components/canvas/Board";
+import type { BoardObject, Connector } from "../../types/board";
+import type { UndoAction } from "../useUndoRedo";
+import type { ToolType } from "../../types/tool";
 
 export interface SelectionRectState {
   x: number;
@@ -36,6 +36,9 @@ export interface UseInputHandlingParams {
 
 export interface UseInputHandlingReturn {
   isPanning: boolean;
+  /** True while ANY pan is active (space+drag OR right-click drag) — used for
+   *  layer caching and disabling hit detection during pan. */
+  isAnyPanning: boolean;
   spaceHeldRef: React.MutableRefObject<boolean>;
   rightClickPanRef: React.MutableRefObject<{
     startX: number;
@@ -103,6 +106,9 @@ export function useInputHandling({
   const isPanning = spaceHeld;
 
   // ─── Right-click drag panning ─────────────────────────────
+  // Uses the same imperative pattern as zoom: apply stage.x/y directly during
+  // drag (zero React renders), commit to React state on mouseUp.
+  const [isRightClickPanning, setIsRightClickPanning] = useState(false);
   const rightClickPanRef = useRef<{
     startX: number;
     startY: number;
@@ -121,12 +127,14 @@ export function useInputHandling({
     const onMouseDown = (e: MouseEvent) => {
       if (e.button === 2) {
         e.preventDefault();
+        const stage = stageRef.current;
         rightClickPanRef.current = {
           startX: e.clientX,
           startY: e.clientY,
-          viewX: stageRef.current?.x() ?? 0,
-          viewY: stageRef.current?.y() ?? 0,
+          viewX: stage?.x() ?? 0,
+          viewY: stage?.y() ?? 0,
         };
+        setIsRightClickPanning(true);
       }
     };
 
@@ -136,12 +144,25 @@ export function useInputHandling({
       const dy = e.clientY - rightClickPanRef.current.startY;
       const newX = rightClickPanRef.current.viewX + dx;
       const newY = rightClickPanRef.current.viewY + dy;
-      setViewport((prev) => ({ ...prev, x: newX, y: newY }));
+
+      // Apply directly to Konva Stage — no React render.
+      const stage = stageRef.current;
+      if (stage) {
+        stage.x(newX);
+        stage.y(newY);
+        stage.batchDraw();
+      }
     };
 
     const onMouseUp = (e: MouseEvent) => {
       if (e.button === 2 && rightClickPanRef.current) {
         rightClickPanRef.current = null;
+        setIsRightClickPanning(false);
+        // Commit final position to React state (one render for culling update).
+        const stage = stageRef.current;
+        if (stage) {
+          setViewport((prev) => ({ ...prev, x: stage.x(), y: stage.y() }));
+        }
       }
     };
 
@@ -156,6 +177,8 @@ export function useInputHandling({
       window.removeEventListener("mouseup", onMouseUp);
     };
   }, [stageRef, setViewport]);
+
+  const isAnyPanning = isPanning || isRightClickPanning;
 
   // ─── Window resize / stage size ───────────────────────────
   const [stageSize, setStageSize] = useState({
@@ -289,6 +312,7 @@ export function useInputHandling({
 
   return {
     isPanning,
+    isAnyPanning,
     spaceHeldRef,
     rightClickPanRef,
     selectionRect,

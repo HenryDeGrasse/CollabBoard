@@ -1,13 +1,13 @@
 import { useEffect } from "react";
 import type { BoardObject, Connector } from "../types/board";
+import type { ToolType } from "../types/tool";
 import type { UseCanvasReturn } from "./useCanvas";
 import type { UseSelectionReturn } from "./useSelection";
-import type { ToolType } from "../components/canvas/Board";
 import {
   isTextCapableObjectType,
   resolveObjectTextSize,
   clampTextSizeForType,
-} from "../utils/text-style";
+} from "../utils/text";
 
 export interface UseKeyboardShortcutsParams {
   undoRedo: { undo: () => void; redo: () => void };

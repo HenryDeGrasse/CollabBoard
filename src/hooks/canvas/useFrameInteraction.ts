@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import Konva from "konva";
-import type { BoardObject } from "../types/board";
-import type { ViewportState } from "./useCanvas";
-import type { UndoAction } from "./useUndoRedo";
-import { constrainObjectOutsideFrames } from "../utils/frame-containment";
+import type { BoardObject } from "../../types/board";
+import type { ViewportState } from "../useCanvas";
+import type { UndoAction } from "../useUndoRedo";
+import { constrainObjectOutsideFrames } from "../../utils/frame";
 
 export interface FrameManualDragState {
   frameId: string;

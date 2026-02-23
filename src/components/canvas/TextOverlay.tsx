@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { BoardObject } from "../../types/board";
-import { calculateFontSize } from "../../utils/text-fit";
 import {
+  calculateFontSize,
   getAutoContrastingTextColor,
   getFrameHeaderHeight,
   resolveObjectTextSize,
-} from "../../utils/text-style";
-import { estimateVerticalPaddingTop } from "../../utils/text-overlay-layout";
+  estimateVerticalPaddingTop,
+} from "../../utils/text";
 
 interface TextOverlayProps {
   object: BoardObject;

@@ -1,20 +1,22 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { BoardObject, Connector } from "../types/board";
-import { Board, type ToolType } from "../components/canvas/Board";
+import type { ToolType } from "../types/tool";
+import { Board } from "../components/canvas/Board";
 import { Toolbar } from "../components/toolbar/Toolbar";
 import { PresencePanel } from "../components/sidebar/PresencePanel";
 import { AICommandInput, type AiSnapshot } from "../components/sidebar/AICommandInput";
 import { TextStylePanel } from "../components/sidebar/TextStylePanel";
 import { BoardSettingsPanel } from "../components/board/BoardSettingsPanel";
 import { useBoard } from "../hooks/useBoard";
-import { usePresence } from "../hooks/usePresence";
+import { usePresence } from "../hooks/presence/usePresence";
 import { useCanvas } from "../hooks/useCanvas";
 import { useSelection } from "../hooks/useSelection";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useBoardMembershipGuard } from "../hooks/useBoardMembershipGuard";
 import { useAuth } from "../components/auth/AuthProvider";
 import { HelpPanel } from "../components/ui/HelpPanel";
-import { joinBoard, touchBoard, fetchBoardMetadata, requestBoardAccess } from "../services/board";
+import { touchBoard, fetchBoardMetadata } from "../services/board-crud";
+import { joinBoard, requestBoardAccess } from "../services/board-access";
 import { DEFAULT_STICKY_COLOR } from "../utils/colors";
 import { Settings } from "lucide-react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
@@ -22,7 +24,7 @@ import { useThumbnailCapture } from "../hooks/useThumbnailCapture";
 import { useTextStyleHandlers } from "../hooks/useTextStyleHandlers";
 
 /* ─── Inline board-title editor ──────────────────────────────── */
-function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: string) => void }) {
+const BoardTitleEditor = React.memo(function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -63,7 +65,7 @@ function BoardTitleEditor({ title, onRename }: { title: string; onRename: (t: st
       maxLength={60}
     />
   );
-}
+});
 
 const EMPTY_BOARD_SUGGESTION_SETS = [
   [
@@ -317,9 +319,19 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     [selection.selectedIds, selectedConnectorIds, updateObject, updateConnector]
   );
 
-  const selectedObjects = Array.from(selection.selectedIds)
-    .map((id) => objects[id])
-    .filter(Boolean) as BoardObject[];
+  const selectedObjects = useMemo(() =>
+    Array.from(selection.selectedIds)
+      .map((id) => objects[id])
+      .filter(Boolean) as BoardObject[],
+    [selection.selectedIds, objects]
+  );
+
+  // Memoize so Toolbar doesn't re-render on every objects change
+  const selectedColor = useMemo(() => {
+    const first = selection.selectedIds.values().next();
+    if (first.done) return "";
+    return objects[first.value]?.color || "";
+  }, [selection.selectedIds, objects]);
 
   const {
     canEditSelectedText,
@@ -513,11 +525,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         activeColor={activeColor}
         activeStrokeWidth={activeStrokeWidth}
         selectedCount={selection.selectedIds.size}
-        selectedColor={
-          selection.selectedIds.size > 0
-            ? (objects[Array.from(selection.selectedIds)[0]]?.color || "")
-            : ""
-        }
+        selectedColor={selectedColor}
         selectedStrokeWidth={selectedStrokeWidth}
         selectedConnectorCount={selectedConnectorIds.size}
         selectedConnectorColor={selectedConnectorColor}
@@ -529,8 +537,8 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
         onChangeSelectedStrokeWidth={handleChangeSelectedStrokeWidth}
         onChangeSelectedConnectorColor={handleChangeSelectedConnectorColor}
         stageRef={canvas.stageRef}
-        objects={objects}
-        connectors={connectors}
+        objectsRef={objectsRef}
+        connectorsRef={connectorsRef}
         boardTitle={boardTitle}
       />
 

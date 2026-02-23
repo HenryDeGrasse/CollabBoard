@@ -12,7 +12,7 @@ const mockResolveBoardAccessRequest = vi.fn();
 const mockRemoveBoardMember = vi.fn();
 const mockUpdateBoardVisibility = vi.fn();
 
-vi.mock("../../services/board", () => ({
+vi.mock("../../services/board-access", () => ({
   getBoardMembers: (...args: any[]) => mockGetBoardMembers(...args),
   getInviteToken: (...args: any[]) => mockGetInviteToken(...args),
   listBoardAccessRequests: (...args: any[]) => mockListBoardAccessRequests(...args),

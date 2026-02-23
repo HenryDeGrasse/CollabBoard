@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../components/auth/AuthProvider";
-import { acceptInviteToken } from "../services/board";
+import { acceptInviteToken } from "../services/board-access";
 
 interface InviteAcceptPageProps {
   token: string;

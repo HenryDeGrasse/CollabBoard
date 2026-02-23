@@ -19,20 +19,39 @@ export const GridBackground = React.memo(function GridBackground({
   const smallGrid = Math.max(10, 20 * viewportScale);
   const largeGrid = Math.max(50, 100 * viewportScale);
 
+  // Use the large grid as the modulo base since both patterns must tile correctly.
+  // The large grid is always a multiple of the small grid (100 vs 20 at scale=1),
+  // so modding by largeGrid keeps both patterns in phase.
+  const tx = ((viewportX % largeGrid) + largeGrid) % largeGrid;
+  const ty = ((viewportY % largeGrid) + largeGrid) % largeGrid;
+
   const style = useMemo(
     () => ({
       backgroundImage: GRID_IMAGE,
       backgroundSize: `${smallGrid}px ${smallGrid}px, ${largeGrid}px ${largeGrid}px`,
-      backgroundPosition: `${viewportX}px ${viewportY}px, ${viewportX}px ${viewportY}px`,
+      // Use transform: translate() instead of backgroundPosition for GPU
+      // compositing. backgroundPosition triggers browser layout + paint on
+      // every update; transform is handled by the compositor (no layout/paint).
+      backgroundPosition: "0 0, 0 0",
+      transform: `translate(${tx}px, ${ty}px)`,
+      // Promote to own compositing layer for GPU acceleration
+      willChange: "transform" as const,
       opacity: 0.72,
     }),
-    [viewportX, viewportY, smallGrid, largeGrid]
+    [tx, ty, smallGrid, largeGrid]
   );
 
   return (
     <div
-      className="absolute inset-0 pointer-events-none"
-      style={style}
+      className="absolute pointer-events-none"
+      style={{
+        ...style,
+        // Extend beyond viewport so translated dots still cover the full area
+        top: `-${largeGrid}px`,
+        left: `-${largeGrid}px`,
+        right: `-${largeGrid}px`,
+        bottom: `-${largeGrid}px`,
+      }}
     />
   );
 });
