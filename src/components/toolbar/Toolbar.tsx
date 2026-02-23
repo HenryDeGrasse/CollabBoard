@@ -305,7 +305,7 @@ export const Toolbar = React.memo(function Toolbar({
       )}
 
       {/* Export menu */}
-      {stageRef && objectsRef && connectorsRef && boardTitle != null && (
+      {stageRef && objectsRef && connectorsRef && boardTitle !== undefined && (
         <>
           <div className="w-px h-6 bg-gray-200 mx-1" />
           <ExportMenu

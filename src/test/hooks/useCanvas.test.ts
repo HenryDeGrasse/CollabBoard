@@ -148,12 +148,12 @@ describe("useCanvas hook", () => {
     let rafId: number;
 
     function makeMockStage(scale = 1, x = 0, y = 0) {
-      let _x = x, _y = y, _scaleX = scale, _scaleY = scale;
+      const pos = { x, y, scaleX: scale, scaleY: scale };
       const stage: any = {
-        scaleX: (v?: number) => { if (v !== undefined) { _scaleX = v; return stage; } return _scaleX; },
-        scaleY: (v?: number) => { if (v !== undefined) { _scaleY = v; return stage; } return _scaleY; },
-        x: (v?: number) => { if (v !== undefined) { _x = v; return stage; } return _x; },
-        y: (v?: number) => { if (v !== undefined) { _y = v; return stage; } return _y; },
+        scaleX: (v?: number) => { if (v !== undefined) { pos.scaleX = v; return stage; } return pos.scaleX; },
+        scaleY: (v?: number) => { if (v !== undefined) { pos.scaleY = v; return stage; } return pos.scaleY; },
+        x: (v?: number) => { if (v !== undefined) { pos.x = v; return stage; } return pos.x; },
+        y: (v?: number) => { if (v !== undefined) { pos.y = v; return stage; } return pos.y; },
         getPointerPosition: () => ({ x: 400, y: 300 }),
         batchDraw: vi.fn(),
       };
@@ -399,12 +399,12 @@ describe("useCanvas hook", () => {
     let rafId: number;
 
     function makeMockStage(scale = 1, x = 0, y = 0) {
-      let _x = x, _y = y, _scaleX = scale, _scaleY = scale;
+      const pos = { x, y, scaleX: scale, scaleY: scale };
       const stage: any = {
-        scaleX: (v?: number) => { if (v !== undefined) { _scaleX = v; return stage; } return _scaleX; },
-        scaleY: (v?: number) => { if (v !== undefined) { _scaleY = v; return stage; } return _scaleY; },
-        x: (v?: number) => { if (v !== undefined) { _x = v; return stage; } return _x; },
-        y: (v?: number) => { if (v !== undefined) { _y = v; return stage; } return _y; },
+        scaleX: (v?: number) => { if (v !== undefined) { pos.scaleX = v; return stage; } return pos.scaleX; },
+        scaleY: (v?: number) => { if (v !== undefined) { pos.scaleY = v; return stage; } return pos.scaleY; },
+        x: (v?: number) => { if (v !== undefined) { pos.x = v; return stage; } return pos.x; },
+        y: (v?: number) => { if (v !== undefined) { pos.y = v; return stage; } return pos.y; },
         getPointerPosition: () => ({ x: 400, y: 300 }),
         batchDraw: vi.fn(),
       };
