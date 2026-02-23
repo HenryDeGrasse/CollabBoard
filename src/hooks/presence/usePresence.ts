@@ -1,6 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPresenceChannel, getNextCursorColor, type PresenceState } from "../../services/presence";
 import { throttle, type ThrottledFunction } from "../../utils/throttle";
+import {
+  CURSOR_BROADCAST_INTERVAL_MS,
+  DRAFT_TEXT_BROADCAST_INTERVAL_MS,
+  REMOTE_DRAG_CLEAR_DELAY_MS,
+  STALE_DRAG_TIMEOUT_MS,
+  STALE_DRAG_GC_INTERVAL_MS,
+} from "../../constants";
 
 export interface RemoteUser {
   id: string;
@@ -191,7 +198,7 @@ export function usePresence(
               delete next[objectId];
               return next;
             });
-          }, 300);
+          }, REMOTE_DRAG_CLEAR_DELAY_MS);
           return;
         }
 
@@ -241,7 +248,7 @@ export function usePresence(
         let changed = false;
         const next: Record<string, RemoteDragPosition> = {};
         for (const [id, pos] of Object.entries(prev)) {
-          if (now - pos.updatedAt <= 6000) {
+          if (now - pos.updatedAt <= STALE_DRAG_TIMEOUT_MS) {
             next[id] = pos;
           } else {
             changed = true;
@@ -249,18 +256,21 @@ export function usePresence(
         }
         return changed ? next : prev;
       });
-    }, 1000);
+    }, STALE_DRAG_GC_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Throttled cursor update (target: 30-50ms)
-  const updateCursor = useCallback(
+  // Throttled cursor update (target: 30-50ms).
+  // The throttled function is created once via useRef so React's dependency
+  // analysis is satisfied. The closure captures `channelRef` (a stable ref)
+  // so the latest channel is always used when the throttled call fires.
+  const updateCursorRef = useRef(
     throttle((x: number, y: number) => {
       channelRef.current?.updateCursor(x, y);
-    }, 30),
-    []
+    }, CURSOR_BROADCAST_INTERVAL_MS)
   );
+  const updateCursor = updateCursorRef.current;
 
   const setEditingObject = useCallback(
     (objectId: string | null) => {
@@ -269,12 +279,12 @@ export function usePresence(
     []
   );
 
-  const setDraftText = useCallback(
+  const setDraftTextRef = useRef(
     throttle((objectId: string, text: string) => {
       channelRef.current?.setDraftText(objectId, text);
-    }, 250),
-    []
+    }, DRAFT_TEXT_BROADCAST_INTERVAL_MS)
   );
+  const setDraftText = setDraftTextRef.current;
 
   const getDragBroadcaster = useCallback((objectId: string) => {
     let sender = dragBroadcastersRef.current[objectId];

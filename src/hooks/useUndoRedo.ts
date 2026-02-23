@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import type { BoardObject, Connector } from "../types/board";
-
-const MAX_UNDO_DEPTH = 30;
+import { MAX_UNDO_DEPTH } from "../constants";
 
 export type UndoAction =
   | { type: "create_object"; objectId: string; object: BoardObject }
@@ -125,30 +124,45 @@ export function useUndoRedo(
     }
   }, [deleteObject, restoreObject, updateObject, deleteConnector, restoreConnector]);
 
+  // Refs that mirror the undo/redo stacks so undo()/redo() can read the
+  // current stack synchronously without relying on closure captures or
+  // executing side-effects inside React state updaters (which is unsafe
+  // in concurrent mode — React may invoke updaters more than once).
+  const undoStackRef = useRef(undoStack);
+  undoStackRef.current = undoStack;
+  const redoStackRef = useRef(redoStack);
+  redoStackRef.current = redoStack;
+
   const undo = useCallback(() => {
-    setUndoStack((prev) => {
-      if (prev.length === 0) return prev;
-      const action = prev[prev.length - 1];
-      const next = prev.slice(0, -1);
-      isUndoRedoRef.current = true;
-      executeUndo(action);
-      isUndoRedoRef.current = false;
-      setRedoStack((r) => [...r, action]);
-      return next;
-    });
+    const prev = undoStackRef.current;
+    if (prev.length === 0) return;
+
+    const action = prev[prev.length - 1];
+    const next = prev.slice(0, -1);
+
+    // Update stacks first, then execute side effects outside the updater.
+    setUndoStack(next);
+    setRedoStack((r) => [...r, action]);
+
+    isUndoRedoRef.current = true;
+    executeUndo(action);
+    isUndoRedoRef.current = false;
   }, [executeUndo]);
 
   const redo = useCallback(() => {
-    setRedoStack((prev) => {
-      if (prev.length === 0) return prev;
-      const action = prev[prev.length - 1];
-      const next = prev.slice(0, -1);
-      isUndoRedoRef.current = true;
-      executeRedo(action);
-      isUndoRedoRef.current = false;
-      setUndoStack((u) => [...u, action]);
-      return next;
-    });
+    const prev = redoStackRef.current;
+    if (prev.length === 0) return;
+
+    const action = prev[prev.length - 1];
+    const next = prev.slice(0, -1);
+
+    // Update stacks first, then execute side effects outside the updater.
+    setRedoStack(next);
+    setUndoStack((u) => [...u, action]);
+
+    isUndoRedoRef.current = true;
+    executeRedo(action);
+    isUndoRedoRef.current = false;
   }, [executeRedo]);
 
   return {

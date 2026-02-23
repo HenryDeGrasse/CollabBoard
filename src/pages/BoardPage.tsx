@@ -194,6 +194,7 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
     restoreObjects,
     restoreConnector,
     setIdRemapCallback,
+    setPersistenceErrorCallback,
     loading,
   } = useBoard(joined ? boardId : "");
 
@@ -247,6 +248,15 @@ export function BoardPage({ boardId, onNavigateHome }: BoardPageProps) {
   connectorsRef.current = connectors;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
+
+  // Wire up persistence error reporting to the toast system so failed DB
+  // writes are surfaced to the user instead of silently swallowed.
+  useEffect(() => {
+    setPersistenceErrorCallback((message) => {
+      setToast({ message, type: "error" });
+    });
+    return () => setPersistenceErrorCallback(null);
+  }, [setPersistenceErrorCallback]);
 
   // When createObject's temp ID is replaced by the real DB ID, update selection
   // so duplicated/pasted objects stay selected.

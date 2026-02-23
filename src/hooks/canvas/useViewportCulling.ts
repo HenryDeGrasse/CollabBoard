@@ -1,15 +1,11 @@
 import { useMemo, useCallback, useRef } from "react";
 import type { BoardObject } from "../../types/board";
 import type { ViewportState } from "../useCanvas";
-
-const CULL_MARGIN = 200; // Extra margin (canvas px) to avoid pop-in during pan
-
-// Hysteresis thresholds: don't recompute visibleBounds unless the viewport
-// has moved more than this many screen-pixels or the scale has changed.
-// Keeps the four visible* filter memos stable during small incremental pans,
-// preventing O(N) re-filtering on every pixel of movement.
-const HYSTERESIS_PX = 100;
-const HYSTERESIS_SCALE = 0.02;
+import {
+  VIEWPORT_CULL_MARGIN as CULL_MARGIN,
+  VIEWPORT_HYSTERESIS_PX as HYSTERESIS_PX,
+  VIEWPORT_HYSTERESIS_SCALE as HYSTERESIS_SCALE,
+} from "../../constants";
 
 export interface FrameClippedData {
   contained: BoardObject[];

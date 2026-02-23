@@ -9,7 +9,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { traceable } from "langsmith/traceable";
 import { verifyToken, assertCanWriteBoard, AuthError } from "./_lib/auth.js";
 import { hasFastPathMatch, runAgent } from "./_lib/aiAgent.js";
-import { fetchBoardState } from "./_lib/aiTools.js";
+import { fetchBoardState, checkRateLimit } from "./_lib/aiTools.js";
 import {
   createAiRun,
   findAiRun,
@@ -52,6 +52,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(err.status).json({ error: err.message });
     }
     return res.status(500).json({ error: "Auth check failed" });
+  }
+
+  // ── Rate limiting ────────────────────────────────────
+  const rateCheck = checkRateLimit(userId);
+  if (!rateCheck.allowed) {
+    res.setHeader("Retry-After", String(rateCheck.retryAfterSeconds));
+    return res.status(429).json({
+      error: "Too many AI requests. Please wait before trying again.",
+      retryAfterSeconds: rateCheck.retryAfterSeconds,
+    });
   }
 
   const {

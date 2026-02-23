@@ -5,8 +5,13 @@ import * as boardService from "../services/board-crud";
 import { dbToObject, dbToConnector } from "../services/board-types";
 import { createBoardRealtimeChannels } from "../services/presence";
 import { supabase } from "../services/supabase";
+import { OBJECT_UPDATE_FLUSH_MS } from "../constants";
 
 export type IdRemapCallback = (tempId: string, realId: string) => void;
+
+/** Callback invoked when a persistence operation fails, allowing the UI to
+ *  display a toast or notification instead of silently swallowing errors. */
+export type PersistenceErrorCallback = (message: string) => void;
 
 export interface UseBoardReturn {
   objects: Record<string, BoardObject>;
@@ -27,10 +32,10 @@ export interface UseBoardReturn {
   restoreConnector: (conn: Connector) => void;
   /** Register a callback invoked when a temp ID from createObject is replaced by the real DB ID */
   setIdRemapCallback: (cb: IdRemapCallback | null) => void;
+  /** Register a callback for persistence errors (e.g. to show a toast) */
+  setPersistenceErrorCallback: (cb: PersistenceErrorCallback | null) => void;
   loading: boolean;
 }
-
-const UPDATE_FLUSH_MS = 40;
 
 export function useBoard(boardId: string): UseBoardReturn {
   const [objects, setObjects] = useState<Record<string, BoardObject>>({});
@@ -40,9 +45,16 @@ export function useBoard(boardId: string): UseBoardReturn {
   const subscribedRef = useRef(false);
   const pendingObjectUpdatesRef = useRef<Record<string, Partial<BoardObject>>>({});
   const idRemapCallbackRef = useRef<IdRemapCallback | null>(null);
+  const persistenceErrorCallbackRef = useRef<PersistenceErrorCallback | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushInFlightRef = useRef(false);
   const flushQueuedRef = useRef(false);
+
+  /** Report a persistence error to the UI (if a callback is registered). */
+  const reportPersistenceError = useCallback((message: string) => {
+    console.error("[useBoard] Persistence error:", message);
+    persistenceErrorCallbackRef.current?.(message);
+  }, []);
 
   const objectsRef = useRef(objects);
   objectsRef.current = objects;
@@ -156,15 +168,15 @@ export function useBoard(boardId: string): UseBoardReturn {
     flushInFlightRef.current = true;
     boardService
       .updateObjectsBulk(boardId, rowsToUpsert)
-      .catch((err) => {
-        console.error("Failed to bulk update objects:", err);
+      .catch(() => {
+        reportPersistenceError("Failed to save object changes. Retrying individually…");
         // Fallback to per-object updates so we preserve correctness if the
         // bulk path fails for any reason.
         pendingIds.forEach((id) => {
           const updates = pending[id];
           if (!updates) return;
           boardService.updateObject(boardId, id, updates).catch((innerErr) => {
-            console.error("Failed to update object:", innerErr);
+            reportPersistenceError(`Failed to update object ${id}: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`);
           });
         });
       })
@@ -176,18 +188,18 @@ export function useBoard(boardId: string): UseBoardReturn {
           if (!flushTimerRef.current) {
             flushTimerRef.current = setTimeout(() => {
               flushPendingObjectUpdates();
-            }, UPDATE_FLUSH_MS);
+            }, OBJECT_UPDATE_FLUSH_MS);
           }
         }
       });
-  }, [boardId]);
+  }, [boardId, reportPersistenceError]);
 
   const scheduleObjectUpdateFlush = useCallback(() => {
     if (flushTimerRef.current) return;
 
     flushTimerRef.current = setTimeout(() => {
       flushPendingObjectUpdates();
-    }, UPDATE_FLUSH_MS);
+    }, OBJECT_UPDATE_FLUSH_MS);
   }, [flushPendingObjectUpdates]);
 
   // Initial fetch + realtime subscription.
@@ -299,7 +311,7 @@ export function useBoard(boardId: string): UseBoardReturn {
         // Notify listeners (e.g. selection) about the ID remap
         idRemapCallbackRef.current?.(tempId, realId);
       }).catch((err) => {
-        console.error("Failed to create object:", err);
+        reportPersistenceError(`Failed to create object: ${err instanceof Error ? err.message : String(err)}`);
         // Rollback optimistic update
         setObjects((prev) => {
           const next = { ...prev };
@@ -352,7 +364,7 @@ export function useBoard(boardId: string): UseBoardReturn {
         });
         return realIds;
       } catch (err) {
-        console.error("Failed to batch-create objects:", err);
+        reportPersistenceError(`Failed to batch-create objects: ${err instanceof Error ? err.message : String(err)}`);
         // Rollback all optimistic updates
         setObjects((prev) => {
           const next = { ...prev };
@@ -397,7 +409,7 @@ export function useBoard(boardId: string): UseBoardReturn {
       delete pendingObjectUpdatesRef.current[id];
 
       boardService.deleteObject(boardId, id).catch((err) => {
-        console.error("Failed to delete object:", err);
+        reportPersistenceError(`Failed to delete object: ${err instanceof Error ? err.message : String(err)}`);
       });
     },
     [boardId]
@@ -440,13 +452,32 @@ export function useBoard(boardId: string): UseBoardReturn {
         });
       }
 
+      // Capture the objects being deleted so we can rollback on failure.
+      const deletedObjects: BoardObject[] = [];
+      for (const id of idsToDelete) {
+        const obj = objectsRef.current[id];
+        if (obj) deletedObjects.push({ ...obj });
+      }
+
       boardService.deleteFrameCascade(boardId, frameId).catch((err) => {
-        console.error("Failed to delete frame cascade:", err);
+        reportPersistenceError(`Failed to delete frame — restoring objects. ${err instanceof Error ? err.message : String(err)}`);
+        // Rollback: re-add all optimistically deleted objects to local state.
+        // A subsequent Realtime event will reconcile, but this prevents the
+        // confusing intermediate state where objects are gone from the UI
+        // but still exist in the DB.
+        setObjects((prev) => {
+          const next = { ...prev };
+          for (const obj of deletedObjects) {
+            next[obj.id] = obj;
+          }
+          return next;
+        });
       });
     },
     // objectsRef.current is a stable ref — no need to list objects here.
+    // reportPersistenceError is a stable useCallback with no deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [boardId]
+    [boardId, reportPersistenceError]
   );
 
   const createConnector = useCallback(
@@ -464,7 +495,7 @@ export function useBoard(boardId: string): UseBoardReturn {
           return next;
         });
       }).catch((err) => {
-        console.error("Failed to create connector:", err);
+        reportPersistenceError(`Failed to create connector: ${err instanceof Error ? err.message : String(err)}`);
         setConnectors((prev) => {
           const next = { ...prev };
           delete next[tempId];
@@ -487,7 +518,7 @@ export function useBoard(boardId: string): UseBoardReturn {
       });
 
       boardService.updateConnector(boardId, id, updates).catch((err) => {
-        console.error("Failed to update connector:", err);
+        reportPersistenceError(`Failed to update connector: ${err instanceof Error ? err.message : String(err)}`);
       });
     },
     [boardId]
@@ -502,7 +533,7 @@ export function useBoard(boardId: string): UseBoardReturn {
       });
 
       boardService.deleteConnector(boardId, id).catch((err) => {
-        console.error("Failed to delete connector:", err);
+        reportPersistenceError(`Failed to delete connector: ${err instanceof Error ? err.message : String(err)}`);
       });
     },
     [boardId]
@@ -511,7 +542,9 @@ export function useBoard(boardId: string): UseBoardReturn {
   const updateBoardTitle = useCallback(
     (title: string) => {
       setBoardTitle(title);
-      boardService.updateBoardMetadata(boardId, { title }).catch(console.error);
+      boardService.updateBoardMetadata(boardId, { title }).catch((err) => {
+        reportPersistenceError(`Failed to update board title: ${err instanceof Error ? err.message : String(err)}`);
+      });
     },
     [boardId]
   );
@@ -519,7 +552,9 @@ export function useBoard(boardId: string): UseBoardReturn {
   const restoreObject = useCallback(
     (obj: BoardObject) => {
       setObjects((prev) => ({ ...prev, [obj.id]: obj }));
-      boardService.restoreObject(boardId, obj).catch(console.error);
+      boardService.restoreObject(boardId, obj).catch((err) => {
+        reportPersistenceError(`Failed to restore object: ${err instanceof Error ? err.message : String(err)}`);
+      });
     },
     [boardId]
   );
@@ -541,7 +576,9 @@ export function useBoard(boardId: string): UseBoardReturn {
       // Persist in FK-safe order (frames before children)
       restorePromiseRef.current = boardService
         .restoreObjects(boardId, objs)
-        .catch(console.error)
+        .catch((err) => {
+          reportPersistenceError(`Failed to restore objects: ${err instanceof Error ? err.message : String(err)}`);
+        })
         .then(() => {});
     },
     [boardId]
@@ -553,13 +590,19 @@ export function useBoard(boardId: string): UseBoardReturn {
       // Wait for any pending object restores to complete (FK: connector endpoints must exist)
       restorePromiseRef.current
         .then(() => boardService.restoreConnector(boardId, conn))
-        .catch(console.error);
+        .catch((err) => {
+          reportPersistenceError(`Failed to restore connector: ${err instanceof Error ? err.message : String(err)}`);
+        });
     },
     [boardId]
   );
 
   const setIdRemapCallback = useCallback((cb: IdRemapCallback | null) => {
     idRemapCallbackRef.current = cb;
+  }, []);
+
+  const setPersistenceErrorCallback = useCallback((cb: PersistenceErrorCallback | null) => {
+    persistenceErrorCallbackRef.current = cb;
   }, []);
 
   return {
@@ -579,6 +622,7 @@ export function useBoard(boardId: string): UseBoardReturn {
     restoreObjects,
     restoreConnector,
     setIdRemapCallback,
+    setPersistenceErrorCallback,
     loading,
   };
 }

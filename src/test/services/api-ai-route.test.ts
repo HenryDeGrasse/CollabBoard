@@ -34,6 +34,7 @@ vi.mock("../../../api/_lib/aiAgent.js", () => ({
 
 vi.mock("../../../api/_lib/aiTools.js", () => ({
   fetchBoardState: (...args: any[]) => mockFetchBoardState(...args),
+  checkRateLimit: () => ({ allowed: true, remaining: 19, retryAfterSeconds: 0 }),
 }));
 
 vi.mock("../../../api/_lib/aiRuns.js", async () => {

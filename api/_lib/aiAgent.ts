@@ -9,6 +9,45 @@ import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers/openai";
 import { createExecutionPlan, validateExecutionPlan } from "./aiPlanner.js";
 import { TOOL_DEFINITIONS, executeTool } from "./aiTools.js";
+import { SYSTEM_PROMPT } from "./ai/systemPrompt.js";
+import { MODEL_SIMPLE, MODEL_COMPLEX, MODEL_FASTPATH } from "./ai/models.js";
+
+// ─── Typed result shapes returned by executeTool ───────────────
+// These replace `as any` casts throughout the agent for type safety.
+
+interface ToolResultWithCreated {
+  created?: number;
+  ids?: string[];
+  objects?: Array<{ id: string; type: string; x: number; y: number; width: number; height: number }>;
+  message?: string;
+  error?: string;
+  _viewport?: { x: number; y: number; scale: number };
+}
+
+interface ToolResultWithViewport {
+  _viewport?: { x: number; y: number; scale: number };
+  [key: string]: unknown;
+}
+
+interface SWOTContent {
+  strengths?: string[];
+  weaknesses?: string[];
+  opportunities?: string[];
+  threats?: string[];
+}
+
+interface KanbanContent {
+  backlog?: string[];
+  todo?: string[];
+  in_progress?: string[];
+  done?: string[];
+}
+
+interface RetroContent {
+  went_well?: string[];
+  to_improve?: string[];
+  action_items?: string[];
+}
 
 // Default tracing to enabled so production traces are captured even when
 // LANGSMITH_TRACING is absent from the environment. Explicit "false" still wins.
@@ -60,8 +99,8 @@ export function classifyComplexity(command: string): "simple" | "complex" {
   return "simple";
 }
 
-export const MODEL_SIMPLE  = "gpt-4.1-mini"; // 200k TPM, fast, cheap
-export const MODEL_COMPLEX = "gpt-4.1";      // smarter spatial + multi-step reasoning
+// Model names are now configurable via env vars — see ai/models.ts
+export { MODEL_SIMPLE, MODEL_COMPLEX } from "./ai/models.js";
 
 const TOOL_BY_NAME = new Map(
   TOOL_DEFINITIONS.map((tool) => [tool.function.name, tool] as const)
@@ -202,7 +241,7 @@ async function* fastPathSWOT(
 
   const openai = new OpenAI({ apiKey: openaiApiKey });
   const resp = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: MODEL_FASTPATH,
     temperature: 0.7,
     max_tokens: 512,
     response_format: { type: "json_object" },
@@ -212,8 +251,8 @@ async function* fastPathSWOT(
     ],
   });
 
-  let content: any = {};
-  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+  let content: SWOTContent = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}") as SWOTContent; } catch { /* empty */ }
 
   const result = await executeTool("createQuadrant", {
     title: `SWOT Analysis: ${topic}`,
@@ -226,16 +265,16 @@ async function* fastPathSWOT(
     },
     startX: context.viewportCenter?.x ? context.viewportCenter.x - 400 : undefined,
     startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
-  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey) as ToolResultWithCreated;
 
   yield { type: "tool_result", content: JSON.stringify({ tool: "createQuadrant", result }) };
 
-  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
-  if ((nav as any)?._viewport) {
-    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey) as ToolResultWithViewport;
+  if (nav?._viewport) {
+    yield { type: "navigate", content: JSON.stringify(nav._viewport) };
   }
 
-  yield { type: "text", content: `Created a SWOT analysis for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "text", content: `Created a SWOT analysis for "${topic}" with ${result.created || 0} objects.` };
   yield { type: "done", content: "" };
 }
 
@@ -254,7 +293,7 @@ async function* fastPathKanban(
 
   const openai = new OpenAI({ apiKey: openaiApiKey });
   const resp = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: MODEL_FASTPATH,
     temperature: 0.7,
     max_tokens: 512,
     response_format: { type: "json_object" },
@@ -264,8 +303,8 @@ async function* fastPathKanban(
     ],
   });
 
-  let content: any = {};
-  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+  let content: KanbanContent = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}") as KanbanContent; } catch { /* empty */ }
 
   const result = await executeTool("createColumnLayout", {
     title: `Kanban: ${topic}`,
@@ -277,16 +316,16 @@ async function* fastPathKanban(
     ],
     startX: context.viewportCenter?.x ? context.viewportCenter.x - 400 : undefined,
     startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
-  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey) as ToolResultWithCreated;
 
   yield { type: "tool_result", content: JSON.stringify({ tool: "createColumnLayout", result }) };
 
-  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
-  if ((nav as any)?._viewport) {
-    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey) as ToolResultWithViewport;
+  if (nav?._viewport) {
+    yield { type: "navigate", content: JSON.stringify(nav._viewport) };
   }
 
-  yield { type: "text", content: `Created a Kanban board for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "text", content: `Created a Kanban board for "${topic}" with ${result.created || 0} objects.` };
   yield { type: "done", content: "" };
 }
 
@@ -305,7 +344,7 @@ async function* fastPathRetro(
 
   const openai = new OpenAI({ apiKey: openaiApiKey });
   const resp = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: MODEL_FASTPATH,
     temperature: 0.7,
     max_tokens: 512,
     response_format: { type: "json_object" },
@@ -315,8 +354,8 @@ async function* fastPathRetro(
     ],
   });
 
-  let content: any = {};
-  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}"); } catch { /* empty */ }
+  let content: RetroContent = {};
+  try { content = JSON.parse(resp.choices[0]?.message?.content || "{}") as RetroContent; } catch { /* empty */ }
 
   const result = await executeTool("createColumnLayout", {
     title: `Retrospective: ${topic}`,
@@ -327,55 +366,21 @@ async function* fastPathRetro(
     ],
     startX: context.viewportCenter?.x ? context.viewportCenter.x - 300 : undefined,
     startY: context.viewportCenter?.y ? context.viewportCenter.y - 300 : undefined,
-  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey);
+  }, boardId, userId, { screenSize: context.screenSize, selectedIds: context.selectedIds, viewportCenter: context.viewportCenter }, openaiApiKey) as ToolResultWithCreated;
 
   yield { type: "tool_result", content: JSON.stringify({ tool: "createColumnLayout", result }) };
 
-  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey);
-  if ((nav as any)?._viewport) {
-    yield { type: "navigate", content: JSON.stringify((nav as any)._viewport) };
+  const nav = await executeTool("navigate_to_objects", { ids: [] }, boardId, userId, { screenSize: context.screenSize }, openaiApiKey) as ToolResultWithViewport;
+  if (nav?._viewport) {
+    yield { type: "navigate", content: JSON.stringify(nav._viewport) };
   }
 
-  yield { type: "text", content: `Created a retrospective board for "${topic}" with ${(result as any).created || 0} objects.` };
+  yield { type: "text", content: `Created a retrospective board for "${topic}" with ${result.created || 0} objects.` };
   yield { type: "done", content: "" };
 }
 
-export const SYSTEM_PROMPT = `You are an AI assistant for CollabBoard, a collaborative whiteboard app. You modify the board exclusively through tool calls.
-
-## Defaults
-- Sticky: 150x150, Rectangle: 200x150, Frame: 800x600. Frames need ~40px side padding, ~60px top for title.
-- Colors — Sticky: yellow #FAD84E, pink #F5A8C4, blue #7FC8E8, green #9DD9A3, grey #E5E5E0. Shape: black #111111, red #CC0000, blue #3B82F6. Frame: #F9F9F7.
-- Place new objects near the user's viewport center (provided below), not at (0,0) or (100,100).
-- Use ~20px gaps. Use layout:"vertical" in bulk_create_objects when filling column frames.
-
-## Tool selection
-- **Many similar objects** -> bulk_create_objects (auto-layout, contentPrompt for unique text)
-- **SWOT / 2x2 matrix** -> createQuadrant
-- **Kanban / Retro / columns** -> createColumnLayout
-- **Mind map / brainstorm** -> createMindMap
-- **Flowchart / process** -> createFlowchart
-- **Wireframe / mockup** -> createWireframe
-- **Add items inside a frame** -> bulk_create_objects with parentFrameId
-- **Find specific objects** -> search_objects
-- **Need scoped context (selected/viewport/frame/ids)** -> get_board_context
-- **Need full board picture** -> read_board_state (last resort on large boards)
-
-## Working with existing objects (CRITICAL)
-When the user asks to organize, categorize, group, sort, separate, reorganize, convert, or rearrange existing objects into a layout:
-
-1. First, call search_objects (or get_board_context/read_board_state if needed) to get the IDs of existing objects.
-2. Analyze the objects' text content to determine how they should be categorized or ordered.
-3. Call the appropriate layout tool with the \`sourceIds\` parameter, mapping each object ID to the correct branch/column/step.
-4. NEVER duplicate existing objects. The sourceIds parameter REPOSITIONS them — it does not create copies.
-
-The sourceIds parameter is available on: createMindMap, createFlowchart, createColumnLayout, and createQuadrant (as quadrantSourceIds).
-
-## Rules
-1. Always execute changes via tool calls — never just describe them.
-2. After creating objects, connect them with create_connectors using the returned IDs.
-3. Keep responses concise — the user sees objects appear in real time.
-4. Make reasonable assumptions for ambiguous requests and proceed.
-5. Use specialized layout tools (createQuadrant, createColumnLayout, createMindMap, createFlowchart, createWireframe) instead of manually placing frames and stickies.`;
+// System prompt is now in ai/systemPrompt.ts for easy iteration.
+export { SYSTEM_PROMPT } from "./ai/systemPrompt.js";
 
 export interface AgentStreamEvent {
   type:
@@ -870,9 +875,9 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       // Execute all tool calls in parallel
       const toolResults = await Promise.all(
         toolCallEntries.map(async (tc) => {
-          let args: Record<string, any>;
+          let args: Record<string, unknown>;
           try {
-            args = JSON.parse(tc.arguments);
+            args = JSON.parse(tc.arguments) as Record<string, unknown>;
           } catch {
             return {
               id: tc.id,
@@ -888,11 +893,12 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
               viewportCenter,
             }, openaiApiKey);
             return { id: tc.id, name: tc.name, result };
-          } catch (err: any) {
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Tool execution failed";
             return {
               id: tc.id,
               name: tc.name,
-              result: { error: err.message || "Tool execution failed" },
+              result: { error: message },
             };
           }
         })
@@ -901,7 +907,7 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       // Yield tool results — emit a navigate event if any tool returned _viewport
       for (let i = 0; i < toolResults.length; i++) {
         const tr = toolResults[i];
-        const res = tr.result as any;
+        const res = tr.result as ToolResultWithViewport;
         if (res?._viewport) {
           yield { type: "navigate", content: JSON.stringify(res._viewport) };
         }
@@ -934,8 +940,9 @@ group, then offset all positions so the group center lands on (${vb.centerX}, ${
       }
 
       // Continue the loop — the LLM will see tool results and decide next action
-    } catch (err: any) {
-      yield { type: "error", content: err.message || "Agent error" };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Agent error";
+      yield { type: "error", content: message };
       return;
     }
   }

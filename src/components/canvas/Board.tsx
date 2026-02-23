@@ -11,6 +11,7 @@ import { DrawingPreviews } from "./DrawingPreviews";
 import { ToolHints } from "./ToolHints";
 import { GridBackground } from "./GridBackground";
 import { TopLevelConnectors } from "./TopLevelConnectors";
+import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import type { BoardObject, Connector } from "../../types/board";
 import type { ToolType } from "../../types/tool";
 import type { UndoAction } from "../../hooks/useUndoRedo";
@@ -29,8 +30,7 @@ import { useInputHandling } from "../../hooks/canvas/useInputHandling";
 import { getObjectIdsInRect, getConnectorIdsInRect } from "../../utils/selection";
 import { constrainChildrenInFrame } from "../../utils/frame";
 import { getFrameHeaderHeight } from "../../utils/text";
-
-const FRAME_CONTENT_PADDING = 6;
+import { FRAME_CONTENT_PADDING } from "../../constants";
 
 interface BoardProps {
   objects: Record<string, BoardObject>;
@@ -366,23 +366,62 @@ export const Board = React.memo(function Board({
     }
   }, [shouldCacheLayerRaw]);
 
+  // Track a generation counter that bumps whenever board data changes.
+  // The layer caching effect references this via ref so its dependency
+  // list only includes `shouldCacheLayer` — avoiding O(shapes) re-caching
+  // on every collaborator edit during pan/zoom.
+  const dataGenerationRef = useRef(0);
+  const prevObjectsRef = useRef(objects);
+  const prevRemoteDragRef = useRef(remoteDragPositions);
+  const prevConnectorsRef = useRef(connectors);
+
+  if (
+    objects !== prevObjectsRef.current ||
+    remoteDragPositions !== prevRemoteDragRef.current ||
+    connectors !== prevConnectorsRef.current
+  ) {
+    dataGenerationRef.current += 1;
+    prevObjectsRef.current = objects;
+    prevRemoteDragRef.current = remoteDragPositions;
+    prevConnectorsRef.current = connectors;
+  }
+
   // Cache/uncache the layer bitmap.
+  // When caching is active and board data changes, the layer is re-cached
+  // via an interval that checks the generation counter, throttled to at most
+  // once per 100ms. This prevents O(shapes) re-draws on every collaborator
+  // broadcast (which can arrive every 50ms) while still keeping the bitmap
+  // reasonably fresh.
+  const lastCachedGenRef = useRef(-1);
+
   useEffect(() => {
     const layer = objectsLayerRef.current;
     if (!layer) return;
-    if (shouldCacheLayer) {
+
+    if (!shouldCacheLayer) {
       layer.clearCache();
-      // Konva throws a warning if we try to cache an empty layer
+      lastCachedGenRef.current = -1;
+      return;
+    }
+
+    // Initial cache
+    const doCache = () => {
+      const gen = dataGenerationRef.current;
+      if (gen === lastCachedGenRef.current) return;
+      lastCachedGenRef.current = gen;
+      layer.clearCache();
       if (layer.children && layer.children.length > 0) {
         layer.cache();
-        // Draw immediately so the updated bitmap is visible this frame
-        // (otherwise the stale bitmap persists until the next pan/zoom tick).
         layer.batchDraw();
       }
-    } else {
-      layer.clearCache();
-    }
-  }, [shouldCacheLayer, objects, remoteDragPositions, connectors]);
+    };
+
+    doCache();
+
+    // Poll for data changes while cached (throttled to 100ms)
+    const interval = setInterval(doCache, 100);
+    return () => clearInterval(interval);
+  }, [shouldCacheLayer]);
 
   // Control hit detection (listening) separately from caching.
   // Disable immediately when caching starts; re-enable one frame after
@@ -744,6 +783,7 @@ export const Board = React.memo(function Board({
         hasFrameDraw={frameDraw !== null}
       />
 
+      <CanvasErrorBoundary>
       <Stage
         ref={stageRef}
         width={stageWidth}
@@ -1128,6 +1168,7 @@ export const Board = React.memo(function Board({
           currentUserId={currentUserId}
         />
       </Stage>
+      </CanvasErrorBoundary>
 
       {/* Text editing overlay */}
       {editingObject && (

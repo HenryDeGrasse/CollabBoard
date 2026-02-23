@@ -6,13 +6,14 @@ import {
   constrainObjectOutsideFrames,
   shouldPopOutFromFrame,
 } from "../../utils/frame";
-
-const BROADCAST_INTERVAL = 50;
-
-/** When total dragged objects (primary + group + frame children) reaches this,
- *  skip React state updates during drag and rely solely on direct Konva node
- *  manipulation via setNodeTopLeft. Positions are committed on drag end. */
-const BULK_DRAG_THRESHOLD = 20;
+import {
+  DRAG_BROADCAST_INTERVAL_MS as BROADCAST_INTERVAL,
+  BULK_DRAG_THRESHOLD,
+  DRAG_CLEAR_DELAY_MS,
+  DRAG_HEARTBEAT_INTERVAL_MS,
+  FRAME_POP_OUT_THRESHOLD_INSIDE,
+  FRAME_POP_OUT_THRESHOLD_OUTSIDE,
+} from "../../constants";
 
 type UpdateObjectUndoAction = Extract<UndoAction, { type: "update_object" }>;
 
@@ -126,7 +127,7 @@ export function useDragSystem({
       setDragPositions({});
       setDragParentFrameIds({});
       dragClearTimerRef.current = null;
-    }, 120);
+    }, DRAG_CLEAR_DELAY_MS);
   }, []);
 
   // Cleanup on unmount
@@ -174,7 +175,7 @@ export function useDragSystem({
 
   // Heartbeat: re-broadcast drag positions while holding still
   useEffect(() => {
-    const HEARTBEAT_MS = 600;
+    const HEARTBEAT_MS = DRAG_HEARTBEAT_INTERVAL_MS;
     const id = setInterval(() => {
       const positions = lastDragBroadcastRef.current;
       if (Object.keys(positions).length === 0) return;
@@ -393,7 +394,7 @@ export function useDragSystem({
           const currentParentFrame = objectsRef.current[currentParentFrameId];
           if (currentParentFrame && currentParentFrame.type === "frame") {
             const wasInside = dragInsideFrameRef.current.has(id);
-            const threshold = wasInside ? 0.45 : 0.55;
+            const threshold = wasInside ? FRAME_POP_OUT_THRESHOLD_INSIDE : FRAME_POP_OUT_THRESHOLD_OUTSIDE;
             const willPopOut = shouldPopOutFromFrame(
               { x: primaryX, y: primaryY, width: draggedObj.width, height: draggedObj.height },
               {
@@ -412,7 +413,7 @@ export function useDragSystem({
 
         if (!allowedFrameId && !currentParentFrameId) {
           const wasInside = dragInsideFrameRef.current.has(id);
-          const threshold = wasInside ? 0.45 : 0.55;
+          const threshold = wasInside ? FRAME_POP_OUT_THRESHOLD_INSIDE : FRAME_POP_OUT_THRESHOLD_OUTSIDE;
 
           for (const frame of cachedFrames) {
             const isInside = !shouldPopOutFromFrame(
